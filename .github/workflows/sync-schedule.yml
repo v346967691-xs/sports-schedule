@@ -1,0 +1,36 @@
+name: 赛程快照每小时刷新
+
+# 这条工作流是「关电脑也能刷新比分」的关键：
+# 它跑在 GitHub 的服务器上，不依赖本机开机，也不依赖 WorkBuddy 是否运行。
+# 云 SDK 用的是公开 publishableKey（anon 身份），schedule_cache 的写入又被 RLS 锁死在
+# id='latest' 这一行，所以这里不需要配置任何 Secret。
+
+on:
+  schedule:
+    # 每小时的第 12 分钟跑一次（GitHub Actions 的 cron 是 UTC 时间）
+    - cron: '12 * * * *'
+  workflow_dispatch: # 允许在 GitHub 仓库页面手动点「Run workflow」立即同步一次
+
+# 同一时刻只跑一个，避免上一次还没跑完又叠一次
+concurrency:
+  group: sync-schedule
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装云 SDK
+        run: npm install
+
+      - name: 刷新并推送赛程快照到云端
+        run: node tools/cloud-sync.js

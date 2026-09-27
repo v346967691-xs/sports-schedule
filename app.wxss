@@ -1,0 +1,435 @@
+page {
+  --bg: #f4f6f9;
+  --card: #ffffff;
+  --text: #101828;
+  --sub: #5b6478;
+  --muted: #98a2b3;
+  --line: #ebedf2;
+  --brand: #14235c;
+  --brand-soft: #eef1fb;
+  --live: #e5342b;
+  --radius: 20rpx;
+
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  font-size: 28rpx;
+  line-height: 1.5;
+}
+
+.page {
+  min-height: 100vh;
+  padding-bottom: 40rpx;
+  box-sizing: border-box;
+}
+
+.safe-bottom {
+  height: env(safe-area-inset-bottom);
+}
+
+/* ---------- 通用容器 ---------- */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+  overflow: hidden;
+}
+
+.section {
+  margin: 24rpx 24rpx 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 16rpx;
+  padding: 0 4rpx;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  font-size: 32rpx;
+  font-weight: 700;
+  letter-spacing: 0.5rpx;
+}
+
+.section-title::before {
+  content: '';
+  display: block;
+  width: 8rpx;
+  height: 30rpx;
+  margin-right: 14rpx;
+  border-radius: 4rpx;
+  background: var(--brand);
+}
+
+.section-more {
+  font-size: 24rpx;
+  color: var(--muted);
+}
+
+/* ---------- 顶部导航区 ---------- */
+.hero {
+  position: relative;
+  padding: 32rpx 32rpx 40rpx;
+  background: linear-gradient(135deg, #14235c 0%, #26377e 55%, #3b4ea8 100%);
+  color: #fff;
+  border-bottom-left-radius: 36rpx;
+  border-bottom-right-radius: 36rpx;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  right: -80rpx;
+  top: -60rpx;
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hero-title {
+  position: relative;
+  font-size: 44rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}
+
+.hero-sub {
+  position: relative;
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.hero-stats {
+  position: relative;
+  display: flex;
+  margin-top: 28rpx;
+}
+
+.hero-stat {
+  flex: 1;
+}
+
+.hero-stat-num {
+  font-size: 40rpx;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.hero-stat-label {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+/* ---------- 分类 / 赛事 切换 ---------- */
+.chip-row {
+  white-space: nowrap;
+  padding: 4rpx 0 6rpx;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-block;
+  margin-right: 16rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  background: #fff;
+  color: var(--sub);
+  font-size: 26rpx;
+  border: 2rpx solid transparent;
+  transition: all 0.15s;
+}
+
+.chip.active {
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+}
+
+.chip-bar {
+  padding: 20rpx 0 18rpx;
+  background: #fff;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.chip-bar .chip {
+  background: var(--bg);
+}
+
+.chip-bar .chip:first-child {
+  margin-left: 24rpx;
+}
+
+.chip-bar .chip:last-child {
+  margin-right: 24rpx;
+}
+
+/* ---------- 日期条 ---------- */
+.date-strip {
+  display: flex;
+  padding: 0 24rpx 4rpx;
+}
+
+.date-item {
+  flex: 0 0 110rpx;
+  padding: 16rpx 0;
+  margin-right: 16rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  text-align: center;
+  border: 2rpx solid transparent;
+}
+
+.date-item.active {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+.date-item.active .date-day,
+.date-item.active .date-week {
+  color: #fff;
+}
+
+.date-day {
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.date-week {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+/* ---------- 空状态 / 提示 ---------- */
+.empty {
+  padding: 90rpx 40rpx;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-title {
+  font-size: 30rpx;
+  color: var(--sub);
+  margin-bottom: 12rpx;
+}
+
+.empty-desc {
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+.foot-note {
+  margin: 40rpx 24rpx 0;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: rgba(20, 35, 92, 0.04);
+  color: var(--sub);
+  font-size: 22rpx;
+  line-height: 1.8;
+}
+
+.divider {
+  height: 2rpx;
+  background: var(--line);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.text-sub {
+  color: var(--sub);
+}
+
+/* ------------------------------------------------------------------ */
+/* 比赛卡片                                                            */
+/* 直接内联在页面里（不用自定义组件），保证在各运行时都能渲染出来       */
+/* ------------------------------------------------------------------ */
+.mc {
+  margin: 0 24rpx 20rpx;
+  padding: 22rpx 24rpx 18rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.mc-hover {
+  background: #f7f8fb;
+}
+
+.mc-head {
+  display: flex;
+  align-items: center;
+}
+
+.mc-tag {
+  flex: none;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.mc-stage {
+  flex: 1;
+  margin-left: 14rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mc-status {
+  flex: none;
+  margin-left: 12rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  background: #f2f4f7;
+  color: var(--sub);
+}
+
+.mc-status.status-live {
+  background: #fdeceb;
+  color: var(--live);
+  font-weight: 700;
+}
+
+.mc-status.status-upcoming {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.mc-body {
+  display: flex;
+  align-items: stretch;
+  margin-top: 18rpx;
+}
+
+.mc-time {
+  flex: none;
+  width: 130rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.mc-time-main {
+  font-size: 36rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.mc-time-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.mc-line {
+  flex: none;
+  width: 2rpx;
+  margin: 4rpx 20rpx;
+  background: var(--line);
+}
+
+.mc-teams {
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-row {
+  display: flex;
+  align-items: center;
+  height: 52rpx;
+}
+
+.mc-dot {
+  flex: none;
+  width: 10rpx;
+  height: 28rpx;
+  margin-right: 14rpx;
+  border-radius: 5rpx;
+}
+
+.mc-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mc-name.win {
+  color: var(--text);
+}
+
+.mc-abbr {
+  flex: none;
+  margin: 0 14rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: var(--bg);
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+.mc-score {
+  flex: none;
+  min-width: 44rpx;
+  text-align: right;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.mc-score.win {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.mc-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 14rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.mc-hint {
+  font-size: 22rpx;
+  color: var(--sub);
+}
+
+.mc-badge {
+  margin-left: auto;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+  background: #f2f4f7;
+  color: var(--sub);
+  font-size: 20rpx;
+}
+
+.mc-badge + .mc-badge {
+  margin-left: 12rpx;
+}
+
+.mc-badge.ghost {
+  color: var(--muted);
+}

@@ -1,0 +1,252 @@
+<view class="page">
+  <view class="hero">
+    <view class="hero-title">热门赛事赛程</view>
+    <view class="hero-sub">足球五大联赛 · 欧冠 · NBA · 英雄联盟重要赛事</view>
+    <view class="hero-stats">
+      <view class="hero-stat">
+        <view class="hero-stat-num">{{stats.upcoming}}</view>
+        <view class="hero-stat-label">待开赛</view>
+      </view>
+      <view class="hero-stat">
+        <view class="hero-stat-num">{{stats.days}}</view>
+        <view class="hero-stat-label">覆盖比赛日</view>
+      </view>
+      <view class="hero-stat">
+        <view class="hero-stat-num">{{stats.comps}}</view>
+        <view class="hero-stat-label">赛事</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="stale-tip" wx:if="{{stats.stale}}">
+    数据{{stats.staleLabel}}，比分可能不是最新结果
+  </view>
+
+  <view class="empty" wx:if="{{loadError}}">
+    <view class="empty-title">数据没能加载出来</view>
+    <view class="empty-desc">{{loadError}}</view>
+  </view>
+
+  <view class="section" wx:if="{{dueReminders.length}}">
+    <view class="section-head">
+      <view class="section-title">开赛提醒</view>
+      <view class="section-more" bindtap="goReminders">管理 ›</view>
+    </view>
+    <view class="card">
+      <view
+        wx:for="{{dueReminders}}"
+        wx:key="matchId"
+        class="due"
+        data-id="{{item.matchId}}"
+        bindtap="goDetail"
+        hover-class="due-hover"
+      >
+        <view class="due-comp" style="background: {{item._accent}}">{{item._compName}}</view>
+        <view class="due-main">
+          <view class="due-teams">{{item.home}} vs {{item.away}}</view>
+          <view class="due-time">{{item.time}} 开赛 · {{item._countdown}}</view>
+        </view>
+        <view class="due-arrow">›</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{liveMatches.length}}">
+    <view class="section-head">
+      <view class="section-title">正在进行</view>
+    </view>
+    <view class="mc" wx:for="{{liveMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
+      <view class="mc-head">
+        <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+      </view>
+      <view class="mc-body">
+        <view class="mc-time">
+          <view class="mc-time-main">{{item.time}}</view>
+          <view class="mc-time-sub">{{item._dayLabel}}</view>
+        </view>
+        <view class="mc-line"></view>
+        <view class="mc-teams">
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.home.color}}"></view>
+            <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+            <view class="mc-abbr">{{item.home.abbr}}</view>
+            <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+          </view>
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.away.color}}"></view>
+            <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+            <view class="mc-abbr">{{item.away.abbr}}</view>
+            <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{teamMatches.length}}">
+    <view class="section-head">
+      <view class="section-title">我关注的球队</view>
+      <view class="section-more" bindtap="goTeams">管理 ›</view>
+    </view>
+    <view class="mc" wx:for="{{teamMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
+      <view class="mc-head">
+        <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+      </view>
+      <view class="mc-body">
+        <view class="mc-time">
+          <view class="mc-time-main">{{item.time}}</view>
+          <view class="mc-time-sub">{{item._dayLabel}}</view>
+        </view>
+        <view class="mc-line"></view>
+        <view class="mc-teams">
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.home.color}}"></view>
+            <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+            <view class="mc-abbr">{{item.home.abbr}}</view>
+            <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+          </view>
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.away.color}}"></view>
+            <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+            <view class="mc-abbr">{{item.away.abbr}}</view>
+            <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section" wx:elif="{{teamCount}}">
+    <view class="section-head">
+      <view class="section-title">我关注的球队</view>
+      <view class="section-more" bindtap="goTeams">管理 ›</view>
+    </view>
+    <view class="empty">
+      <view class="empty-title">关注的球队近期没有比赛</view>
+      <view class="empty-desc">正处于赛季间歇期，有新赛程会第一时间出现在这里</view>
+    </view>
+  </view>
+
+  <view class="section" wx:else>
+    <view class="section-head">
+      <view class="section-title">我关注的球队</view>
+      <view class="section-more" bindtap="goTeams">去关注 ›</view>
+    </view>
+    <view class="empty">
+      <view class="empty-title">关注你喜欢的球队</view>
+      <view class="empty-desc">五大联赛、NBA、LPL、LCK 全部支持，关注后在「我的」一眼看到他们的比赛</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">按日查看</view>
+      <view class="section-more" bindtap="goSchedule">完整赛程 ›</view>
+    </view>
+
+    <scroll-view class="date-strip-wrap" scroll-x enable-flex>
+      <view class="date-strip">
+        <view
+          wx:for="{{dateStrip}}"
+          wx:key="date"
+          class="date-item {{item.date === activeDate ? 'active' : ''}}"
+          data-date="{{item.date}}"
+          bindtap="onDateTap"
+        >
+          <view class="date-day">{{item.label}}</view>
+          <view class="date-week">{{item.week}}</view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <scroll-view class="chip-row mt" scroll-x enable-flex>
+      <view
+        wx:for="{{cats}}"
+        wx:key="key"
+        class="chip {{item.key === activeCat ? 'active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onCatTap"
+      >{{item.name}}</view>
+    </scroll-view>
+
+    <view class="mc" wx:for="{{dayMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
+      <view class="mc-head">
+        <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+      </view>
+
+      <view class="mc-body">
+        <view class="mc-time">
+          <view class="mc-time-main">{{item.time}}</view>
+          <view class="mc-time-sub">{{item._dayLabel}}</view>
+        </view>
+        <view class="mc-line"></view>
+        <view class="mc-teams">
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.home.color}}"></view>
+            <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+            <view class="mc-abbr">{{item.home.abbr}}</view>
+            <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+          </view>
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.away.color}}"></view>
+            <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+            <view class="mc-abbr">{{item.away.abbr}}</view>
+            <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="mc-foot" wx:if="{{item._statusHint || item._bo || item._historical}}">
+        <text class="mc-hint" wx:if="{{item._statusHint}}">{{item._statusHint}}</text>
+        <text class="mc-badge" wx:if="{{item._bo}}">{{item._bo}}</text>
+        <text class="mc-badge ghost" wx:if="{{item._historical}}">历史战绩</text>
+      </view>
+    </view>
+
+    <view class="empty" wx:if="{{!dayMatches.length}}">
+      <view class="empty-title">这一天没有安排比赛</view>
+      <view class="empty-desc">
+        <block wx:if="{{nextDay}}">
+          下一个比赛日是 {{nextDayLabel}}
+          <view class="empty-btn" data-date="{{nextDay}}" bindtap="onDateTap">跳到这一天</view>
+        </block>
+        <block wx:else>换一天看看，或去「赛程」页浏览全部赛事</block>
+      </view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">全部赛事</view>
+    </view>
+    <view class="entry-grid">
+      <view
+        wx:for="{{entries}}"
+        wx:key="key"
+        class="entry"
+        data-key="{{item.key}}"
+        bindtap="onCompTap"
+        hover-class="entry-hover"
+      >
+        <view class="entry-top">
+          <view class="entry-name">{{item.name}}</view>
+          <view class="entry-count" wx:if="{{item.count}}">{{item.count}} 场待开赛</view>
+        </view>
+        <view class="entry-summary {{item.hasNext ? '' : 'is-dim'}}">{{item.summary}}</view>
+        <view class="entry-bar" style="background: {{item.accent}}"></view>
+      </view>
+    </view>
+  </view>
+
+  <view class="foot-note">
+    比赛时间已换算为北京时间。数据来自各赛事公开数据源，赛程变动请以官方公告为准。
+    <block wx:if="{{stats.updatedAt}}">最近更新：{{stats.updatedAt}}{{stats.source === 'cloud' ? '（云端）' : '（本地）'}}</block>
+  </view>
+  <view class="safe-bottom"></view>
+</view>

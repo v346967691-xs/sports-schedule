@@ -1,0 +1,188 @@
+.hero {
+  display: flex;
+  align-items: center;
+  padding: 40rpx 36rpx 44rpx;
+  background: linear-gradient(135deg, #14235c 0%, #26377e 55%, #3b4ea8 100%);
+  color: #fff;
+  border-bottom-left-radius: 36rpx;
+  border-bottom-right-radius: 36rpx;
+}
+
+.avatar {
+  flex: none;
+  width: 110rpx;
+  height: 110rpx;
+  margin-right: 26rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  line-height: 110rpx;
+  text-align: center;
+  font-size: 52rpx;
+}
+
+.user-name {
+  font-size: 36rpx;
+  font-weight: 800;
+}
+
+.user-desc {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+
+.login-card {
+  padding: 28rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.warn {
+  padding: 20rpx;
+  border-radius: 12rpx;
+  background: #fff6e5;
+  color: #93450a;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.btn {
+  padding: 24rpx 0;
+  text-align: center;
+  border-radius: 14rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.btn.primary {
+  background: var(--brand);
+  color: #fff;
+}
+
+.btn.outline {
+  background: var(--bg);
+  color: var(--sub);
+}
+
+.fav-list {
+  border-radius: 20rpx;
+  overflow: hidden;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.fav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 26rpx 26rpx 26rpx 32rpx;
+  background: #fff;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.fav:last-child {
+  border-bottom: 0;
+}
+
+.fav-hover {
+  background: #fafbfd;
+}
+
+.fav-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8rpx;
+}
+
+.fav-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.fav-title {
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.fav-time {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: var(--sub);
+}
+
+.fav-time.is-past {
+  color: var(--muted);
+}
+
+.fav-arrow {
+  flex: none;
+  margin-left: 16rpx;
+  font-size: 34rpx;
+  color: var(--muted);
+}
+
+.empty-btn {
+  display: inline-block;
+  margin-top: 28rpx;
+  padding: 18rpx 40rpx;
+  border-radius: 999rpx;
+  background: var(--brand);
+  color: #fff;
+  font-size: 26rpx;
+}
+
+/* ---------- 我关注的球队 ---------- */
+.team-chips {
+  white-space: nowrap;
+}
+
+.team-chips-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.team-chip {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  margin-right: 16rpx;
+  padding: 16rpx 26rpx;
+  border-radius: 999rpx;
+  background: var(--card);
+  box-shadow: 0 2rpx 10rpx rgba(16, 24, 40, 0.06);
+}
+
+.team-chip-hover {
+  background: #f7f8fb;
+}
+
+.team-dot {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 12rpx;
+  border-radius: 50%;
+}
+
+.team-chip-name {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.team-chip-comp {
+  margin-left: 12rpx;
+  font-size: 21rpx;
+  color: var(--muted);
+}
+
+.section-sub {
+  margin: 30rpx 0 16rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--sub);
+}

@@ -1,0 +1,152 @@
+.date-strip-wrap {
+  margin: 0 0 4rpx;
+  white-space: nowrap;
+}
+
+.date-strip {
+  display: flex;
+  padding: 0 4rpx;
+}
+
+.date-strip::-webkit-scrollbar,
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.mt {
+  margin-top: 14rpx;
+}
+
+.empty-btn {
+  display: inline-block;
+  margin-top: 24rpx;
+  padding: 16rpx 36rpx;
+  border-radius: 999rpx;
+  background: var(--brand);
+  color: #fff;
+  font-size: 25rpx;
+}
+
+/* 数据陈旧警告：定时任务停了（如电脑关机）时提示用户比分可能不是最新的 */
+.stale-tip {
+  margin: 20rpx 24rpx 0;
+  padding: 18rpx 24rpx;
+  border-radius: 14rpx;
+  background: #fff1f0;
+  color: #b42318;
+  font-size: 23rpx;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.entry-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.entry {
+  position: relative;
+  width: calc(50% - 10rpx);
+  margin-bottom: 20rpx;
+  padding: 24rpx 24rpx 26rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.entry-hover {
+  transform: scale(0.985);
+}
+
+.entry-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.entry-name {
+  font-size: 32rpx;
+  font-weight: 800;
+  letter-spacing: 0.5rpx;
+}
+
+.entry-count {
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+.entry-summary {
+  margin-top: 12rpx;
+  font-size: 23rpx;
+  color: var(--sub);
+  line-height: 1.6;
+  min-height: 72rpx;
+}
+
+.entry-summary.is-dim {
+  color: var(--muted);
+}
+
+.entry-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8rpx;
+}
+
+/* ---------- 开赛提醒（特别关注，开赛前 30 分钟内在首页提醒） ---------- */
+.due {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 24rpx;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.due:last-child {
+  border-bottom: none;
+}
+
+.due-hover {
+  background: #f7f8fb;
+}
+
+.due-comp {
+  flex: none;
+  padding: 6rpx 14rpx;
+  border-radius: 8rpx;
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.due-main {
+  flex: 1;
+  min-width: 0;
+  margin: 0 18rpx;
+}
+
+.due-teams {
+  font-size: 29rpx;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.due-time {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--live);
+  font-weight: 600;
+}
+
+.due-arrow {
+  flex: none;
+  color: var(--muted);
+  font-size: 32rpx;
+}

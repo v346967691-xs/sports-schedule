@@ -1,0 +1,15 @@
+{
+  "name": "sports-schedule",
+  "version": "1.0.0",
+  "description": "热门体育电竞比赛赛程小程序",
+  "private": true,
+  "scripts": {
+    "vendor": "node tools/vendor-sdk.js",
+    "sync": "node tools/vendor-sdk.js && node tools/sync.js",
+    "sync-cloud": "node tools/cloud-sync.js",
+    "smoke": "node tools/smoke.js"
+  },
+  "dependencies": {
+    "@tencent-ai/workbuddy-cloud-sdk": "dev"
+  }
+}

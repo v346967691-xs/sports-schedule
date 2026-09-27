@@ -1,0 +1,42 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/schedule/schedule",
+    "pages/mine/mine",
+    "pages/detail/detail",
+    "pages/teams/teams",
+    "pages/reminders/reminders"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#14235C",
+    "navigationBarTitleText": "闪现赛程助手",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F4F6F9",
+    "backgroundColorTop": "#14235C",
+    "enablePullDownRefresh": false
+  },
+  "tabBar": {
+    "color": "#8A93A6",
+    "selectedColor": "#14235C",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "看比赛"
+      },
+      {
+        "pagePath": "pages/schedule/schedule",
+        "text": "赛程"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
+    ]
+  },
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

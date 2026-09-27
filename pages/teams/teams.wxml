@@ -1,0 +1,60 @@
+<view class="page teams">
+  <view class="tf-head">
+    <view class="tf-count">
+      已关注 <text class="tf-num">{{followedCount}}</text> 支球队
+    </view>
+    <view class="tf-clear {{followedCount ? '' : 'is-dim'}}" bindtap="onClear">清空</view>
+  </view>
+
+  <scroll-view class="tf-cats-wrap" scroll-x enable-flex>
+    <view class="tf-cats">
+      <view
+        wx:for="{{cats}}"
+        wx:key="key"
+        class="tf-cat {{item.key === activeCat ? 'active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onCatTap"
+      >
+        {{item.name}}<text class="tf-cat-num" wx:if="{{item.followed}}">{{item.followed}}</text>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="tf-search">
+    <input
+      class="tf-input"
+      placeholder="搜索球队，如 阿森纳 / JDG"
+      placeholder-class="tf-ph"
+      value="{{keyword}}"
+      bindinput="onSearch"
+      confirm-type="search"
+    />
+    <view class="tf-kw-clear" wx:if="{{keyword}}" bindtap="onClearKeyword">✕</view>
+  </view>
+
+  <view class="tf-grid">
+    <view
+      wx:for="{{teams}}"
+      wx:key="k"
+      class="tf-team {{item.followed ? 'on' : ''}}"
+      data-index="{{index}}"
+      bindtap="onTeamTap"
+      hover-class="tf-team-hover"
+    >
+      <view class="tf-bar" style="background: {{item.color}}"></view>
+      <view class="tf-body">
+        <view class="tf-name">{{item.display}}</view>
+        <view class="tf-abbr">{{item.abbr}}</view>
+      </view>
+      <view class="tf-check">{{item.followed ? '已关注' : '+ 关注'}}</view>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{!teams.length}}">
+    <view class="empty-title">没有匹配的球队</view>
+    <view class="empty-desc">换个关键词，或切换到其他赛事看看</view>
+  </view>
+
+  <view class="tf-foot">关注的球队会出现在「我的」，登录后换设备也能同步</view>
+  <view class="safe-bottom"></view>
+</view>

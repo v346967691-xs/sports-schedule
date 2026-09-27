@@ -1,0 +1,67 @@
+<view class="page detail" wx:if="{{match}}">
+  <view class="hero" style="background: linear-gradient(135deg, {{comp.accent}} 0%, {{comp.accent}}cc 100%)">
+    <view class="hero-tag">{{comp.name}}</view>
+    <view class="hero-comp">{{comp.full}}</view>
+    <view class="hero-stage">{{match.stage}}</view>
+  </view>
+
+  <view class="score-card">
+    <view class="score-time">
+      <view class="score-clock">{{match.time}}</view>
+      <view class="score-day">{{match._dayLabel}}</view>
+    </view>
+
+    <view class="score-line"></view>
+
+    <view class="score-body">
+      <view class="team">
+        <view class="team-dot" style="background: {{match.home.color}}"></view>
+        <view class="team-name {{match._homeWin ? 'win' : ''}}">{{match.home.zhName}}</view>
+        <view class="team-abbr">{{match.home.abbr}}</view>
+        <view class="team-score {{match._homeWin ? 'win' : ''}}" wx:if="{{match._hasScore}}">{{match.home.score}}</view>
+      </view>
+      <view class="vs">{{match._hasScore ? '终比分' : 'VS'}}</view>
+      <view class="team">
+        <view class="team-dot" style="background: {{match.away.color}}"></view>
+        <view class="team-name {{match._awayWin ? 'win' : ''}}">{{match.away.zhName}}</view>
+        <view class="team-abbr">{{match.away.abbr}}</view>
+        <view class="team-score {{match._awayWin ? 'win' : ''}}" wx:if="{{match._hasScore}}">{{match.away.score}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="status-bar">
+    <view class="status-pill status-{{match.status}}">{{match._statusLabel}}</view>
+    <view class="status-hint" wx:if="{{match._statusHint}}">{{match._statusHint}}</view>
+    <view class="status-badge" wx:if="{{match._bo}}">{{match._bo}}</view>
+    <view class="status-badge ghost" wx:if="{{match._historical}}">历史战绩</view>
+  </view>
+
+  <view class="section">
+    <view class="info">
+      <view class="info-row" wx:for="{{rows}}" wx:key="label">
+        <view class="info-label">{{item.label}}</view>
+        <view class="info-value">{{item.value}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="actions">
+    <view class="btn primary {{isFav ? 'added' : ''}}" bindtap="onFavTap">
+      {{isFav ? '已关注 · 点击取消' : '关注这场比赛'}}
+    </view>
+    <view
+      wx:if="{{match.status === 'upcoming'}}"
+      class="btn primary {{isRemind ? 'added' : ''}}"
+      bindtap="onRemindTap"
+    >
+      {{isRemind ? '已设开赛提醒 · 点此取消' : '开赛前 30 分钟提醒我'}}
+    </view>
+    <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>
+  </view>
+
+  <view class="foot-note">
+    比分与时间为各赛事公开数据源的快照；临场调整请以官方发布为准。
+  </view>
+  <view class="safe-bottom"></view>
+</view>

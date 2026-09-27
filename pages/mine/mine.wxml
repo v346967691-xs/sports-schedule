@@ -1,0 +1,170 @@
+<view class="page mine">
+  <view class="hero">
+    <view class="avatar">{{authState === 'signed-in' ? '🏀' : '⚽'}}</view>
+    <view class="user">
+      <block wx:if="{{authState === 'signed-in'}}">
+        <view class="user-name">已通过微信登录</view>
+        <view class="user-desc">关注的比赛会同步到云端，换设备也能看到</view>
+      </block>
+      <block wx:else>
+        <view class="user-name">尚未登录</view>
+        <view class="user-desc">登录后可以使用「关注比赛」，数据存在云端不丢失</view>
+      </block>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="login-card">
+      <view wx:if="{{!cloudReady}}" class="warn">
+        云服务未就绪：请在微信开发者工具中执行「构建 npm」，然后重新预览。
+      </view>
+      <block wx:elif="{{authState === 'signed-in'}}">
+        <view class="btn outline" bindtap="onLogout">退出登录</view>
+      </block>
+      <block wx:else>
+        <view class="btn primary" bindtap="onLogin">{{logging ? '登录中…' : '微信一键登录'}}</view>
+      </block>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">我关注的球队</view>
+      <view class="section-more" bindtap="goTeams">{{teams.length ? '管理' : '去选择'}} ›</view>
+    </view>
+
+    <block wx:if="{{teams.length}}">
+      <scroll-view class="team-chips" scroll-x enable-flex>
+        <view class="team-chips-inner">
+          <view
+            wx:for="{{teams}}"
+            wx:key="k"
+            class="team-chip"
+            data-index="{{index}}"
+            bindtap="onTeamTap"
+            hover-class="team-chip-hover"
+          >
+            <view class="team-dot" style="background: {{item.color}}"></view>
+            <text class="team-chip-name">{{item.display}}</text>
+            <text class="team-chip-comp">{{item.compName}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="section-sub">他们接下来的比赛</view>
+      <view class="mc" wx:for="{{teamMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="onTeamMatchTap" hover-class="mc-hover">
+        <view class="mc-head">
+          <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+          <view class="mc-stage">{{item.stage}}</view>
+          <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+        </view>
+        <view class="mc-body">
+          <view class="mc-time">
+            <view class="mc-time-main">{{item.time}}</view>
+            <view class="mc-time-sub">{{item._dayLabel}}</view>
+          </view>
+          <view class="mc-line"></view>
+          <view class="mc-teams">
+            <view class="mc-row">
+              <view class="mc-dot" style="background: {{item.home.color}}"></view>
+              <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+              <view class="mc-abbr">{{item.home.abbr}}</view>
+              <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+            </view>
+            <view class="mc-row">
+              <view class="mc-dot" style="background: {{item.away.color}}"></view>
+              <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+              <view class="mc-abbr">{{item.away.abbr}}</view>
+              <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view class="empty" wx:if="{{!teamMatches.length}}">
+        <view class="empty-title">近期没有已公布的比赛</view>
+        <view class="empty-desc">关注的球队正处于间歇期，有新赛程会第一时间出现在这里</view>
+      </view>
+    </block>
+
+    <view class="empty" wx:else>
+      <view class="empty-title">还没有关注的球队</view>
+      <view class="empty-desc">关注后可以在这里一眼看到他们的下一场比赛</view>
+      <view class="empty-btn" bindtap="goTeams">选择球队</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">我关注的比赛</view>
+      <view class="section-more">{{favs.length}} 场</view>
+    </view>
+
+    <view class="fav-list" wx:if="{{favs.length}}">
+      <view
+        wx:for="{{favs}}"
+        wx:key="matchId"
+        class="fav"
+        data-id="{{item.matchId}}"
+        bindtap="onFavTap"
+        hover-class="fav-hover"
+      >
+        <view class="fav-bar" style="background: {{item.accent}}"></view>
+        <view class="fav-main">
+          <view class="fav-title">{{item.title}}</view>
+          <view class="fav-time {{item.past ? 'is-past' : ''}}">{{item.compName}} · {{item.time}}</view>
+        </view>
+        <view class="fav-arrow">›</view>
+      </view>
+    </view>
+
+    <view class="empty" wx:else>
+      <view class="empty-title">{{authState === 'signed-in' ? '还没有关注的比赛' : '登录后可在这里管理关注'}}</view>
+      <view class="empty-desc">
+        {{authState === 'signed-in'
+          ? '在任意比赛详情页点击「关注这场比赛」，它会收藏到这里。'
+          : '在比赛详情页点击关注，会提示你先登录。'}}
+      </view>
+      <view class="empty-btn" bindtap="goHome">去看看赛程</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">我的开赛提醒</view>
+      <view class="section-more" bindtap="goReminders">{{remindCount ? '管理' : '去设置'}} ›</view>
+    </view>
+
+    <view class="fav-list" wx:if="{{reminderList.length}}">
+      <view
+        wx:for="{{reminderList}}"
+        wx:key="matchId"
+        class="fav"
+        data-id="{{item.matchId}}"
+        bindtap="onReminderTap"
+        hover-class="fav-hover"
+      >
+        <view class="fav-bar" style="background: {{item.accent}}"></view>
+        <view class="fav-main">
+          <view class="fav-title">{{item.home}} vs {{item.away}}</view>
+          <view class="fav-time">{{item.compName}} · {{item.when}}</view>
+        </view>
+        <view class="fav-arrow">›</view>
+      </view>
+      <view class="section-sub" wx:if="{{remindCount > reminderList.length}}">
+        还有 {{remindCount - reminderList.length}} 条提醒，点右上角「管理」查看全部
+      </view>
+    </view>
+
+    <view class="empty" wx:else>
+      <view class="empty-title">还没有设置开赛提醒</view>
+      <view class="empty-desc">在比赛详情页点「开赛前 30 分钟提醒我」，临近开赛时会在首页提醒你</view>
+      <view class="empty-btn" bindtap="goHome">去看看赛程</view>
+    </view>
+  </view>
+
+  <view class="foot-note">
+    小程序内置 {{stat.matches}} 场比赛，其中 {{stat.upcoming}} 场待开赛，覆盖 {{stat.comps}} 项赛事，
+    时间范围 {{stat.range}}。所有时间均为北京时间。
+  </view>
+  <view class="safe-bottom"></view>
+</view>

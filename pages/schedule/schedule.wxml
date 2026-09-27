@@ -1,0 +1,116 @@
+<view class="page schedule">
+  <view class="cat-bar">
+    <view
+      wx:for="{{cats}}"
+      wx:key="key"
+      class="cat {{item.key === activeCat ? 'active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onCatTap"
+    >{{item.name}}</view>
+  </view>
+
+  <view class="filter-bar">
+    <scroll-view class="chip-row-wrap" scroll-x enable-flex>
+      <view class="chip-row">
+        <view class="chip {{activeComp === '' ? 'active' : ''}}" data-key="" bindtap="onCompTap">全部</view>
+        <view
+          wx:for="{{catComps}}"
+          wx:key="key"
+          class="chip {{item.key === activeComp ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onCompTap"
+        >
+          <view class="chip-accent" style="background: {{item.accent}}"></view>{{item.name}}
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="mode-switch">
+      <view class="mode {{mode === 'upcoming' ? 'active' : ''}}" data-mode="upcoming" bindtap="onModeTap">即将开赛</view>
+      <view class="mode {{mode === 'finished' ? 'active' : ''}}" data-mode="finished" bindtap="onModeTap">已结束</view>
+    </view>
+  </view>
+
+  <view class="stale-tip" wx:if="{{stale}}">
+    数据{{staleLabel}}，比分可能不是最新结果
+  </view>
+
+  <view class="empty" wx:if="{{loadError}}">
+    <view class="empty-title">数据没能加载出来</view>
+    <view class="empty-desc">{{loadError}}</view>
+  </view>
+
+  <view class="team-banner" wx:if="{{teamFilter}}">
+    <view class="team-banner-info">
+      <view class="team-banner-dot" style="background: {{teamFilter.color}}"></view>
+      <view class="team-banner-text">只看 <text class="team-banner-name">{{teamFilter.display}}</text> 的比赛</view>
+    </view>
+    <view class="team-banner-clear" bindtap="onClearTeam">取消</view>
+  </view>
+
+  <view class="fallback-tip" wx:if="{{fallback}}">
+    该赛事暂无已公布的未来赛程，下面是最近的对战记录
+  </view>
+
+  <view class="summary" wx:if="{{totalMatches}}">
+    共 {{totalMatches}} 场比赛，分布在 {{totalGroups}} 个比赛日
+    <block wx:if="{{updatedAt}}"> · 数据 {{updatedAt}}{{source === 'cloud' ? '（云端）' : '（本地）'}}</block>
+  </view>
+
+  <block wx:for="{{rows}}" wx:key="key">
+    <view class="day-head" wx:if="{{item.type === 'head'}}">
+      <text class="day-title">{{item.dayLabel}}</text>
+      <text class="day-count">{{item.count}} 场</text>
+    </view>
+
+    <view class="mc" wx:if="{{item.type === 'match'}}" data-id="{{item.match.id}}" bindtap="goDetail" hover-class="mc-hover">
+      <view class="mc-head">
+        <view class="mc-tag" style="background: {{item.match._accent}}">{{item.match._compName}}</view>
+        <view class="mc-stage">{{item.match.stage}}</view>
+        <view class="mc-status status-{{item.match.status}}">{{item.match._statusLabel}}</view>
+      </view>
+
+      <view class="mc-body">
+        <view class="mc-time">
+          <view class="mc-time-main">{{item.match.time}}</view>
+          <view class="mc-time-sub">{{item.match._weekday}}</view>
+        </view>
+        <view class="mc-line"></view>
+        <view class="mc-teams">
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.match.home.color}}"></view>
+            <view class="mc-name {{item.match._homeWin ? 'win' : ''}}">{{item.match.home.zhName}}</view>
+            <view class="mc-abbr">{{item.match.home.abbr}}</view>
+            <view class="mc-score {{item.match._homeWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.home.score}}</view>
+          </view>
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.match.away.color}}"></view>
+            <view class="mc-name {{item.match._awayWin ? 'win' : ''}}">{{item.match.away.zhName}}</view>
+            <view class="mc-abbr">{{item.match.away.abbr}}</view>
+            <view class="mc-score {{item.match._awayWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.away.score}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="mc-foot" wx:if="{{item.match._statusHint || item.match._bo || item.match._historical}}">
+        <text class="mc-hint" wx:if="{{item.match._statusHint}}">{{item.match._statusHint}}</text>
+        <text class="mc-badge" wx:if="{{item.match._bo}}">{{item.match._bo}}</text>
+        <text class="mc-badge ghost" wx:if="{{item.match._historical}}">历史战绩</text>
+      </view>
+    </view>
+  </block>
+
+  <view class="empty" wx:if="{{!rows.length && !loadError}}">
+    <view class="empty-title">
+      {{mode === 'upcoming' ? '暂无已公布的未来赛程' : '暂无已结束的比赛'}}
+    </view>
+    <view class="empty-desc">
+      {{mode === 'upcoming'
+        ? '该项赛事正处于赛季间歇期，官方尚未放出新的日程。可以先切换到「已结束」查看最近战绩。'
+        : '换一个赛事或切换回「即将开赛」看看。'}}
+    </view>
+  </view>
+
+  <view class="more" wx:if="{{shownGroups < totalGroups}}" bindtap="onLoadMore">显示更多比赛日</view>
+  <view class="safe-bottom"></view>
+</view>

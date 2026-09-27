@@ -1,0 +1,33 @@
+name: 每周心跳
+
+# 存在的唯一理由：GitHub 会停用「连续 60 天无活动」仓库的定时工作流。
+# 本项目稳定后可能数月不提交代码，届时 .github/workflows/sync-schedule.yml
+# 会被悄悄停用、比分重新停更，而且没有任何提示。
+# 每周推一个时间戳即可让仓库保持活跃，从根上免疫。
+#
+# 单独成文而不是挂在主工作流下：主工作流每 15 分钟跑一次，
+# 带着心跳会白白多出 96 次无谓检出。
+
+on:
+  schedule:
+    # 每周一 03:23 UTC（北京时间周一 11:23）
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 写入心跳时间戳并推送
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git add .keepalive
+          git commit -m "chore: 每周心跳，保持定时同步处于启用状态"
+          git push

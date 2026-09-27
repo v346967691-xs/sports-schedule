@@ -8,10 +8,15 @@ name: 赛程快照每小时刷新
 
 on:
   schedule:
-    # 每小时的第 12 分钟跑一次（GitHub Actions 的 cron 是 UTC 时间）
-    - cron: '12 * * * *'
-    # 每周一 03:23 UTC 一次心跳（见下方 keepalive 任务）
-    - cron: '23 3 * * 1'
+    # 每 15 分钟跑一次。GitHub Actions 的 cron 是 UTC 时间，最短支持 5 分钟。
+    #
+    # 为什么是 15 分钟而不是 5 分钟：
+    #   1) GitHub 的定时调度不保证准点，高峰期常延迟数分钟甚至更久；
+    #      间隔压到 5 分钟，实际可能变成两三次挤在一起，收益反而不明显。
+    #   2) 单次同步要抓 14 个赛事（足球按月份分片），约几十个请求、耗时约 50 秒，
+    #      太频繁会白白消耗额度，也有惹恼数据源的风险。
+    #   3) 15 分钟已足够覆盖「比赛进行中的实时比分」，最坏延迟约 20 分钟。
+    - cron: '*/15 * * * *'
   workflow_dispatch: # 允许在 GitHub 仓库页面手动点「Run workflow」立即同步一次
 
 # 同一时刻只跑一个，避免上一次还没跑完又叠一次
@@ -41,32 +46,5 @@ jobs:
       - name: 校验云端快照是否真的新鲜
         run: node tools/check-cloud.js
 
-  # 心跳：每周推一个时间戳，防止 GitHub 因「60 天无活动」停用上面的定时同步。
-  # 只在每周一那次触发时才真正提交（其余触发直接跳过，不会产生噪音提交）。
-  keepalive:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 判断是否为每周一的心跳时刻
-        id: due
-        run: |
-          if [ "$(date -u +%u)" = "1" ]; then
-            echo "yes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "yes=false" >> "$GITHUB_OUTPUT"
-            echo "非周一，跳过心跳提交。"
-          fi
-
-      - name: 写入心跳时间戳并推送
-        if: steps.due.outputs.yes == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
-          git add .keepalive
-          git commit -m "chore: 每周心跳，保持定时同步处于启用状态"
-          git push
+# 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），
+# 避免它跟着这里每 15 分钟白跑一次检出。

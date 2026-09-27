@@ -10,6 +10,8 @@ on:
   schedule:
     # 每小时的第 12 分钟跑一次（GitHub Actions 的 cron 是 UTC 时间）
     - cron: '12 * * * *'
+    # 每周一 03:23 UTC 一次心跳（见下方 keepalive 任务）
+    - cron: '23 3 * * 1'
   workflow_dispatch: # 允许在 GitHub 仓库页面手动点「Run workflow」立即同步一次
 
 # 同一时刻只跑一个，避免上一次还没跑完又叠一次
@@ -35,3 +37,36 @@ jobs:
 
       - name: 刷新并推送赛程快照到云端
         run: node tools/cloud-sync.js
+
+      - name: 校验云端快照是否真的新鲜
+        run: node tools/check-cloud.js
+
+  # 心跳：每周推一个时间戳，防止 GitHub 因「60 天无活动」停用上面的定时同步。
+  # 只在每周一那次触发时才真正提交（其余触发直接跳过，不会产生噪音提交）。
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 判断是否为每周一的心跳时刻
+        id: due
+        run: |
+          if [ "$(date -u +%u)" = "1" ]; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+            echo "非周一，跳过心跳提交。"
+          fi
+
+      - name: 写入心跳时间戳并推送
+        if: steps.due.outputs.yes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git add .keepalive
+          git commit -m "chore: 每周心跳，保持定时同步处于启用状态"
+          git push

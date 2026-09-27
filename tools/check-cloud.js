@@ -1,0 +1,63 @@
+/**
+ * 云端快照新鲜度自检
+ * ============================================================
+ * 用途：只读地确认云端 schedule_cache(id='latest') 的数据有多新，
+ *       用来验收 GitHub Actions 定时同步是否真的生效。
+ *
+ * 用法： node tools/check-cloud.js
+ *
+ * 退出码：0 = 数据新鲜（未超阈值）；2 = 数据陈旧；1 = 读取失败。
+ */
+
+const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
+const publicConfig = require('../utils/cloud-config')
+
+/** 陈旧阈值（分钟），与 utils/data.js 的 STALE_MS 保持一致 */
+const STALE_MINUTES = 90
+
+async function main() {
+  const cloud = createWorkBuddyCloud({
+    endpoint: publicConfig.endpoint,
+    publishableKey: publicConfig.publishableKey,
+  })
+
+  const { data, error } = await cloud.database
+    .from('schedule_cache')
+    .select('id, generated_at')
+    .eq('id', 'latest')
+
+  if (error) {
+    console.error('[check-cloud] 读取云端失败：', JSON.stringify(error))
+    process.exit(1)
+  }
+
+  const row = (data || [])[0]
+  if (!row) {
+    console.error('[check-cloud] 云端没有 latest 行，同步从未成功过。')
+    process.exit(1)
+  }
+
+  const gen = new Date(row.generated_at)
+  const minutes = Math.round((Date.now() - gen.getTime()) / 60000)
+  const localTime = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(gen)
+
+  console.log('[check-cloud] 云端 generated_at =', row.generated_at)
+  console.log('[check-cloud] 北京时间 =', localTime)
+  console.log('[check-cloud] 距今 =', minutes, '分钟')
+  console.log(
+    minutes <= STALE_MINUTES
+      ? `[check-cloud] ✅ 数据新鲜（阈值 ${STALE_MINUTES} 分钟）`
+      : `[check-cloud] ⚠️ 数据陈旧，超过阈值 ${STALE_MINUTES} 分钟`
+  )
+
+  process.exit(minutes <= STALE_MINUTES ? 0 : 2)
+}
+
+main().catch((err) => {
+  console.error('[check-cloud] 异常：', (err && err.message) || err)
+  process.exit(1)
+})

@@ -1,4 +1,4 @@
-name: 赛程快照每小时刷新
+name: 赛程快照刷新（每 15 分钟）
 
 # 触发方式：定时 cron（每小时第 12 分钟，UTC）+ 仓库 Actions 页手动 workflow_dispatch。
 # 这条工作流是「关电脑也能刷新比分」的关键：

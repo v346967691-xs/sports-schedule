@@ -1,5 +1,6 @@
 name: 赛程快照每小时刷新
 
+# 触发方式：定时 cron（每小时第 12 分钟，UTC）+ 仓库 Actions 页手动 workflow_dispatch。
 # 这条工作流是「关电脑也能刷新比分」的关键：
 # 它跑在 GitHub 的服务器上，不依赖本机开机，也不依赖 WorkBuddy 是否运行。
 # 云 SDK 用的是公开 publishableKey（anon 身份），schedule_cache 的写入又被 RLS 锁死在

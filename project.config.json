@@ -16,8 +16,36 @@
         "value": "node_modules"
       },
       {
+        "type": "folder",
+        "value": ".git"
+      },
+      {
+        "type": "folder",
+        "value": ".github"
+      },
+      {
         "type": "file",
         "value": "package-lock.json"
+      },
+      {
+        "type": "file",
+        "value": ".keepalive"
+      },
+      {
+        "type": "file",
+        "value": ".gitignore"
+      },
+      {
+        "type": "file",
+        "value": "小程序图标.png"
+      },
+      {
+        "type": "file",
+        "value": "小程序码.jpg"
+      },
+      {
+        "type": "file",
+        "value": "闪现赛程助手小程序承诺书.jpg"
       }
     ],
     "include": []

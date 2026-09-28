@@ -12,8 +12,10 @@
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
 
-/** 陈旧阈值（分钟），与 utils/data.js 的 STALE_MS 保持一致 */
-const STALE_MINUTES = 90
+/** 陈旧阈值（分钟），与 utils/data.js 的 STALE_MS 保持一致。
+ *  对齐真实刷新粒度（GitHub 定时实测约 2.5~3 小时一次），
+ *  避免在本机单独跑这个校验时，仅仅因为还没轮到下一班就误报「陈旧」。 */
+const STALE_MINUTES = 180
 
 async function main() {
   const cloud = createWorkBuddyCloud({

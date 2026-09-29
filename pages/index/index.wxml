@@ -18,6 +18,16 @@
     </view>
   </view>
 
+  <!-- 日报入口 -->
+  <view class="brief-entry" wx:if="{{brief}}" bindtap="goBrief" hover-class="brief-entry-hover">
+    <view class="be-head">
+      <view class="be-kicker">闪现赛程日报</view>
+      <view class="be-when" wx:if="{{brief.pubText}}">{{brief.pubText}} {{brief.kindZh}}</view>
+    </view>
+    <view class="be-title">{{brief.tip}}</view>
+    <view class="be-go">读今天这一期 ›</view>
+  </view>
+
   <view class="stale-tip" wx:if="{{stats.stale}}">
     数据{{stats.staleLabel}}，比分可能不是最新结果
   </view>

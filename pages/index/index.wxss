@@ -27,6 +27,63 @@
   font-size: 25rpx;
 }
 
+/* ---------- 日报入口条 ---------- */
+.brief-entry {
+  margin: 20rpx 24rpx 0;
+  padding: 22rpx 26rpx 24rpx;
+  background: #fffdf7;
+  border: 2rpx solid #ece3cd;
+  border-radius: 18rpx;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.04);
+}
+
+.brief-entry-hover {
+  background: #fbf6ea;
+}
+
+.be-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.be-kicker {
+  font-size: 24rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+  color: var(--brand);
+}
+
+.be-kicker::before {
+  content: '';
+  display: inline-block;
+  width: 22rpx;
+  height: 4rpx;
+  margin-right: 12rpx;
+  vertical-align: middle;
+  background: #c0392b;
+}
+
+.be-when {
+  font-size: 21rpx;
+  color: var(--muted);
+}
+
+.be-title {
+  margin-top: 12rpx;
+  font-size: 29rpx;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.be-go {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #c0392b;
+  font-weight: 600;
+}
+
 /* 数据陈旧警告：定时任务停了（如电脑关机）时提示用户比分可能不是最新的 */
 .stale-tip {
   margin: 20rpx 24rpx 0;

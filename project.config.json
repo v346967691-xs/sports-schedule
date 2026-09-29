@@ -9,6 +9,10 @@
     "ignore": [
       {
         "type": "folder",
+        "value": "data/brief"
+      },
+      {
+        "type": "folder",
         "value": "tools"
       },
       {

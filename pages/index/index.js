@@ -3,6 +3,7 @@ const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
 const reminders = require('../../utils/reminders')
+const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -26,17 +27,46 @@ Page({
     teamCount: 0,
     dueReminders: [],
     loadError: '',
+    brief: null,
   },
 
   onLoad() {
     this.build()
+    this.loadBrief()
     data.refresh().then((r) => { if (r.updated) this.build() })
   },
 
   onShow() {
     // 立即用当前数据渲染（本地包或已换上的云端数据），再尝试拉云端、有更新就重建
     this.build()
+    this.loadBrief()
     data.refresh().then((r) => { if (r.updated) this.build() })
+  },
+
+  /**
+   * 日报入口条：只取最新一期做一句话摘要。
+   * 日报是附加功能，取不到就整条不显示，不打扰看比分的主流程。
+   */
+  async loadBrief() {
+    try {
+      const res = await briefApi.fetchBriefs(1)
+      const one = (res.list || [])[0]
+      const tip = briefApi.teaser(one)
+      if (!tip) return
+      this.setData({
+        brief: {
+          tip,
+          kindZh: one.kindZh,
+          pubText: briefApi.fmtPubAt(one.pubAt),
+        },
+      })
+    } catch (err) {
+      console.warn('[赛程助手] 日报摘要读取失败', err)
+    }
+  },
+
+  goBrief() {
+    wx.navigateTo({ url: '/pages/brief/brief' })
   },
 
   /**

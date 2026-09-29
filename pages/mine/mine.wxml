@@ -162,6 +162,24 @@
     </view>
   </view>
 
+  <view class="section">
+    <view class="section-head">
+      <view class="section-title">赛程日报</view>
+      <view class="section-more" bindtap="goBrief">翻阅 ›</view>
+    </view>
+
+    <view class="fav-list">
+      <view class="fav" bindtap="goBrief" hover-class="fav-hover">
+        <view class="fav-bar" style="background: #14235c"></view>
+        <view class="fav-main">
+          <view class="fav-title">{{brief ? brief.tip : '每天 06:00 / 21:00 出报'}}</view>
+          <view class="fav-time">{{brief ? brief.pubText + ' ' + brief.kindZh : '昨夜今晨发生了什么，读这一版就够了'}}</view>
+        </view>
+        <view class="fav-arrow">›</view>
+      </view>
+    </view>
+  </view>
+
   <view class="foot-note">
     小程序内置 {{stat.matches}} 场比赛，其中 {{stat.upcoming}} 场待开赛，覆盖 {{stat.comps}} 项赛事，
     时间范围 {{stat.range}}。所有时间均为北京时间。

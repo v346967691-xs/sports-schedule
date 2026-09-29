@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+# 日报产物：由 GitHub Actions / brief-push.js 重新生成，并已排除出小程序包。
+# 里面有 AI 出图（几百 KB），提交进 git 只会让仓库无意义地膨胀。
+data/brief/

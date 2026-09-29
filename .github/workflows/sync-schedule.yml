@@ -50,5 +50,16 @@ jobs:
       - name: 校验云端快照是否真的新鲜
         run: node tools/check-cloud.js
 
+      # 生成日报并推送到 daily_brief。为什么每次同步都跑，而不是卡出报时刻：
+      #   ① 幂等 —— 每次都重算最近 2 天的全部期次，跑几次结果都一样；
+      #   ② GitHub 原生 cron 在这个仓库实测会延迟 2~3 小时，卡精确时刻反而会漏班；
+      #      而跟着 sync 走，任何一次同步成功都会顺带把日报刷新一遍，最可靠；
+      #   ③ 耗时不到 1 秒，公开仓库 Actions 分钟数免费。
+      # continue-on-error：日报是附加功能，它的成败不该污染「赛程同步」本身的红绿信号，
+      # 后者才是用户看比分的主链路（失败会被 check-cloud 之前的步骤捕获）。
+      - name: 生成日报并推送到云端
+        continue-on-error: true
+        run: node tools/brief-push.js
+
 # 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），
 # 避免它跟着这里每 15 分钟白跑一次检出。

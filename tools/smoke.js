@@ -25,6 +25,7 @@ global.wx = {
   switchTab: (o) => { collected.switchTab = o.url },
   showToast: (o) => { collected.toast = o.title },
   showModal: () => {},
+  stopPullDownRefresh: () => {},
   login: ({ success }) => success({ code: 'mock' }),
   getAccountInfoSync: () => ({ miniProgram: { appId: 'mockappid' } }),
   request: () => {},
@@ -346,6 +347,126 @@ async function run() {
   // 清理，避免影响后续断言
   ;['rm-soon', 'rm-later', 'rm-past', target.id].forEach((id) => rmMod.remove(id))
   rmMod.resetCache()
+
+  /* ---------- 赛程日报 ---------- */
+  const briefApi = require(path.join(ROOT, 'utils/brief'))
+  const briefDir = path.join(ROOT, 'data/brief')
+  const briefFiles = fs.existsSync(briefDir)
+    ? fs.readdirSync(briefDir).filter((f) => f.endsWith('.json')).sort()
+    : []
+  check('日报：本地已生成期次文件', briefFiles.length > 0, `${briefFiles.length} 期`)
+
+  // 按云表真实行结构构造（列名是 snake_case，这是云端返回的原样）
+  const briefRows = briefFiles.map((f) => {
+    const p = JSON.parse(fs.readFileSync(path.join(briefDir, f), 'utf8'))
+    return { id: p.id, kind: p.kind, date: p.date, pub_at: p.pubAt, mode: p.mode, payload: p, generated_at: p.generatedAt }
+  }).sort((a, b) => Date.parse(b.pub_at) - Date.parse(a.pub_at))
+
+  check('日报：id 符合云端写入约束', briefRows.every((r) => /^[0-9]{4}-[0-9]{2}-[0-9]{2}-(morning|evening)$/.test(r.id)),
+    briefRows.length ? briefRows[0].id : '')
+  check('日报：每期都带 AI 生成标识（合规强制）',
+    briefRows.every((r) => r.payload.aigc && r.payload.aigc.explicit === 'AI 生成'))
+  check('日报：出报时刻只落在 06:00 / 21:00', briefRows.every((r) => /T(06|21):00/.test(r.pub_at)),
+    briefRows.length ? briefRows[0].pub_at : '')
+
+  // 云端返回 timestamptz 常用 +00:00 输出，显示层必须自己换算到北京时间
+  check('日报：北京时间显示', /^\d{1,2}月\d{1,2}日 (06|21):00$/.test(briefApi.fmtPubAt(briefRows[0].pub_at)),
+    briefApi.fmtPubAt(briefRows[0].pub_at))
+  check('日报：+00:00 输出也能换算成北京时间',
+    briefApi.fmtPubAt('2026-09-28T22:00:00+00:00') === '9月29日 06:00',
+    briefApi.fmtPubAt('2026-09-28T22:00:00+00:00'))
+
+  const allIssues = briefRows.map(briefApi.normalize).filter(Boolean)
+  check('日报：全部期次都能被数据层解析', allIssues.length === briefRows.length, `${allIssues.length}/${briefRows.length}`)
+  check('日报：解析后出报时间不为空', allIssues.every((x) => !!x.pubAt))
+
+  const realFetchBriefs = briefApi.fetchBriefs
+  // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸
+  briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  require(path.join(ROOT, 'pages/brief/brief.js'))
+  const bfOpts = global.__page
+  const ctxBf = makeCtx(bfOpts)
+  bfOpts.onLoad.call(ctxBf)
+  await settle()
+  check('日报页：拉到期次列表', ctxBf.data.list.length > 0, `${ctxBf.data.list.length} 期`)
+  check('日报页：最多只取 10 期', ctxBf.data.list.length <= 10, `${ctxBf.data.list.length} 期`)
+  check('日报页：默认停在最新一期', ctxBf.data.idx === 0 && !!ctxBf.data.cur)
+  check('日报页：出报时间已格式化', /月/.test(ctxBf.data.pubText), ctxBf.data.pubText)
+
+  // 内容断言看全部期次，不受「页面只加载最近 10 期」影响
+  const reportIssue = allIssues.find((x) => x.mode === 'report')
+  const previewIssue = allIssues.find((x) => x.mode === 'preview')
+  const reportCount = allIssues.filter((x) => x.mode === 'report').length
+  check('日报：存在战报期', !!reportIssue, `${reportCount} 期战报 / ${allIssues.length} 期`)
+  check('日报：战报期含标题/导语/正文', !!reportIssue && !!reportIssue.headline.title
+    && !!reportIssue.headline.lead && reportIssue.headline.body.length > 0,
+    reportIssue ? reportIssue.headline.title : '无')
+  check('日报：战报头条带 matchId 可跳详情', !!reportIssue && !!reportIssue.headline.matchId)
+  check('日报：战报头条含数据栏', !!reportIssue && !!reportIssue.headline.factbox)
+  check('日报：前瞻期含分组对阵', !!previewIssue && previewIssue.preview.items.length > 0,
+    previewIssue ? `${previewIssue.preview.items.length} 场` : '无')
+  check('日报：前瞻按项目分组（足球/篮球/电竞）',
+    !!previewIssue && previewIssue.preview.items.every((it) => !!it.groupZh))
+  check('日报：入口摘要不为空', allIssues.every((x) => !!briefApi.teaser(x)),
+    reportIssue ? briefApi.teaser(reportIssue) : '')
+
+  if (ctxBf.data.list.length > 1) {
+    bfOpts.onNext.call(ctxBf)
+    check('日报页：翻到更早一期', ctxBf.data.idx === 1)
+    bfOpts.onPrev.call(ctxBf)
+    check('日报页：翻回最新一期', ctxBf.data.idx === 0)
+  }
+
+  // 点头条跳详情：单独用一份只含战报期的列表，避免最新 10 期全是前瞻时测不到
+  if (reportIssue) {
+    briefApi.fetchBriefs = async () => ({ list: [reportIssue] })
+    const ctxBfRep = makeCtx(bfOpts)
+    bfOpts.onLoad.call(ctxBfRep)
+    await settle()
+    bfOpts.onHeadlineTap.call(ctxBfRep)
+    check('日报页：点头条跳比赛详情', /^\/pages\/detail\/detail\?id=/.test(collected.navigateTo || ''), collected.navigateTo)
+    briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })
+  }
+
+  // 反幻觉：数据里没有的东西，文字里也不许出现
+  const banned = /绝杀|逆转|让二追三|补时|点球|加时|梅开二度|帽子戏法/
+  const allBriefText = briefRows.map((r) => JSON.stringify(r.payload)).join(' ')
+  check('日报：无幻觉用词（绝杀/点球/补时…）', !banned.test(allBriefText),
+    (allBriefText.match(banned) || [''])[0])
+
+  // 入口：首页 + 我的页
+  const ctxIdxBrief = makeCtx(indexOpts)
+  indexOpts.onLoad.call(ctxIdxBrief)
+  await settle()
+  check('首页：日报入口条有摘要', !!(ctxIdxBrief.data.brief && ctxIdxBrief.data.brief.tip),
+    ctxIdxBrief.data.brief ? ctxIdxBrief.data.brief.tip : '未取到')
+  indexOpts.goBrief.call(ctxIdxBrief)
+  check('首页：点日报入口跳日报页', collected.navigateTo === '/pages/brief/brief', collected.navigateTo)
+
+  const ctxMineBrief = makeCtx(mineOpts)
+  mineOpts.onLoad.call(ctxMineBrief)
+  await settle()
+  check('我的页：日报入口有摘要', !!(ctxMineBrief.data.brief && ctxMineBrief.data.brief.tip),
+    ctxMineBrief.data.brief ? ctxMineBrief.data.brief.tip : '未取到')
+  mineOpts.goBrief.call(ctxMineBrief)
+  check('我的页：点日报入口跳日报页', collected.navigateTo === '/pages/brief/brief', collected.navigateTo)
+
+  // 云服务不可用时不能炸
+  briefApi.fetchBriefs = async () => ({ list: [], reason: 'no-cloud' })
+  const ctxBfDown = makeCtx(bfOpts)
+  bfOpts.onLoad.call(ctxBfDown)
+  await settle()
+  check('日报页：云端不可用时给出提示而非白屏', !!ctxBfDown.data.errTip && ctxBfDown.data.loading === false,
+    ctxBfDown.data.errTip)
+  // 注意：makeCtx 共享了页面对象的 data，先归零再跑才是「重新进页面」的真实状态
+  const ctxIdxDown = makeCtx(indexOpts)
+  ctxIdxDown.setData({ brief: null })
+  indexOpts.onLoad.call(ctxIdxDown)
+  await settle()
+  check('首页：日报取不到时不显示入口条', !ctxIdxDown.data.brief)
+  briefApi.fetchBriefs = realFetchBriefs
 
   /* ---------- 输出 ---------- */
   let failed = 0

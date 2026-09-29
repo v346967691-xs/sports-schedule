@@ -1,0 +1,245 @@
+/* 日报版式：尽量贴近传统纸媒的排版语言 —— 报头、双分隔线、栏线、留白 */
+
+.paper {
+  min-height: 100vh;
+  background: #fbf9f5;
+  padding: 0 32rpx 80rpx;
+  color: #1b1b1b;
+}
+
+/* ── 报头 ── */
+.masthead {
+  padding: 36rpx 0 20rpx;
+  text-align: center;
+}
+.mast-title {
+  font-size: 46rpx;
+  font-weight: 700;
+  letter-spacing: 6rpx;
+  color: #14235c;
+}
+.rule-double {
+  margin: 18rpx 0 10rpx;
+  border-top: 4rpx solid #14235c;
+  border-bottom: 1rpx solid #14235c;
+  height: 6rpx;
+}
+.rule {
+  border-top: 1rpx solid #14235c;
+  margin-top: 14rpx;
+}
+.mast-meta {
+  font-size: 24rpx;
+  color: #6b7280;
+  letter-spacing: 1rpx;
+}
+
+/* ── 期次翻阅 ── */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #e3ded4;
+}
+.pager-btn {
+  font-size: 26rpx;
+  color: #14235c;
+  padding: 8rpx 16rpx;
+}
+.pager-btn.off {
+  color: #c3bdb1;
+}
+.pager-pos {
+  font-size: 24rpx;
+  color: #8a8579;
+}
+
+/* ── 栏目标签 ── */
+.kicker {
+  margin: 40rpx 0 18rpx;
+  font-size: 24rpx;
+  letter-spacing: 4rpx;
+  color: #14235c;
+  border-left: 8rpx solid #14235c;
+  padding-left: 16rpx;
+}
+
+/* ── 头条 ── */
+.headline {
+  padding: 4rpx 0 8rpx;
+}
+.hl-title {
+  font-size: 44rpx;
+  line-height: 1.35;
+  font-weight: 700;
+  color: #14161a;
+  margin-bottom: 20rpx;
+}
+.hl-lead {
+  font-size: 30rpx;
+  line-height: 1.7;
+  color: #3b3f45;
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx dashed #ddd7cb;
+}
+.hl-body {
+  padding-top: 18rpx;
+}
+.para {
+  font-size: 28rpx;
+  line-height: 1.9;
+  color: #2b2f36;
+  margin-bottom: 12rpx;
+  text-align: justify;
+}
+
+/* ── 数据栏 ── */
+.factbox {
+  margin-top: 28rpx;
+  border: 1rpx solid #cfc8ba;
+  background: #f4f1ea;
+  padding: 18rpx 22rpx;
+}
+.fb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 25rpx;
+  padding: 8rpx 0;
+}
+.fb-head {
+  border-bottom: 1rpx solid #cfc8ba;
+  padding-bottom: 14rpx;
+  margin-bottom: 8rpx;
+}
+.fb-team {
+  flex: 1;
+  color: #2b2f36;
+}
+.fb-team.right {
+  text-align: right;
+}
+.fb-score {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #14235c;
+  padding: 0 20rpx;
+}
+.fb-k {
+  color: #8a8579;
+}
+.fb-v {
+  color: #2b2f36;
+}
+
+/* ── 简讯 ── */
+.briefs {
+  border-top: 1rpx solid #e3ded4;
+}
+.brief-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid #eae5db;
+}
+.bf-line {
+  font-size: 27rpx;
+  color: #2b2f36;
+  flex: 1;
+}
+.bf-tag {
+  font-size: 22rpx;
+  color: #8a8579;
+  border: 1rpx solid #d8d2c6;
+  border-radius: 6rpx;
+  padding: 4rpx 12rpx;
+  margin-left: 16rpx;
+}
+
+/* ── 前瞻 ── */
+.pv-intro {
+  font-size: 27rpx;
+  line-height: 1.8;
+  color: #4b5057;
+  margin-bottom: 12rpx;
+}
+.pv-gtitle {
+  margin: 28rpx 0 12rpx;
+  font-size: 25rpx;
+  letter-spacing: 2rpx;
+  color: #14235c;
+}
+.pv-item {
+  background: #fff;
+  border: 1rpx solid #e6e1d6;
+  border-radius: 10rpx;
+  padding: 22rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+.pv-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
+}
+.pv-time {
+  font-size: 24rpx;
+  color: #8a8579;
+}
+.pv-comp {
+  font-size: 23rpx;
+  color: #14235c;
+}
+.pv-teams {
+  font-size: 31rpx;
+  color: #1b1b1b;
+  margin-bottom: 12rpx;
+}
+.pv-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pv-why {
+  font-size: 23rpx;
+  color: #6b7280;
+}
+.pv-rel {
+  font-size: 23rpx;
+  color: #a09a8e;
+}
+
+/* ── 状态 ── */
+.loading,
+.empty {
+  padding: 80rpx 0;
+  text-align: center;
+  font-size: 27rpx;
+  color: #8a8579;
+}
+
+/* ── AI 标识 ── */
+.aigc {
+  margin-top: 60rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #e3ded4;
+  display: flex;
+  align-items: flex-start;
+}
+.aigc-tag {
+  font-size: 22rpx;
+  color: #fff;
+  background: #8a8579;
+  border-radius: 6rpx;
+  padding: 4rpx 12rpx;
+  margin-right: 14rpx;
+  flex-shrink: 0;
+}
+.aigc-note {
+  font-size: 22rpx;
+  color: #a09a8e;
+  line-height: 1.6;
+  flex: 1;
+}

@@ -4,6 +4,7 @@ const view = require('../../utils/view')
 const favorites = require('../../utils/favorites')
 const follows = require('../../utils/team-follows')
 const reminders = require('../../utils/reminders')
+const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
 Page({
@@ -18,6 +19,7 @@ Page({
     remindCount: 0,
     stat: { matches: 0, upcoming: 0, comps: 0, range: '' },
     loadingFavs: false,
+    brief: null,
   },
 
   async onLoad() {
@@ -25,6 +27,7 @@ Page({
     this.setData({ cloudReady: app.globalData.cloudReady, authState: app.globalData.authState })
     this.buildStat()
     this.buildReminders()
+    this.loadBrief()
     data.refresh().then((r) => { if (r.updated) this.buildStat() })
   },
 
@@ -43,6 +46,23 @@ Page({
     this.buildTeams()
     this.buildReminders()
     data.refresh().then((r) => { if (r.updated) { this.buildTeams(); this.buildStat() } })
+  },
+
+  /** 日报入口：只取最新一期的一句话摘要，取不到就保持默认文案 */
+  async loadBrief() {
+    try {
+      const res = await briefApi.fetchBriefs(1)
+      const one = (res.list || [])[0]
+      const tip = briefApi.teaser(one)
+      if (!tip) return
+      this.setData({ brief: { tip, kindZh: one.kindZh, pubText: briefApi.fmtPubAt(one.pubAt) } })
+    } catch (err) {
+      console.warn('[赛程助手] 日报摘要读取失败', err)
+    }
+  },
+
+  goBrief() {
+    wx.navigateTo({ url: '/pages/brief/brief' })
   },
 
   /** 我设的开赛提醒（只列最近 3 条，完整管理在「我的开赛提醒」页） */

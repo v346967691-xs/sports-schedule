@@ -1,0 +1,105 @@
+<view class="paper">
+
+  <!-- 报头 -->
+  <view class="masthead">
+    <view class="mast-title">闪现赛程日报</view>
+    <view class="rule-double"></view>
+    <view class="mast-meta">
+      <text wx:if="{{cur}}">{{pubText}}　{{cur.kindZh}}　{{cur.windowLabel}}</text>
+      <text wx:else>每日 06:00 / 21:00 出报</text>
+    </view>
+    <view class="rule"></view>
+  </view>
+
+  <!-- 期次翻阅 -->
+  <view class="pager" wx:if="{{list.length > 1}}">
+    <view class="pager-btn {{idx >= list.length - 1 ? 'off' : ''}}" bindtap="onPrev">← 更早</view>
+    <view class="pager-pos">{{idx + 1}} / {{list.length}}</view>
+    <view class="pager-btn {{idx <= 0 ? 'off' : ''}}" bindtap="onNext">更新 →</view>
+  </view>
+
+  <view class="loading" wx:if="{{loading}}">正在取报…</view>
+  <view class="empty" wx:elif="{{errTip}}">{{errTip}}</view>
+
+  <block wx:elif="{{cur}}">
+
+    <!-- 战报 -->
+    <block wx:if="{{cur.mode === 'report' && cur.headline}}">
+      <view class="kicker">今日头条</view>
+      <view class="headline" bindtap="onHeadlineTap">
+        <view class="hl-title">{{cur.headline.title}}</view>
+        <view class="hl-lead">{{cur.headline.lead}}</view>
+
+        <view class="hl-body">
+          <view class="para" wx:for="{{cur.headline.body}}" wx:key="*this">{{item}}</view>
+        </view>
+
+        <!-- 数据栏：纯数据，报纸的「技术统计」区 -->
+        <view class="factbox" wx:if="{{cur.headline.factbox}}">
+          <view class="fb-row fb-head">
+            <text class="fb-team">{{cur.headline.factbox.home.zh}}</text>
+            <text class="fb-score">{{cur.headline.factbox.home.score}} - {{cur.headline.factbox.away.score}}</text>
+            <text class="fb-team right">{{cur.headline.factbox.away.zh}}</text>
+          </view>
+          <view class="fb-row">
+            <text class="fb-k">{{cur.headline.factbox.comp}}</text>
+            <text class="fb-v">{{cur.headline.factbox.stage}}</text>
+          </view>
+          <view class="fb-row">
+            <text class="fb-k">开赛</text>
+            <text class="fb-v">{{cur.headline.factbox.time}}</text>
+          </view>
+          <view class="fb-row" wx:if="{{cur.headline.factbox.venue}}">
+            <text class="fb-k">场地</text>
+            <text class="fb-v">{{cur.headline.factbox.venue}}</text>
+          </view>
+        </view>
+      </view>
+
+      <block wx:if="{{cur.briefs.length}}">
+        <view class="kicker">同期简讯</view>
+        <view class="briefs">
+          <view class="brief-item" wx:for="{{cur.briefs}}" wx:key="matchId"
+                data-id="{{item.matchId}}" bindtap="onBriefTap">
+            <text class="bf-line">{{item.line}}</text>
+            <text class="bf-tag" wx:if="{{item.narrativeZh}}">{{item.narrativeZh}}</text>
+          </view>
+        </view>
+      </block>
+    </block>
+
+    <!-- 前瞻（空窗日） -->
+    <block wx:elif="{{cur.mode === 'preview' && cur.preview}}">
+      <view class="kicker">赛事前瞻</view>
+      <view class="pv-intro">{{cur.preview.intro}}</view>
+
+      <block wx:for="{{cur.preview.items}}" wx:key="matchId">
+        <view class="pv-gtitle" wx:if="{{item.groupZh && (index === 0 || cur.preview.items[index-1].group !== item.group)}}">{{item.groupZh}}</view>
+        <view class="pv-item" data-id="{{item.matchId}}" bindtap="onPreviewTap">
+          <view class="pv-top">
+            <text class="pv-time">{{item.time}}</text>
+            <text class="pv-comp">{{item.comp}}</text>
+          </view>
+          <view class="pv-teams">{{item.home}} vs {{item.away}}</view>
+          <view class="pv-foot">
+            <text class="pv-why" wx:if="{{item.why}}">{{item.why}}</text>
+            <text class="pv-rel">{{item.relative}}开赛</text>
+          </view>
+        </view>
+      </block>
+    </block>
+
+    <!-- 无素材 -->
+    <block wx:else>
+      <view class="empty">{{cur.note || '本期没有可展示的内容'}}</view>
+    </block>
+
+    <!-- AI 生成标识（合规强制） -->
+    <view class="aigc" wx:if="{{cur.aigc}}">
+      <text class="aigc-tag">{{cur.aigc.explicit}}</text>
+      <text class="aigc-note">{{cur.aigc.explicitNote}}</text>
+    </view>
+
+  </block>
+
+</view>

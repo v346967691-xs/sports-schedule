@@ -12,6 +12,11 @@
  *   2) 依赖本地快照 data/matches.js，所以必须先跑过 cloud-sync 刷新数据，
  *      否则生成的是陈旧内容。workflow 里两个脚本前后串联。
  *   3) 不推图片 —— 分享图方案未定，日报页面暂不展示配图。
+ *   4) 未到出报时刻的期次不落库 —— 本脚本幂等重算最近两天，若不拦这一道，
+ *      下午 3 点跑的时候就会把「当天 21:00 的晚报」写进云表，而那一刻晚窗口
+ *      （06:00–18:00 开赛）的比赛还没打完，落的是残稿，客户端还会提前展示出来。
+ *      ⚠️ 已经写进去的未来行删不掉：daily_brief 的 DELETE 策略只允许删 90 天前的，
+ *      所以只能在源头拦住。历史遗留的未来行需人工用管理员角色清理。
  *
  * 退出码：0 成功；1 失败（任一期推送报错就整体失败，便于自动化告警）。
  */
@@ -19,6 +24,7 @@
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
 const B = require('./brief-build.js')
+const W = require('./brief-window.js')   // isDue：出报时刻未到的期次不落库
 
 const DAYS_BACK = Number(process.argv[2] || 2)
 
@@ -67,12 +73,17 @@ async function main() {
   log('北京日期 ' + today + '，生成 ' + dates.join(' / ') + ' 的日报')
 
   const rows = []
+  const pending = []      // 出报时刻还没到，跳过的期次
   let report = 0; let preview = 0; let empty = 0
+
+  const nowMs = Date.now()
 
   dates.forEach((ds) => {
     ['morning', 'evening'].forEach((kind) => {
       const o = B.build(ds, kind)
       if (o.mode === 'empty') { empty += 1; return }
+      // 出报时刻未到 → 跳过，等到了点由后续那一班自然地补上来
+      if (!W.isDue(o.pubAt, nowMs)) { pending.push(o.id); return }
       if (o.mode === 'report') report += 1; else preview += 1
       rows.push({
         id: o.id,
@@ -86,7 +97,8 @@ async function main() {
     })
   })
 
-  log('战报 ' + report + ' 期，前瞻 ' + preview + ' 期，无素材 ' + empty + ' 期')
+  log('战报 ' + report + ' 期，前瞻 ' + preview + ' 期，无素材 ' + empty + ' 期'
+    + (pending.length ? '，未到出报时刻跳过 ' + pending.length + ' 期（' + pending.join(', ') + '）' : ''))
 
   if (!rows.length) {
     log('没有任何可推送的日报，跳过。')

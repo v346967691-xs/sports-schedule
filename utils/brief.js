@@ -22,6 +22,11 @@ const cloudClient = require('./cloud')
 const TABLE = 'daily_brief'
 const THROTTLE_MS = 5 * 60 * 1000
 
+// 服务端多取几行再本地过滤：未来的期次按 pub_at 排在最前面，
+// 只取 n 行的话它们会把已出报的历史期次挤出结果集，导致列表变短。
+// 一天最多 2 期（早报 + 晚报），留 4 行的余量足够。
+const FUTURE_BUFFER = 4
+
 let lastFetchAt = 0
 let inflight = null
 let cache = []
@@ -31,16 +36,51 @@ function isReady() { return !!(cloudClient && cloudClient.isReady && cloudClient
 function kindZh(kind) { return kind === 'evening' ? '晚报' : '早报' }
 
 /**
+ * 这期到出报时刻了吗？
+ *
+ * 背景（2026-09-29 实测）：生成脚本每 15 分钟就把最近两天的期次重算一遍，
+ * 于是「当天 21:00 的晚报」在下午三四点就已经躺在云表里了 —— 内容是按那一刻的
+ * 快照算的，窗口里的比赛还没打完，甚至整张列表都可能是残的。按 pub_at 倒序取，
+ * 这条未来期次稳居第一，用户下午就看到「9月29日 晚报」，看起来像穿帮。
+ *
+ * 所以这里做兜底：出报时刻还没到的期次一律不进列表。生成端 tools/brief-push.js
+ * 也用同一条规则跳过未到期次（那边的同名实现在 tools/brief-window.js 的 isDue，
+ * 小程序打不到 tools/，两份必须同步改）。
+ *
+ * ⚠️ 解析不出出报时刻时返回 true（照旧展示）：这种行本来就没有时间信息、
+ * 无从判断早晚，一律隐藏会导致整页空白，反而更难排查。正常数据 pub_at 必然存在。
+ *
+ * @param {string} pubAt ISO 出报时刻
+ * @param {number} [now] 参照时刻（毫秒），不传取当前时间；测试可注入
+ */
+function isDue(pubAt, now) {
+  const t = Date.parse(pubAt || '')
+  if (!Number.isFinite(t)) return true
+  return t <= (now === undefined || now === null ? Date.now() : now)
+}
+
+/**
+ * 过滤出「已出报」的期次（按 pub_at 倒序，保持入参顺序）
+ * @param {Array} list normalize 之后的列表
+ * @param {number} [n] 只取前 n 条，不传则全部
+ * @param {number} [now] 参照时刻
+ */
+function onlyDue(list, n, now) {
+  const out = (list || []).filter((o) => isDue(o && o.pubAt, now))
+  return n ? out.slice(0, n) : out
+}
+
+/**
  * 取最近 limit 期日报，按出报时刻倒序（最新在前）
  * @returns {Promise<{list:Array, reason?:string, fromCache:boolean}>}
  */
 async function fetchBriefs(limit) {
   const n = limit || 10
-  if (!isReady()) return { list: cache, reason: 'no-cloud', fromCache: true }
+  if (!isReady()) return { list: onlyDue(cache, n), reason: 'no-cloud', fromCache: true }
   if (inflight) return inflight
   const now = Date.now()
   if (cache.length && now - lastFetchAt < THROTTLE_MS) {
-    return { list: cache.slice(0, n), fromCache: true }
+    return { list: onlyDue(cache, n, now), fromCache: true }
   }
   lastFetchAt = now
   inflight = doFetch(n).finally(() => { inflight = null })
@@ -53,18 +93,19 @@ async function doFetch(n) {
       .from(TABLE)
       .select('id, kind, date, pub_at, mode, payload, generated_at')
       .order('pub_at', { ascending: false })
-      .limit(n)
+      .limit(n + FUTURE_BUFFER)
     if (error || !Array.isArray(data)) {
-      return { list: cache, reason: 'error', fromCache: true }
+      return { list: onlyDue(cache, n), reason: 'error', fromCache: true }
     }
+    // ⚠️ cache 里保留未到期次（下次还能用，时间到了自然出现），只在对外返回时过滤
     cache = data
       .map((r) => normalize(r))
       .filter(Boolean)
       .sort((a, b) => Date.parse(b.pubAt) - Date.parse(a.pubAt))
-    return { list: cache.slice(0, n), fromCache: false }
+    return { list: onlyDue(cache, n), fromCache: false }
   } catch (err) {
     console.warn('[赛程助手] 日报读取失败', err)
-    return { list: cache, reason: 'error', fromCache: true }
+    return { list: onlyDue(cache, n), reason: 'error', fromCache: true }
   }
 }
 
@@ -127,4 +168,4 @@ function fmtPubAt(iso) {
 
 // normalize 一并导出：冒烟测试要用它把「云表原始行」跑一遍真实的字段映射，
 // 这样 pub_at / payload 这类列名改动能在本地就被测出来，而不是等真机上才空白。
-module.exports = { fetchBriefs, fmtPubAt, kindZh, normalize, teaser, TABLE }
+module.exports = { fetchBriefs, fmtPubAt, kindZh, normalize, teaser, isDue, onlyDue, TABLE }

@@ -87,8 +87,28 @@ function pubDays() {
   return Array.from(set).sort();
 }
 
+/**
+ * 这期到出报时刻了吗？
+ *
+ * 生成脚本跟着赛程同步每 15 分钟跑一次（幂等重算最近两天），所以「当天 21:00 的晚报」
+ * 往往在下午就已经被算出来并写进云表了 —— 那一刻晚窗口里的比赛多半还没打完，
+ * 出来的是一份残稿，而客户端按 pub_at 倒序取，它稳居第一，用户直接看穿。
+ *
+ * → 未到期次不落库（brief-push.js），客户端也不展示（utils/brief.js 的 isDue）。
+ *   两处同一条规则，小程序打不到 tools/，所以是两份实现，改一处必须同步另一处。
+ *
+ * ⚠️ 解析不出时刻时返回 true：无法判断早晚的行不该因为空值被判成「未到期」而整体消失。
+ * 注意：daily_brief 的 RLS 只允许删除 generated_at 早于 90 天前的行，
+ * 所以已经写进去的未来期次脚本删不掉，只能靠上述规则从源头避免 + 人工清理。
+ */
+function isDue(pubAtIso, now) {
+  const t = Date.parse(pubAtIso || '');
+  if (!Number.isFinite(t)) return true;
+  return t <= (now === undefined || now === null ? Date.now() : now);
+}
+
 module.exports = {
   BJ, bjMs, inWindow, prevDay, nextDay,
-  morning, evening, carryOver, pubDays,
+  morning, evening, carryOver, pubDays, isDue,
   MORNING_HOUR, EVENING_HOUR, SPLIT_HOUR, M,
 };

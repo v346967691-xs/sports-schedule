@@ -380,6 +380,46 @@ async function run() {
   check('日报：全部期次都能被数据层解析', allIssues.length === briefRows.length, `${allIssues.length}/${briefRows.length}`)
   check('日报：解析后出报时间不为空', allIssues.every((x) => !!x.pubAt))
 
+  // ⚠️ 线上问题（2026-09-29）：北京时间下午 3 点多，日报页却出现了「9月29日 晚报」。
+  // 根因是生成脚本每 15 分钟幂等重算最近两天，当天 21:00 的晚报在下午就写进了云表，
+  // 按 pub_at 倒序取它稳居第一。修复：生成端不落库 + 客户端不展示（两道都要）。
+  const BJ_NOW = Date.parse('2026-09-29T15:46:00+08:00')   // 用户截图那一刻
+  const bjRow = (id, kind, pub, mode) => ({
+    id, kind, date: id.slice(0, 10), pub_at: pub, mode,
+    payload: { mode, headline: { title: '标题' }, preview: { items: [] } },
+  })
+  // 云表按 pub_at DESC 返回的真实顺序：未来期次排在最前
+  const mixRows = [
+    bjRow('2026-09-29-evening', 'evening', '2026-09-29T21:00:00+08:00', 'preview'),
+    bjRow('2026-09-29-morning', 'morning', '2026-09-29T06:00:00+08:00', 'report'),
+    bjRow('2026-09-28-evening', 'evening', '2026-09-28T21:00:00+08:00', 'preview'),
+  ].map(briefApi.normalize).filter(Boolean)
+  check('日报：复现线上顺序（未来期次排首位）', mixRows[0] && mixRows[0].id === '2026-09-29-evening',
+    mixRows[0] && mixRows[0].id)
+
+  const dueNow = briefApi.onlyDue(mixRows, 10, BJ_NOW)
+  check('日报：出报时刻未到的期次不展示',
+    !dueNow.some((x) => x.id === '2026-09-29-evening'), dueNow.map((x) => x.id).join(', '))
+  check('日报：此时候选最新一期是当天早报', dueNow[0] && dueNow[0].id === '2026-09-29-morning',
+    dueNow[0] && dueNow[0].id)
+  check('日报：过滤后剩余期次不减（历史期没被挤掉）', dueNow.length === 2, `${dueNow.length}/2`)
+
+  const dueLater = briefApi.onlyDue(mixRows, 10, Date.parse('2026-09-29T21:00:00+08:00'))
+  check('日报：到点后该期自动出现，无需重新发版',
+    dueLater[0] && dueLater[0].id === '2026-09-29-evening', dueLater[0] && dueLater[0].id)
+  check('日报：恰好到点即算出报',
+    briefApi.isDue('2026-09-29T21:00:00+08:00', Date.parse('2026-09-29T21:00:00+08:00')) === true)
+  check('日报：差一分钟仍算未出报',
+    briefApi.isDue('2026-09-29T21:00:00+08:00', Date.parse('2026-09-29T20:59:00+08:00')) === false)
+  check('日报：取不到出报时刻的行照旧展示（不整页隐藏）', briefApi.isDue('', BJ_NOW) === true)
+
+  // 生成端是另一份实现（小程序打不到 tools/），规则必须一致，改一处忘另一处这里会红
+  const briefWin = require(path.join(ROOT, 'tools/brief-window.js'))
+  check('生成端：未到期次不落库，规则与客户端一致',
+    briefWin.isDue('2026-09-29T21:00:00+08:00', BJ_NOW) === false
+    && briefWin.isDue('2026-09-29T06:00:00+08:00', BJ_NOW) === true
+    && briefWin.isDue('2026-09-29T21:00:00+08:00', Date.parse('2026-09-29T21:00:00+08:00')) === true)
+
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸
   briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })

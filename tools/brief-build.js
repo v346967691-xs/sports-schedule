@@ -58,12 +58,22 @@ function build(dateStr, kind) {
   };
 
   if (!res.top.length) {
-    // 空窗 → 前瞻：取未来 72 小时
-    const from = pubAt;
-    const to = from + 72 * HOUR;
+    // 空窗 → 前瞻
+    //
+    // ⚠️ 晚报的定位是「今夜看点」（2026-09-29 定的，此前是「未来 72 小时」）。
+    // 起因：实测连续 7 天晚窗口（当日 06:00–18:00 开赛）一场比赛都没有 ——
+    // 当前赛季的比赛集中在北京时间 00:00–06:00（欧洲夜场）和 18:00 之后，
+    // 白天那一段是空的，所以晚报几乎必然落到前瞻分支。
+    // 而「未来 72 小时」会把明后天的比赛也混进来，把用户睡前真正想看的今夜稀释掉。
+    // → 晚报前瞻窗口改成「当日 18:00 → 次日 06:00」这一整夜，并纳入正在进行的比赛。
+    // 早报空窗（罕见）维持未来 72 小时，它面向的是「接下来一天」。
+    const isEvening = kind === 'evening';
+    const from = isEvening ? W.bjMs(dateStr, W.SPLIT_HOUR) : pubAt;
+    const to = isEvening ? W.bjMs(W.nextDay(dateStr), W.MORNING_HOUR) : from + 72 * HOUR;
     const list = W.M.filter((m) => {
       const t = Date.parse(m.start);
-      return m.status === 'upcoming' && t >= from && t < to;
+      const ok = isEvening ? m.status !== 'finished' : m.status === 'upcoming';
+      return ok && t >= from && t < to;
     });
     // ⚠️ mode 三态，第三种是 'empty'：既没有已结束的比赛、也没有未来赛程可前瞻。
     // 回测历史日期时必然出现（快照里那时段的比赛早已 finished，没有 upcoming），
@@ -74,10 +84,13 @@ function build(dateStr, kind) {
       out.note = '本窗口无已结束比赛，且快照内无未来赛程可供前瞻';
       return out;
     }
+    // 晚报把 windowLabel 换成「今夜」窗口：页面顶部显示的是这个区间，
+    // 继续用战报窗口（06:00–18:00）会和「今夜看点」的文案对不上。
+    if (isEvening) out.windowLabel = fmtWindow(from, to)
     // 每栏最多 3 条：三栏齐全时共 9 条，够读又不至于变成赛程表
-    out.preview = Pv.build(list, pubAt, 3);
-    out.preview.intro = Pv.intro(dateStr, kind, out.windowLabel, 72);
-    return out;
+    out.preview = Pv.build(list, pubAt, 3, { includeLive: isEvening, tag: isEvening ? '今夜看点' : '' })
+    out.preview.intro = Pv.intro(dateStr, kind, out.windowLabel, 72)
+    return out
   }
 
   // 头条

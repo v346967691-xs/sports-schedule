@@ -420,6 +420,24 @@ async function run() {
     && briefWin.isDue('2026-09-29T06:00:00+08:00', BJ_NOW) === true
     && briefWin.isDue('2026-09-29T21:00:00+08:00', Date.parse('2026-09-29T21:00:00+08:00')) === true)
 
+  // 晚报定位 = 「今夜看点」（2026-09-29 定的）：晚窗口（06:00–18:00）实测连续 7 天 0 场，
+  // 晚报几乎必然落到前瞻，所以前瞻窗口收窄到「当日 18:00 → 次日 06:00」这一整夜。
+  const Pv = require(path.join(ROOT, 'tools/brief-preview.js'))
+  check('晚报前瞻：文案改称「今夜看点」',
+    /今夜看点/.test(Pv.intro('2026-09-29', 'evening', '09/29 18:00 → 09/30 06:00', 72)),
+    Pv.intro('2026-09-29', 'evening', '09/29 18:00 → 09/30 06:00', 72))
+  check('早报前瞻：仍是「未来 72 小时」说法（不受影响）',
+    /未来 72 小时/.test(Pv.intro('2026-09-29', 'morning', '09/28 18:00 → 09/29 06:00', 72)))
+
+  const pvNow = Date.parse('2026-09-29T13:00:00Z')
+  const pvMatch = (st) => ({
+    id: 'pv-' + st, comp: 'ucl', stage: '', date: '2026-09-29', time: '20:00',
+    start: '2026-09-29T12:00:00Z', status: st, home: { zh: '皇家马德里' }, away: { zh: '拜仁' },
+  })
+  check('晚报前瞻：纳入正在进行的比赛', Pv.pick([pvMatch('live')], pvNow, true).length === 1)
+  check('晚报前瞻：已结束的比赛不进前瞻', Pv.pick([pvMatch('finished')], pvNow, true).length === 0)
+  check('早报前瞻：只取未开赛（进行中的不算）', Pv.pick([pvMatch('live')], pvNow, false).length === 0)
+
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸
   briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })

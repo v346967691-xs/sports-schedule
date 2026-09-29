@@ -44,9 +44,17 @@ function previewScore(m, nowMs) {
   return { score: Math.round(s), reasons };
 }
 
-function pick(list, nowMs, topN) {
+/**
+ * @param {Array} list 候选比赛
+ * @param {number} nowMs 出报时刻
+ * @param {boolean} [includeLive] 是否把「正在进行」的比赛也算进来
+ *   晚报（今夜看点）要开：18:00 开赛的比赛打到 21:00 出报时可能还没结束，
+ *   那正是用户此刻最关心的场次，排除掉的话清单里会缺一块。
+ *   早报不开：早报面向「接下来一天」，只预告未开赛的，避免把已结束的比赛再预告一遍。
+ */
+function pick(list, nowMs, includeLive, topN) {
   return list
-    .filter((m) => m.status === 'upcoming')
+    .filter((m) => (includeLive ? m.status !== 'finished' : m.status === 'upcoming'))
     .map((m) => {
       const r = previewScore(m, nowMs);
       return Object.assign({}, m, { _score: r.score, _reasons: r.reasons });
@@ -97,9 +105,10 @@ function groupOf(comp) {
 }
 
 // 生成一期前瞻（按项目分栏，每栏最多 perGroup 条）
-function build(list, nowMs, perGroup) {
+// opts.includeLive：晚报「今夜看点」传 true，把正在进行的比赛也算进候选
+function build(list, nowMs, perGroup, opts) {
   const n = perGroup || 2;
-  const ranked = pick(list, nowMs, 999);
+  const ranked = pick(list, nowMs, opts && opts.includeLive, 999);
   const buckets = { football: [], basketball: [], esports: [] };
   ranked.forEach((m) => {
     const g = groupOf(m.comp);
@@ -112,6 +121,8 @@ function build(list, nowMs, perGroup) {
 
   return {
     mode: 'preview',
+    // 晚报的 tag 是「今夜看点」，早报留空（早报是战报位，空窗时的前瞻不另起标题）
+    tag: (opts && opts.tag) || '',
     intro: '',
     items: top.map((m) => {
       const comp = compZh(m.comp);
@@ -140,10 +151,19 @@ function build(list, nowMs, perGroup) {
   };
 }
 
-// 引言：把窗口和接下来的时间跨度说清楚，不含任何预测
+/**
+ * 引言：把窗口和接下来的时间跨度说清楚，不含任何预测
+ *
+ * ⚠️ 晚报的 windowLabel 在 brief-build.js 里已经被换成「今夜」窗口
+ * （当日 18:00 → 次日 06:00），所以这里不能再写「……内没有已结束的比赛」——
+ * 那句话指的是战报窗口，两段拼在一起会自相矛盾。晚报直接说「今夜看点」。
+ */
 function intro(pubDate, kind, windowLabel, hours) {
+  if (kind === 'evening') {
+    return '北京时间' + windowLabel + '值得留意的比赛 —— 今夜看点。';
+  }
   return '北京时间' + windowLabel + '内没有已结束的比赛。'
-    + '以下是未来 ' + hours + ' 小时值得留意的' + (kind === 'evening' ? '夜场与次日' : '') + '对阵。';
+    + '以下是未来 ' + hours + ' 小时值得留意的对阵。';
 }
 
 module.exports = { previewScore, pick, build, why, intro };

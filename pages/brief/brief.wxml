@@ -70,7 +70,8 @@
 
     <!-- 前瞻（空窗日） -->
     <block wx:elif="{{cur.mode === 'preview' && cur.preview}}">
-      <view class="kicker">赛事前瞻</view>
+      <!-- 晚报的 tag 是「今夜看点」，早报前瞻没有 tag，退回「赛事前瞻」 -->
+      <view class="kicker">{{cur.preview.tag || '赛事前瞻'}}</view>
       <view class="pv-intro">{{cur.preview.intro}}</view>
 
       <block wx:for="{{cur.preview.items}}" wx:key="matchId">
@@ -83,7 +84,8 @@
           <view class="pv-teams">{{item.home}} vs {{item.away}}</view>
           <view class="pv-foot">
             <text class="pv-why" wx:if="{{item.why}}">{{item.why}}</text>
-            <text class="pv-rel">{{item.relative}}开赛</text>
+            <!-- 纳入「正在进行」的比赛后，relative 可能是「进行中」，不能再拼「开赛」 -->
+            <text class="pv-rel">{{item.relative === '进行中' ? item.relative : item.relative + '开赛'}}</text>
           </view>
         </view>
       </block>

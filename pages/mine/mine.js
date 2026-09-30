@@ -7,6 +7,9 @@ const reminders = require('../../utils/reminders')
 const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
+/** 关注球队的「未来赛程」最多往前看几天 */
+const TEAM_FUTURE_DAYS = 7
+
 Page({
   data: {
     authState: 'unknown',
@@ -115,8 +118,11 @@ Page({
     const filter = follows.asFilter()
     const ctx = { compOf: data.compOf }
     const results = list.length ? data.recentFinished({ teams: filter }, 24).slice(0, 6) : []
+    // 未来赛程只看到 7 天内：更远的比赛对「接下来看什么」没有意义，
+    // 而且关注多支球队时会被远期赛程占满，把近的挤掉
+    const horizon = fmt.shiftDay(fmt.todayStr(), TEAM_FUTURE_DAYS)
     const matches = list.length
-      ? data.query({ teams: filter, status: ['upcoming', 'live'] }).slice(0, 8)
+      ? data.query({ teams: filter, status: ['upcoming', 'live'], to: horizon }).slice(0, 8)
       : []
     this.setData({
       teams,

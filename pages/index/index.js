@@ -6,6 +6,9 @@ const reminders = require('../../utils/reminders')
 const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
+/** 关注球队的「未来赛程」最多往前看几天 */
+const TEAM_FUTURE_DAYS = 7
+
 const CATS = [
   { key: 'all', name: '全部' },
   { key: 'football', name: '足球' },
@@ -152,8 +155,11 @@ Page({
       teamResults: tf.length
         ? view.decorateList(data.recentFinished({ teams: tf }, 24).slice(0, 4), ctx)
         : [],
+      // 未来赛程只看到 7 天内（更远的占位置又用不上）
       teamMatches: tf.length
-        ? view.decorateList(data.query({ teams: tf, status: ['upcoming', 'live'] }).slice(0, 8), ctx)
+        ? view.decorateList(data.query({
+          teams: tf, status: ['upcoming', 'live'], to: fmt.shiftDay(fmt.todayStr(), TEAM_FUTURE_DAYS),
+        }).slice(0, 8), ctx)
         : [],
     })
 

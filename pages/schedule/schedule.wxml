@@ -66,7 +66,7 @@
     <view class="mc" wx:if="{{item.type === 'match'}}" data-id="{{item.match.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
         <view class="mc-tag" style="background: {{item.match._accent}}">{{item.match._compName}}</view>
-        <view class="mc-stage">{{item.match.stage}}</view>
+        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
         <view class="mc-status status-{{item.match.status}}">{{item.match._statusLabel}}</view>
       </view>
 

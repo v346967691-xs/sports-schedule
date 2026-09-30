@@ -67,7 +67,7 @@
     <view class="mc" wx:for="{{liveMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
         <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
-        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
         <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
       </view>
       <view class="mc-body">
@@ -105,7 +105,7 @@
       <view class="mc" wx:for="{{teamResults}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
         <view class="mc-head">
           <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
-          <view class="mc-stage">{{item.stage}}</view>
+          <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
           <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
         </view>
         <view class="mc-body">
@@ -135,7 +135,7 @@
     <view class="mc" wx:for="{{teamMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
         <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
-        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
         <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
       </view>
       <view class="mc-body">
@@ -218,7 +218,7 @@
     <view class="mc" wx:for="{{dayMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
         <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
-        <view class="mc-stage">{{item.stage}}</view>
+        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
         <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
       </view>
 

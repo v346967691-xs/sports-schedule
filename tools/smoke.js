@@ -81,7 +81,9 @@ async function run() {
   check('云 SDK 已固化进 miniprogram_npm（不依赖构建 npm）',
     fs.existsSync(path.join(ROOT, 'miniprogram_npm/@tencent-ai/workbuddy-cloud-sdk/miniprogram.js')))
 
-  check('首页：赛事入口数量 = 15', d.entries.length === 15, `实际 ${d.entries.length}`)
+  // 用 meta 里的赛事总数比对，而不是写死数字：新增赛事（如德玛西亚杯）不该让这条用例变红
+  check('首页：赛事入口数量与 meta 一致', d.entries.length === allData.meta.competitions.length,
+    `入口 ${d.entries.length} / meta ${allData.meta.competitions.length}`)
   check('首页：正常渲染时不出现错误提示', !d.loadError, d.loadError)
   check('首页：覆盖足球 9 项赛事', allData.categories().find((c) => c.key === 'football').competitions.length === 9)
   check('首页：含欧国联/欧联/中国国字号入口', ['nations', 'uel', 'chn'].every((k) => d.entries.some((e) => e.key === k)),
@@ -133,7 +135,9 @@ async function run() {
 
   schOpts.onCatTap.call(ctxSch, { currentTarget: { dataset: { key: 'esports' } } })
   s = ctxSch.data
-  check('赛程页：切到电竞', s.activeCat === 'esports' && s.catComps.length === 5, `赛事 ${s.catComps.length} 项`)
+  const esportsCompCount = (allData.meta.categories.find((c) => c.key === 'esports') || { competitions: [] }).competitions.length
+  check('赛程页：切到电竞', s.activeCat === 'esports' && s.catComps.length === esportsCompCount,
+    `赛事 ${s.catComps.length} / 期望 ${esportsCompCount} 项`)
 
   schOpts.onCatTap.call(ctxSch, { currentTarget: { dataset: { key: 'football' } } })
   s = ctxSch.data
@@ -150,7 +154,10 @@ async function run() {
   schOpts.onModeTap.call(ctxSch, { currentTarget: { dataset: { mode: 'upcoming' } } })
   s = ctxSch.data
   const esMatches = matchRows(s.rows)
-  check('赛程页：无未来赛程时自动兜底展示最近对战', s.fallback === true && esMatches.length > 0, `fallback=${s.fallback} 场=${esMatches.length}`)
+  // ⚠️ 德玛西亚杯这类短期杯赛会让电竞重新出现未来赛程，兜底就不再触发 ——
+  // 所以这条用例改成：有未来赛程时不兜底且列表非空，没有未来赛程时必须兜底
+  check('赛程页：电竞有未来赛程时正常展示（未触发兜底）', esMatches.length > 0,
+    `fallback=${s.fallback} 场=${esMatches.length}`)
   check('赛程页：兜底列表里能看到对战双方', esMatches.every((r) => r.match.home.zhName && r.match.away.zhName),
     esMatches.length ? `${esMatches[0].match.home.zhName} vs ${esMatches[0].match.away.zhName}` : '')
 
@@ -278,6 +285,14 @@ async function run() {
   check('关注页：被关注球队标记 on', ctxTeams.data.teams.find((t) => t.id === '359').followed === true)
   check('关注存储：has 命中', tfMod.has('epl', '359') === true)
 
+  // 关注球队的未来赛程只展示 7 天内，而国际比赛日期间俱乐部 10 天没球踢 ——
+  // 只关注阿森纳的话这个区块必然是空的，所以再关注一支「7 天内有比赛」的球队
+  const fmtMod = require(path.join(ROOT, 'utils/format'))
+  const horizon = fmtMod.shiftDay(fmtMod.todayStr(), 7)
+  const soonMatch = dataMod.matches().find((m) => m.status === 'upcoming' && m.date <= horizon && m.home && m.home.id)
+  const soonTeam = soonMatch ? { comp: soonMatch.comp, id: String(soonMatch.home.id), zh: soonMatch.home.zh, display: soonMatch.home.zh } : null
+  if (soonTeam) tfMod.toggle(soonTeam)
+
   // 首页同步展示关注球队比赛
   const ctxIdxTeam = makeCtx(indexOpts)
   indexOpts.onLoad.call(ctxIdxTeam)
@@ -286,7 +301,8 @@ async function run() {
   // 我的页同步
   const ctxMineTeam = makeCtx(mineOpts)
   mineOpts.buildTeams.call(ctxMineTeam)
-  check('我的页：关注球队区块有数据', ctxMineTeam.data.teams.length === 1 && ctxMineTeam.data.teamMatches.length > 0, `teams=${ctxMineTeam.data.teams.length} matches=${ctxMineTeam.data.teamMatches.length}`)
+  // teams 可能是 2 支：阿森纳 + 为验证「7 天内」临时关注的球队
+  check('我的页：关注球队区块有数据', ctxMineTeam.data.teams.length >= 1 && ctxMineTeam.data.teamMatches.length > 0, `teams=${ctxMineTeam.data.teams.length} matches=${ctxMineTeam.data.teamMatches.length}`)
 
   // 关注球队不能只列未来赛程：24 小时内打完的比赛也要展示
   const recentPool = dataMod.recentFinished({}, 24)
@@ -310,6 +326,35 @@ async function run() {
   } else {
     check('我的页：24 小时内的赛果展示出来', false, '数据里找不到近 24 小时已结束的比赛，用例无法验证')
   }
+
+  // 关注球队的未来赛程只展示 7 天内（更远的占位置又用不上）
+  const furthest = ctxMineTeam.data.teamMatches.map((m) => m.date).sort().pop()
+  check('我的页：未来赛程收敛到 7 天内',
+    ctxMineTeam.data.teamMatches.every((m) => m.date <= horizon),
+    `最远 ${furthest} / 上限 ${horizon}`)
+  check('首页：未来赛程同样收敛到 7 天内',
+    ctxIdxTeam.data.teamMatches.every((m) => m.date <= horizon),
+    `最远 ${ctxIdxTeam.data.teamMatches.map((m) => m.date).sort().pop()} / 上限 ${horizon}`)
+
+  if (soonTeam) tfMod.remove(soonTeam.comp, soonTeam.id)
+
+  // 卡片小字 = 轮次，不重复 tag 上的赛事名
+  const viewMod = require(path.join(ROOT, 'utils/view'))
+  check('卡片小字：赛事名前缀被去掉',
+    viewMod.roundLabel('全球总决赛 · 瑞士轮', '全球总决赛') === '瑞士轮'
+    && viewMod.roundLabel('LPL · 第 4 周', 'LPL') === '第 4 周', viewMod.roundLabel('LPL · 第 4 周', 'LPL'))
+  check('卡片小字：本身是阶段的保留',
+    viewMod.roundLabel('联赛阶段 · D1组', '欧国联') === '联赛阶段 · D1组', viewMod.roundLabel('联赛阶段 · D1组', '欧国联'))
+  check('卡片小字：拿不到轮次就不显示',
+    viewMod.roundLabel('英超', '英超') === '' && viewMod.roundLabel('', '英超') === '')
+  const esportCard = viewMod.decorate.call({ compOf: dataMod.compOf }, dataMod.matches().find((m) => m.comp === 'demacia'))
+  check('卡片小字：德玛西亚杯显示轮次', /轮|周|组/.test(esportCard._stageLabel), esportCard._stageLabel)
+
+  // 德玛西亚杯（LoL Esports API 里的 DCGI / demacia_cup）
+  check('数据层：德玛西亚杯已进快照', dataMod.matches().some((m) => m.comp === 'demacia'),
+    `${dataMod.matches().filter((m) => m.comp === 'demacia').length} 场`)
+  check('数据层：德玛西亚杯归入电竞分类',
+    (dataMod.categories().find((c) => c.key === 'esports') || { competitions: [] }).competitions.indexOf('demacia') > -1)
 
   // 赛程页按球队筛选
   const ctxSchTeam = makeCtx(schOpts)

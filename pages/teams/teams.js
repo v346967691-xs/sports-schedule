@@ -11,6 +11,16 @@ const { appInstance } = require('../../utils/app-instance')
  */
 const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'nba', 'lpl', 'lck']
 
+/**
+ * 某些赛事只开放部分球队供关注。
+ * 中国之队（chn）的比赛是从「中国队视角」抓的，对手（越南/马尔代夫/韩国U23…）
+ * 也会被 teamsOf 抽出来，但用户要关注的是国字号球队本身，不是对手 ——
+ * 这里按中文名过滤，只保留「中国」开头的（男足/女足/U17/U23亚运队）。
+ */
+const CAT_TEAM_FILTER = {
+  chn: /^中国/,
+}
+
 Page({
   data: {
     cats: [],
@@ -46,8 +56,10 @@ Page({
     }))
 
     const kw = String(this.data.keyword || '').trim().toLowerCase()
+    const catFilter = CAT_TEAM_FILTER[this.data.activeCat]
     const teams = data
       .teamsOf(this.data.activeCat)
+      .filter((t) => !catFilter || catFilter.test(t.display))
       .filter((t) => !kw
         || t.display.toLowerCase().indexOf(kw) > -1
         || t.name.toLowerCase().indexOf(kw) > -1

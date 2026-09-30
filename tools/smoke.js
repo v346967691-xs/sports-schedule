@@ -246,6 +246,12 @@ async function run() {
     chnTeams.map((t) => t.display).join('/'))
   check('数据层：中国之队含 U23 亚运队（补录，ESPN 不覆盖亚运会）',
     chnTeams.some((t) => /U23/.test(t.display)), chnTeams.filter((t) => /U23/.test(t.display)).map((t) => t.display).join('/'))
+  // 过滤发生在页面层：chn 分类只开放国字号，对手（越南/马尔代夫/韩国U23…）不进候选
+  teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'chn' } } })
+  check('关注页：中国之队只列国字号，对手不开放关注',
+    ctxTeams.data.teams.length > 0 && ctxTeams.data.teams.every((t) => /^中国/.test(t.display)),
+    ctxTeams.data.teams.map((t) => t.display).join('/'))
+  teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'epl' } } })
 
   // 补录通道：ESPN 的 218 个足球联赛里没有亚运会，中国 U23 亚运队靠 tools/manual-matches.js 兜底
   const manualMod = require(path.join(ROOT, 'tools/manual-matches.js'))

@@ -393,6 +393,8 @@ async function run() {
       font: '', fillStyle: '', textAlign: '', textBaseline: '',
       measureText: (s) => ({ width: String(s || '').length * 10 }),
       fillText: (s) => texts.push(String(s)),
+      strokeText: (s) => texts.push(String(s)),
+      lineWidth: 0, strokeStyle: '',
       drawImage: () => images.push(1),
       fillRect: () => rects.push(1),
       clearRect() {}, scale() {},
@@ -451,6 +453,15 @@ async function run() {
   posterMod.drawBrief(ctxBriefBg, { bg: {}, dateText: '9月30日', kindZh: '早报' })
   check('卡图：日报底图自带品牌时不重复画水印',
     ctxBriefBg.texts.indexOf('闪现赛程助手') < 0, ctxBriefBg.texts.join(' | ').slice(0, 60))
+
+  // 底图文件必须真的在包里，否则 loadBg 静默失败、悄悄退回纯色底
+  const bgFiles = ['images/share-match.jpg', 'images/share-brief.jpg']
+  const badBg = bgFiles.filter((f) => {
+    try { return fsMod.statSync(path.join(ROOT, f)).size > 200 * 1024 } catch (e) { return true }
+  })
+  check('卡图：两张底图已进包且单张 ≤ 200KB', badBg.length === 0, badBg.join(' '))
+  check('卡图：BG 常量已指向底图',
+    posterMod.BG.match === '/images/share-match.jpg' && posterMod.BG.brief === '/images/share-brief.jpg')
 
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {

@@ -30,8 +30,8 @@ const MUTED = '#8A93A6'
  * ⚠️ 底图自带品牌元素时，代码就不再重复画水印。
  */
 const BG = {
-  match: '',   // 例如 '/images/share-match.png'
-  brief: '',   // 例如 '/images/share-brief.png'
+  match: '/images/share-match.jpg',
+  brief: '/images/share-brief.jpg',
 }
 
 /** 载入底图；失败或没配置都返回 null，绘制时自动退回纯色底，不崩 */
@@ -215,15 +215,23 @@ function drawBrief(ctx, opt) {
     })
   }
 
-  // 底部小徽标：底框算装饰（底图自带就不画），里面的早/晚报文案始终填
+  // 底部小徽标：底框算装饰（底图自带就不画），里面的早/晚报文案始终填。
+  // 有底图时底部常是彩色装饰区，白字 + 深描边才压得住（PIL 预览验证过）。
   if (!o.bg) {
     ctx.fillStyle = accent
     roundRect(ctx, W / 2 - 46, H - 78, 92, 32, 16)
     ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = font(16, 600)
+    ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
+  } else {
+    ctx.font = font(16, 600)
+    ctx.lineWidth = 6
+    ctx.strokeStyle = 'rgba(31,36,48,0.9)'
+    ctx.strokeText(o.kindZh || '日报', W / 2, H - 62)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
   }
-  ctx.fillStyle = o.bg ? accent : '#ffffff'
-  ctx.font = font(16, 600)
-  ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
 
   ctx.textAlign = 'left'
   // 底图自带品牌元素，代码就不重复画

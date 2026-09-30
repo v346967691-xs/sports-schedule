@@ -371,6 +371,43 @@ async function run() {
   check('数据层：德玛西亚杯归入电竞分类',
     (dataMod.categories().find((c) => c.key === 'esports') || { competitions: [] }).competitions.indexOf('demacia') > -1)
 
+  // ⚠️ LoL 上游 state 会滞后于赛果：2026-09-30 亚运会实测，比赛打完 2 小时后
+  // state 仍是 unstarted，但 result.outcome 已经给出胜负。只信 state 会让赛果永远拉不下来。
+  const lolStatus = require(path.join(ROOT, 'tools/lol-status.js')).lolStatus
+  const mkEv = (state, r0, r1) => ({ state, match: { teams: [{ code: 'A', result: r0 }, { code: 'B', result: r1 }] } })
+  const win = { outcome: 'win', gameWins: 1 }
+  const loss = { outcome: 'loss', gameWins: 0 }
+  const none = { outcome: null, gameWins: 0 }
+
+  const lagSt = lolStatus(mkEv('unstarted', win, loss))
+  check('LoL 状态：state 滞后但已有 outcome → 判为已结束并出比分',
+    lagSt.status === 'finished' && lagSt.homeScore === 1 && lagSt.awayScore === 0 && lagSt.statusText === '已结束',
+    `${lagSt.status} ${lagSt.homeScore}-${lagSt.awayScore}`)
+
+  const pendSt = lolStatus(mkEv('unstarted', none, none))
+  check('LoL 状态：outcome 为空 → 仍按未开赛、不出比分',
+    pendSt.status === 'upcoming' && pendSt.homeScore === null && pendSt.awayScore === null && pendSt.statusText === '',
+    `${pendSt.status} ${pendSt.homeScore}-${pendSt.awayScore}`)
+
+  const liveSt = lolStatus(mkEv('inProgress', none, none))
+  check('LoL 状态：进行中不被误判为已结束',
+    liveSt.status === 'live' && liveSt.statusText === '进行中', liveSt.status)
+
+  const doneSt = lolStatus(mkEv('completed', loss, win))
+  check('LoL 状态：state=completed 正常取比分',
+    doneSt.status === 'finished' && doneSt.homeScore === 0 && doneSt.awayScore === 1,
+    `${doneSt.status} ${doneSt.homeScore}-${doneSt.awayScore}`)
+
+  const noTeamSt = lolStatus({ state: 'completed', match: { teams: [] } })
+  check('LoL 状态：队伍为空时不崩',
+    noTeamSt.status === 'finished' && noTeamSt.homeScore === null && noTeamSt.awayScore === null, noTeamSt.status)
+
+  // 已结束的比赛必须有比分，否则详情页会显示空白
+  const agDone = agMatches.filter((m) => m.status === 'finished')
+  check('数据层：亚运会已结束的比赛都有比分',
+    agDone.length > 0 && agDone.every((m) => typeof m.home.score === 'number' && typeof m.away.score === 'number'),
+    `${agDone.length} 场已结束`)
+
   // 赛程页按球队筛选
   const ctxSchTeam = makeCtx(schOpts)
   ctxSchTeam.setData({ activeCat: 'football', activeComp: 'epl', mode: 'upcoming', shownGroups: 3, teamFilter: { comp: 'epl', id: '359', display: '阿森纳', color: '#e20520' } })

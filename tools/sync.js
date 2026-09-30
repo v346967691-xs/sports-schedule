@@ -16,6 +16,7 @@ const fs = require('fs')
 const path = require('path')
 
 const zhNames = require('./zh-names')
+const { lolStatus } = require('./lol-status')
 
 const ROOT = path.join(__dirname, '..')
 const OUT_DIR = path.join(ROOT, 'data')
@@ -336,21 +337,22 @@ async function fetchLol(comp) {
     const tbd = { id: 'TBD', name: '待定', zh: '待定', abbr: 'TBD', color: '#8A93A6' }
     const home = teams[0] ? lolTeam(teams[0], comp.accent) : tbd
     const away = teams[1] ? lolTeam(teams[1], comp.accent) : tbd
-    const finished = ev.state === 'completed'
+    // 上游 state 会滞后于实际赛果，判定逻辑见 tools/lol-status.js
+    const st = lolStatus(ev)
     return {
       id: `${comp.key}-${ev.match.id}`,
       comp: comp.key,
       start: ev.startTime,
       date: beijingDay(ev.startTime),
       time: beijingTime(ev.startTime),
-      status: finished ? 'finished' : ev.state === 'inProgress' ? 'live' : 'upcoming',
-      statusText: finished ? '已结束' : ev.state === 'inProgress' ? '进行中' : '',
+      status: st.status,
+      statusText: st.statusText,
       stage: `${comp.name} · ${ev.blockName || '常规赛'}`,
       venue: '',
       broadcast: [],
       bo: ev.match.strategy?.count || null,
-      home: { ...home, score: finished ? teams[0]?.result?.gameWins ?? null : null },
-      away: { ...away, score: finished ? teams[1]?.result?.gameWins ?? null : null },
+      home: { ...home, score: st.homeScore },
+      away: { ...away, score: st.awayScore },
       historical: !!forced,
     }
   }

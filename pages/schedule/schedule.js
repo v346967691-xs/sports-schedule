@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
@@ -203,5 +204,12 @@ Page({
   onPullDownRefresh() {
     this.reload()
     wx.stopPullDownRefresh()
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 按赛事查赛程与比分', path: '/pages/schedule/schedule' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 按赛事查赛程与比分' })
   },
 })

@@ -361,6 +361,25 @@ async function run() {
   check('卡片小字：足球与 NBA 不留空',
     footCards.length > 0 && footCards.every((c) => !!c._stageLabel),
     footCards.map((c) => c._compName + '=' + c._stageLabel).join(' '))
+
+  // ⚠️ 分享能力：页面不实现 onShareAppMessage，右上角「转发给朋友」和「复制链接」就是灰的，
+  //    而「复制链接」还依赖「转发给朋友」。2026-09-30 想在公众号图文挂卡片时才踩到。
+  const fsMod = require('fs')
+  const SHARE_PAGES = ['index', 'schedule', 'mine', 'detail', 'brief', 'teams', 'reminders']
+  const noShare = SHARE_PAGES.filter((p) => {
+    const s = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')
+    return s.indexOf('onShareAppMessage') < 0 || s.indexOf('onShareTimeline') < 0
+  })
+  check('分享：7 个页面都挂了分享方法（否则「复制链接」是灰的）',
+    noShare.length === 0, noShare.join(' ') || '全部已挂')
+
+  const shareMod = require(path.join(ROOT, 'utils/share.js'))
+  check('分享：默认标题与默认路径',
+    shareMod.message().title === shareMod.DEFAULT_TITLE && shareMod.message().path === '/pages/index/index',
+    shareMod.message().title)
+  // 朋友圈分享不支持 path，必须走 query
+  const tl = shareMod.timeline({ title: 'T', query: 'id=1' })
+  check('分享：朋友圈走 query 而不是 path', tl.query === 'id=1' && tl.path === undefined, JSON.stringify(tl))
   const esportCard = viewMod.decorate.call({ compOf: dataMod.compOf }, dataMod.matches().find((m) => m.comp === 'demacia'))
   check('卡片小字：德玛西亚杯显示轮次', /轮|周|组/.test(esportCard._stageLabel), esportCard._stageLabel)
 

@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const fmt = require('../../utils/format')
 const view = require('../../utils/view')
@@ -222,5 +223,12 @@ Page({
 
   goHome() {
     wx.switchTab({ url: '/pages/index/index' })
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 我的关注与提醒', path: '/pages/index/index' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 我的关注与提醒' })
   },
 })

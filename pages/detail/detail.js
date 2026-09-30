@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
@@ -134,5 +135,23 @@ Page({
     if (!comp) return
     app.globalData.pendingComp = comp.key
     wx.switchTab({ url: '/pages/schedule/schedule' })
+  },
+  onShareAppMessage() {
+    const m = this.data.match
+    if (!m) return share.message()
+    const h = m.home.zhName || m.home.name
+    const a = m.away.zhName || m.away.name
+    return share.message({
+      title: h + ' vs ' + a + ' · 赛程与比分',
+      path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}`,
+    })
+  },
+
+  onShareTimeline() {
+    const m = this.data.match
+    if (!m) return share.timeline()
+    const h = m.home.zhName || m.home.name
+    const a = m.away.zhName || m.away.name
+    return share.timeline({ title: h + ' vs ' + a + ' · 赛程与比分' })
   },
 })

@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const follows = require('../../utils/team-follows')
 const { appInstance } = require('../../utils/app-instance')
@@ -116,5 +117,12 @@ Page({
         wx.switchTab({ url: '/pages/mine/mine' })
       },
     })
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 关注你支持的球队', path: '/pages/index/index' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 关注你支持的球队' })
   },
 })

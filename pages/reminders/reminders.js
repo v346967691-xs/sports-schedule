@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const fmt = require('../../utils/format')
 const reminders = require('../../utils/reminders')
@@ -77,5 +78,12 @@ Page({
 
   goSchedule() {
     wx.switchTab({ url: '/pages/schedule/schedule' })
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 开赛提醒', path: '/pages/index/index' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 开赛提醒' })
   },
 })

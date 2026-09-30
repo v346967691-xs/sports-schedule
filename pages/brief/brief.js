@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const briefApi = require('../../utils/brief')
 
 Page({
@@ -65,5 +66,12 @@ Page({
     const id = e.currentTarget.dataset.id
     if (!id) return
     wx.navigateTo({ url: '/pages/detail/detail?id=' + encodeURIComponent(id) })
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 每日赛事日报', path: '/pages/brief/brief' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 每日赛事日报' })
   },
 })

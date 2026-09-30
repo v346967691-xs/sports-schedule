@@ -1,3 +1,4 @@
+const share = require('../../utils/share')
 const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
@@ -270,5 +271,12 @@ Page({
   goDetail(e) {
     const id = e.currentTarget.dataset.id
     wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(id)}` })
+  },
+  onShareAppMessage() {
+    return share.message({ title: '闪现赛程助手 · 足球 / NBA / 电竞赛程比分', path: '/pages/index/index' })
+  },
+
+  onShareTimeline() {
+    return share.timeline({ title: '闪现赛程助手 · 足球 / NBA / 电竞赛程比分' })
   },
 })

@@ -484,11 +484,37 @@ function dropLegacyJson() {
   })
 }
 
+/**
+ * 把补录表并进结果：ESPN 没有的赛事（亚运会等）靠它兜底。
+ *
+ * - 只保留落在抓取时间窗内的（补录表是长期文件，过期条目不该一直出现）
+ * - id 撞车时以已有数据为准，避免同一场比赛出现两条
+ * - 开赛超过 48 小时仍是 upcoming 的补录比赛直接丢弃：
+ *   补录的比分没法自动更新，与其长期挂一场「未开始」的过期比赛，不如下架。
+ */
+function mergeManual(rows, range) {
+  const manual = require('./manual-matches.js')
+  const had = {}
+  rows.forEach((m) => { had[m.id] = true })
+  const staleBefore = Date.now() - 48 * 3600000
+  return manual.filter((m) => {
+    if (!m || !m.id || had[m.id]) return false
+    if (m.date < range.from || m.date > range.to) return false
+    if (m.status === 'upcoming' && Date.parse(m.start) < staleBefore) return false
+    return true
+  })
+}
+
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true })
 
   const existingPath = path.join(OUT_DIR, 'matches.js')
   const existing = loadExisting(existingPath)
+
+  const metaRange = {
+    from: beijingDay(new Date(Date.now() - daysBack * 86400000).toISOString()),
+    to: beijingDay(new Date(Date.now() + daysForward * 86400000).toISOString()),
+  }
 
   const fetched = []
   const kept = []
@@ -520,7 +546,10 @@ async function main() {
     failed.push(comp.name)
   }
 
-  const all = [...kept, ...fetched].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+  // ESPN 覆盖不到的赛事（亚运会等）走补录表，详见 tools/manual-matches.js
+  const manualRows = mergeManual([...kept, ...fetched], metaRange)
+
+  const all = [...kept, ...fetched, ...manualRows].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
 
   const metaPath = path.join(OUT_DIR, 'meta.js')
   const oldMeta = path.join(OUT_DIR, 'meta.json')
@@ -529,10 +558,7 @@ async function main() {
     try { meta = JSON.parse(fs.readFileSync(oldMeta, 'utf8')) } catch { /* 用上面的默认值 */ }
   }
   meta.generatedAt = new Date().toISOString()
-  meta.range = {
-    from: beijingDay(new Date(Date.now() - daysBack * 86400000).toISOString()),
-    to: beijingDay(new Date(Date.now() + daysForward * 86400000).toISOString()),
-  }
+  meta.range = metaRange
   meta.categories = Object.entries(SPORT_CATS).map(([key, v]) => ({ key, name: v.name, competitions: v.competitions }))
   meta.competitions = COMPETITIONS.map((c) => ({
     key: c.key, name: c.name, full: c.full, cat: c.cat, accent: c.accent,

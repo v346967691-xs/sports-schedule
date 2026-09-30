@@ -25,7 +25,6 @@
       <view class="be-when" wx:if="{{brief.pubText}}">{{brief.pubText}} {{brief.kindZh}}</view>
     </view>
     <view class="be-title">{{brief.tip}}</view>
-    <view class="be-go">读今天这一期 ›</view>
   </view>
 
   <view class="stale-tip" wx:if="{{stats.stale}}">

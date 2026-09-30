@@ -244,6 +244,16 @@ async function run() {
   const chnTeams = dataMod.teamsOf('chn')
   check('数据层：中国之队可抽出国字号球队', chnTeams.some((t) => /^中国/.test(t.display)),
     chnTeams.map((t) => t.display).join('/'))
+  check('数据层：中国之队含 U23 亚运队（补录，ESPN 不覆盖亚运会）',
+    chnTeams.some((t) => /U23/.test(t.display)), chnTeams.filter((t) => /U23/.test(t.display)).map((t) => t.display).join('/'))
+
+  // 补录通道：ESPN 的 218 个足球联赛里没有亚运会，中国 U23 亚运队靠 tools/manual-matches.js 兜底
+  const manualMod = require(path.join(ROOT, 'tools/manual-matches.js'))
+  const bjToday = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const liveManual = manualMod.filter((m) => m.date >= bjToday)
+  check('数据层：补录表未过期的比赛都进了快照',
+    liveManual.length > 0 && liveManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
+    `补录 ${manualMod.length} 场，未过期 ${liveManual.length} 场`)
   check('数据层：query 支持 status 数组（live 归入即将开赛）', (() => {
     const up = dataMod.query({ status: 'upcoming' }).length
     const upLive = dataMod.query({ status: ['upcoming', 'live'] }).length

@@ -77,13 +77,6 @@
   color: var(--text);
 }
 
-.be-go {
-  margin-top: 12rpx;
-  font-size: 22rpx;
-  color: #c0392b;
-  font-weight: 600;
-}
-
 /* 数据陈旧警告：定时任务停了（如电脑关机）时提示用户比分可能不是最新的 */
 .stale-tip {
   margin: 20rpx 24rpx 0;

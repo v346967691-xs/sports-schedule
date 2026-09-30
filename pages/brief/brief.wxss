@@ -27,19 +27,18 @@
 }
 .mast-title-row .brief-share {
   position: absolute;
-  right: 6rpx;
-  top: 50%;
+  /* 2026-09-30 用户定：贴右下角微挪，深蓝实底白字，两侧留白收紧（宽度随文字自适应） */
+  right: 0;
+  top: calc(50% + 8rpx);
   transform: translateY(-50%);
   margin: 0;
-  width: 168rpx;
   height: 60rpx;
   line-height: 54rpx;
-  padding: 0;
+  padding: 0 20rpx;
   font-size: 24rpx;
-  color: #14235c;
-  background: transparent;
+  color: #fff;
+  background: #14235c;
   border: 2rpx solid #14235c;
-  /* 2026-09-30 用户定：圆角矩形，不是胶囊；略放大一档，但仍要给标题让位 */
   border-radius: 10rpx;
   box-sizing: border-box;
 }

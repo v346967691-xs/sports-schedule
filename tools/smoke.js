@@ -490,19 +490,20 @@ async function run() {
   check('布局：日报页「分享好友」在标题行右侧',
     titleRow.indexOf('mast-title') > -1 && titleRow.indexOf('分享好友') > -1
     && /\.mast-title-row\s+\.brief-share\s*\{[^}]*position:\s*absolute/.test(bWxss))
-  // 2026-09-30 用户定：圆角矩形（不是胶囊），且要比初版略大，但不能大到压住报头标题
+  // 2026-09-30 用户定：深蓝实底白字、圆角矩形，两侧留白收紧（宽度随文字自适应，不写死）
   const briefBtnCss = (bWxss.match(/\.mast-title-row\s+\.brief-share\s*\{([\s\S]*?)\}/) || [])[1] || ''
-  const briefBtnW = Number((briefBtnCss.match(/width:\s*(\d+)rpx/) || [])[1] || 0)
   const briefBtnR = Number((briefBtnCss.match(/border-radius:\s*(\d+)rpx/) || [])[1] || 999)
+  const briefBtnPad = Number((briefBtnCss.match(/padding:\s*0\s+(\d+)rpx/) || [])[1] || 999)
+  check('布局：日报页分享按钮是深蓝实底白字（#14235c）',
+    /background:\s*#14235c/.test(briefBtnCss) && /color:\s*#fff/.test(briefBtnCss))
   check('布局：日报页分享按钮是圆角矩形（圆角 ≤ 16rpx）',
     briefBtnR > 0 && briefBtnR <= 16, `border-radius: ${briefBtnR}rpx`)
-  check('布局：日报页分享按钮尺寸适中（160rpx ≤ 宽 ≤ 190rpx）',
-    briefBtnW >= 160 && briefBtnW <= 190, `width: ${briefBtnW}rpx`)
-  // 报头宽度 750-64=686rpx，标题「闪现赛程日报」居中约占 312rpx → 右边界约 499rpx。
-  // 按钮绝对定位贴右，必须给标题留出 ≥10rpx 视觉间隙，否则会撞上。
-  const rightPad = Number((briefBtnCss.match(/right:\s*(\d+)rpx/) || [])[1] || 0)
-  check('布局：日报页分享按钮不与报头标题相撞（右侧留 ≥10rpx）',
-    686 - rightPad - briefBtnW >= 509, `标题右缘 499rpx，按钮左缘 ${686 - rightPad - briefBtnW}rpx`)
+  check('布局：日报页分享按钮两侧留白收紧（左右 padding ≤ 24rpx，无固定宽）',
+    briefBtnPad <= 24 && !/width:\s*\d+rpx/.test(briefBtnCss), `padding: 0 ${briefBtnPad}rpx`)
+  // 按钮最宽 ≈ 4 字 ×24rpx + 两侧 padding + 边框 = 96+48+4 = 148rpx，
+  // 报头 750-64=686rpx、标题右缘约 499rpx → 贴右时左缘 ≥ 538rpx，留 39rpx 间隙，不会撞标题。
+  check('布局：日报页分享按钮不与报头标题相撞',
+    686 - 148 >= 509 && briefBtnPad <= 24, `最宽 148rpx，左缘 ≥ ${686 - 148}rpx`)
 
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {

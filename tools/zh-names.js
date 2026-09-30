@@ -86,6 +86,17 @@ const LOL_ZH = {
   FLY: 'FlyQuest', TLAW: 'Team Liquid', PSG: 'PSG Talon', CFO: '中信飞牡蛎',
   VKS: 'Vivo Keyd Stars', TSW: 'Team Secret Whales', FUR: 'FURIA', LYON: 'LYON',
   '100T': '100 Thieves', DCG: 'Deep Cross Gaming',
+  // 亚运会电竞（国家队，用 IOC 三字码）
+  // ⚠️ 港澳台必须写「中国香港 / 中国澳门 / 中国台北」，这是硬性要求，不能简写
+  CHN: '中国', TPE: '中国台北', HKG: '中国香港', MAC: '中国澳门',
+  KOR: '韩国', JPN: '日本', VIE: '越南', THA: '泰国', PHI: '菲律宾', INA: '印度尼西亚',
+  MAS: '马来西亚', SGP: '新加坡', IND: '印度', PAK: '巴基斯坦', KSA: '沙特', UAE: '阿联酋',
+  KAZ: '哈萨克斯坦', UZB: '乌兹别克斯坦', MGL: '蒙古', QAT: '卡塔尔', BRN: '巴林',
+  SRI: '斯里兰卡', NEP: '尼泊尔', BAN: '孟加拉国', MYA: '缅甸', CAM: '柬埔寨', LAO: '老挝',
+  // 其他赛区（VCS / LTA 等，世界赛常见）
+  GAM: 'GAM Esports', RED: 'RED Kalunga', SR: 'Shopify Rebellion',
+  // 未确定的对阵方（接口有时先占位为 TBD），不补的话小程序上会直接显示 TBD
+  TBD: '待定',
 }
 
 /** 足球 / NBA 队名（按 ESPN team id） */

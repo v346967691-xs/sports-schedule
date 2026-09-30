@@ -81,6 +81,11 @@ const COMPETITIONS = [
     // LoL Esports API 的 leagues 列表里叫 DCGI（demacia_cup）
     lol: '117126995932274206', lolSlug: 'demacia_cup', accent: '#2E7CF6',
   },
+  {
+    key: 'agames', source: 'lol', cat: 'esports', name: '亚运会电竞', full: '亚运会 · 英雄联盟项目',
+    // LoL Esports API 的 leagues 列表里叫 Asian Games（asian_games）
+    lol: '117228885404001005', lolSlug: 'asian_games', accent: '#C8952A',
+  },
   { key: 'lck', source: 'lol', cat: 'esports', name: 'LCK', full: '英雄联盟冠军联赛 · 韩国赛区', lol: '98767991310872058', lolSlug: 'lck', accent: '#1155A3' },
   { key: 'lec', source: 'lol', cat: 'esports', name: 'LEC', full: '英雄联盟锦标赛 · EMEA 赛区', lol: '98767991302996019', lolSlug: 'lec', accent: '#6B3FA0' },
   { key: 'worlds', source: 'lol', cat: 'esports', name: '全球总决赛', full: '英雄联盟全球总决赛', lol: '98767975604431411', lolSlug: 'worlds', accent: '#B99433' },
@@ -93,7 +98,7 @@ const SPORT_CATS = {
     competitions: ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'ucl', 'uel', 'nations', 'chn'],
   },
   basketball: { name: '篮球', competitions: ['nba'] },
-  esports: { name: '电竞', competitions: ['lpl', 'demacia', 'lck', 'lec', 'worlds', 'msi'] },
+  esports: { name: '电竞', competitions: ['lpl', 'demacia', 'lck', 'lec', 'worlds', 'msi', 'agames'] },
 }
 
 /** 解析命令行第四个参数，决定本次要刷哪些赛事 */

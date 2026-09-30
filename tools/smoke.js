@@ -353,6 +353,21 @@ async function run() {
   // 德玛西亚杯（LoL Esports API 里的 DCGI / demacia_cup）
   check('数据层：德玛西亚杯已进快照', dataMod.matches().some((m) => m.comp === 'demacia'),
     `${dataMod.matches().filter((m) => m.comp === 'demacia').length} 场`)
+
+  // 亚运会电竞（LoL Esports API 里的 Asian Games / asian_games）
+  const agMatches = dataMod.matches().filter((m) => m.comp === 'agames')
+  check('数据层：亚运会电竞已进快照', agMatches.length > 0, `${agMatches.length} 场`)
+  check('数据层：亚运会电竞归入电竞分类',
+    (dataMod.categories().find((c) => c.key === 'esports') || { competitions: [] }).competitions.indexOf('agames') > -1)
+  // 国家队要有中文名，否则小程序上全是 "Saudi Arabia"
+  check('数据层：亚运会队伍有中文名',
+    agMatches.length > 0 && agMatches.every((m) => !!m.home.zh && !!m.away.zh),
+    agMatches.filter((m) => !m.home.zh || !m.away.zh).slice(0, 2).map((m) => m.home.name + '/' + m.away.name).join(' ') || '全覆盖')
+  // ⚠️ 港澳台必须写成「中国香港 / 中国澳门 / 中国台北」，简写是硬伤
+  const agNames = agMatches.map((m) => m.home.zh + '|' + m.away.zh).join('|')
+  check('数据层：港澳台队名合规（中国香港/中国台北）',
+    !/^(香港|台北|澳门)\|/.test(agNames) && !/\|(香港|台北|澳门)$/.test(agNames)
+    && !/(^|\|)(香港|台北|澳门)(\||$)/.test(agNames), agNames.slice(0, 60))
   check('数据层：德玛西亚杯归入电竞分类',
     (dataMod.categories().find((c) => c.key === 'esports') || { competitions: [] }).competitions.indexOf('demacia') > -1)
 

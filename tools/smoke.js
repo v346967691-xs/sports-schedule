@@ -386,12 +386,16 @@ async function run() {
   // 假 ctx：只记录画了什么文字，用来验证卡面内容
   function fakeCtx() {
     const texts = []
+    const images = []
+    const rects = []
     return {
-      texts,
+      texts, images, rects,
       font: '', fillStyle: '', textAlign: '', textBaseline: '',
       measureText: (s) => ({ width: String(s || '').length * 10 }),
       fillText: (s) => texts.push(String(s)),
-      fillRect() {}, clearRect() {}, scale() {},
+      drawImage: () => images.push(1),
+      fillRect: () => rects.push(1),
+      clearRect() {}, scale() {},
       beginPath() {}, moveTo() {}, arcTo() {}, closePath() {}, fill() {},
     }
   }
@@ -427,6 +431,26 @@ async function run() {
   const longLines = ctxL.texts.filter((t) => t.indexOf('一一') > -1)
   check('卡图：日报副标题最多两行且带省略号',
     longLines.length <= 2 && longLines.every((t) => t.length < 60), `${longLines.length} 行`)
+
+  // 底图（模板图）支持：给了图就贴图，没给就退回代码画的纯色底，两种情况都不能崩
+  const ctxBg = fakeCtx()
+  posterMod.drawMatch(ctxBg, {
+    bg: {}, home: '中国U23亚运队', away: '韩国U23', homeScore: 1, awayScore: 2,
+  })
+  check('卡图：有底图时先贴图再写字',
+    ctxBg.images.length === 1 && ctxBg.rects.length === 0 && ctxBg.texts.length > 0,
+    `drawImage=${ctxBg.images.length} fillRect=${ctxBg.rects.length}`)
+
+  const ctxNoBg = fakeCtx()
+  posterMod.drawMatch(ctxNoBg, { home: '阿森纳', away: '切尔西', homeScore: 0, awayScore: 0 })
+  check('卡图：没有底图时退回纯色底（不崩且不贴图）',
+    ctxNoBg.images.length === 0 && ctxNoBg.rects.length > 0 && ctxNoBg.texts.length > 0,
+    `drawImage=${ctxNoBg.images.length} fillRect=${ctxNoBg.rects.length}`)
+
+  const ctxBriefBg = fakeCtx()
+  posterMod.drawBrief(ctxBriefBg, { bg: {}, dateText: '9月30日', kindZh: '早报' })
+  check('卡图：日报底图自带品牌时不重复画水印',
+    ctxBriefBg.texts.indexOf('闪现赛程助手') < 0, ctxBriefBg.texts.join(' | ').slice(0, 60))
 
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {

@@ -22,6 +22,33 @@ const PAPER = '#f2ede2'
 const INK = '#1f2430'
 const MUTED = '#8A93A6'
 
+/**
+ * 底图（模板图）路径 —— 留空则用代码画的纯色底。
+ *
+ * 底图由外部设计/生成后放进 images/ 目录，这里填上路径即可生效，
+ * 绘制时先贴图、再往上写动态文字（队名/比分/日期/日报标题）。
+ * ⚠️ 底图自带品牌元素时，代码就不再重复画水印。
+ */
+const BG = {
+  match: '',   // 例如 '/images/share-match.png'
+  brief: '',   // 例如 '/images/share-brief.png'
+}
+
+/** 载入底图；失败或没配置都返回 null，绘制时自动退回纯色底，不崩 */
+function loadBg(canvas, src) {
+  return new Promise((resolve) => {
+    if (!src || !canvas || !canvas.createImage) return resolve(null)
+    try {
+      const img = canvas.createImage()
+      img.onload = () => resolve(img)
+      img.onerror = () => resolve(null)
+      img.src = src
+    } catch (e) {
+      resolve(null)
+    }
+  })
+}
+
 /** 截到指定宽度内，超出加省略号 */
 function ellipsis(ctx, text, maxWidth) {
   const s = String(text || '')
@@ -90,12 +117,16 @@ function drawMatch(ctx, opt) {
   const hasScore = typeof o.homeScore === 'number' && typeof o.awayScore === 'number'
   const score = hasScore ? `${o.homeScore} - ${o.awayScore}` : 'VS'
 
-  // 背景：赛事主色
-  ctx.fillStyle = accent
-  ctx.fillRect(0, 0, W, H)
-  // 半透明深色蒙层，保证白字可读
-  ctx.fillStyle = 'rgba(10,14,24,0.42)'
-  ctx.fillRect(0, 0, W, H)
+  // 背景：有底图就贴图，没有才用代码画的纯色 + 蒙层
+  if (o.bg) {
+    ctx.drawImage(o.bg, 0, 0, W, H)
+  } else {
+    ctx.fillStyle = accent
+    ctx.fillRect(0, 0, W, H)
+    // 半透明深色蒙层，保证白字可读
+    ctx.fillStyle = 'rgba(10,14,24,0.42)'
+    ctx.fillRect(0, 0, W, H)
+  }
 
   // 顶部：赛事名 · 阶段
   ctx.fillStyle = 'rgba(255,255,255,0.86)'
@@ -110,9 +141,11 @@ function drawMatch(ctx, opt) {
     ctx.textAlign = 'left'
   }
 
-  // 分隔线
-  ctx.fillStyle = 'rgba(255,255,255,0.18)'
-  ctx.fillRect(28, 62, W - 56, 1)
+  // 分隔线（装饰元素：底图自带设计时就不画，免得压在图上）
+  if (!o.bg) {
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'
+    ctx.fillRect(28, 62, W - 56, 1)
+  }
 
   // 中部：主队 / 比分 / 客队
   ctx.textAlign = 'center'
@@ -150,12 +183,15 @@ function drawBrief(ctx, opt) {
   const o = opt || {}
   const accent = o.accent || '#C8952A'
 
-  ctx.fillStyle = PAPER
-  ctx.fillRect(0, 0, W, H)
-
-  // 顶部色条
-  ctx.fillStyle = accent
-  ctx.fillRect(0, 0, W, 10)
+  if (o.bg) {
+    ctx.drawImage(o.bg, 0, 0, W, H)
+  } else {
+    ctx.fillStyle = PAPER
+    ctx.fillRect(0, 0, W, H)
+    // 顶部色条
+    ctx.fillStyle = accent
+    ctx.fillRect(0, 0, W, 10)
+  }
 
   // 日期
   ctx.fillStyle = MUTED
@@ -179,16 +215,19 @@ function drawBrief(ctx, opt) {
     })
   }
 
-  // 底部小徽标
-  ctx.fillStyle = accent
-  roundRect(ctx, W / 2 - 46, H - 78, 92, 32, 16)
-  ctx.fill()
-  ctx.fillStyle = '#ffffff'
+  // 底部小徽标：底框算装饰（底图自带就不画），里面的早/晚报文案始终填
+  if (!o.bg) {
+    ctx.fillStyle = accent
+    roundRect(ctx, W / 2 - 46, H - 78, 92, 32, 16)
+    ctx.fill()
+  }
+  ctx.fillStyle = o.bg ? accent : '#ffffff'
   ctx.font = font(16, 600)
   ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
 
   ctx.textAlign = 'left'
-  brand(ctx, MUTED)
+  // 底图自带品牌元素，代码就不重复画
+  if (!o.bg) brand(ctx, MUTED)
 }
 
 /**
@@ -219,20 +258,24 @@ function build(page, id, kind, opt) {
       canvas.height = H * dpr
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, W, H)
-      if (kind === 'brief') drawBrief(ctx, opt)
-      else drawMatch(ctx, opt)
 
-      wx.canvasToTempFilePath({
-        canvas,
-        x: 0, y: 0, width: W, height: H,
-        destWidth: W * dpr, destHeight: H * dpr,
-        fileType: 'jpg',
-        quality: 0.92,
-        success: (r) => resolve(r.tempFilePath || ''),
-        fail: () => resolve(''),
+      const bgSrc = kind === 'brief' ? BG.brief : BG.match
+      loadBg(canvas, bgSrc).then((bg) => {
+        const full = Object.assign({}, opt, { bg: bg || null })
+        if (kind === 'brief') drawBrief(ctx, full)
+        else drawMatch(ctx, full)
+        wx.canvasToTempFilePath({
+          canvas,
+          x: 0, y: 0, width: W, height: H,
+          destWidth: W * dpr, destHeight: H * dpr,
+          fileType: 'jpg',
+          quality: 0.92,
+          success: (r) => resolve(r.tempFilePath || ''),
+          fail: () => resolve(''),
+        })
       })
     })
   })
 }
 
-module.exports = { build, drawMatch, drawBrief, wrap, ellipsis, W, H }
+module.exports = { build, drawMatch, drawBrief, wrap, ellipsis, loadBg, BG, W, H }

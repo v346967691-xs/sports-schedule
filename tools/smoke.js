@@ -490,20 +490,21 @@ async function run() {
   check('布局：日报页「分享好友」在标题行右侧',
     titleRow.indexOf('mast-title') > -1 && titleRow.indexOf('分享好友') > -1
     && /\.mast-title-row\s+\.brief-share\s*\{[^}]*position:\s*absolute/.test(bWxss))
-  // 2026-09-30 用户定：深蓝实底白字、圆角矩形，两侧留白收紧（宽度随文字自适应，不写死）
+  // 2026-09-30 用户定：深蓝实底白字、圆角矩形、贴右下。
+  // ⚠️ 必须**写死宽度**：去掉 width 让按钮自适应时，微信 button 的默认样式在电脑预览
+  // 会把按钮撑到约半屏宽、盖住标题（20:31 截图实锤）。所以这里反向断言：必须有固定宽。
   const briefBtnCss = (bWxss.match(/\.mast-title-row\s+\.brief-share\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  const briefBtnW = Number((briefBtnCss.match(/width:\s*(\d+)rpx/) || [])[1] || 0)
   const briefBtnR = Number((briefBtnCss.match(/border-radius:\s*(\d+)rpx/) || [])[1] || 999)
-  const briefBtnPad = Number((briefBtnCss.match(/padding:\s*0\s+(\d+)rpx/) || [])[1] || 999)
   check('布局：日报页分享按钮是深蓝实底白字（#14235c）',
     /background:\s*#14235c/.test(briefBtnCss) && /color:\s*#fff/.test(briefBtnCss))
   check('布局：日报页分享按钮是圆角矩形（圆角 ≤ 16rpx）',
     briefBtnR > 0 && briefBtnR <= 16, `border-radius: ${briefBtnR}rpx`)
-  check('布局：日报页分享按钮两侧留白收紧（左右 padding ≤ 24rpx，无固定宽）',
-    briefBtnPad <= 24 && !/width:\s*\d+rpx/.test(briefBtnCss), `padding: 0 ${briefBtnPad}rpx`)
-  // 按钮最宽 ≈ 4 字 ×24rpx + 两侧 padding + 边框 = 96+48+4 = 148rpx，
-  // 报头 750-64=686rpx、标题右缘约 499rpx → 贴右时左缘 ≥ 538rpx，留 39rpx 间隙，不会撞标题。
-  check('布局：日报页分享按钮不与报头标题相撞',
-    686 - 148 >= 509 && briefBtnPad <= 24, `最宽 148rpx，左缘 ≥ ${686 - 148}rpx`)
+  check('布局：日报页分享按钮必须写死宽度且 ≤ 160rpx（自适应会被默认样式撑爆）',
+    briefBtnW > 0 && briefBtnW <= 160, `width: ${briefBtnW}rpx`)
+  // 报头 750-64=686rpx，标题「闪现赛程日报」居中约占 312rpx → 右边界约 499rpx。
+  check('布局：日报页分享按钮不与报头标题相撞（按钮左缘 ≥ 509rpx）',
+    686 - briefBtnW >= 509, `标题右缘 499rpx，按钮左缘 ${686 - briefBtnW}rpx`)
 
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {

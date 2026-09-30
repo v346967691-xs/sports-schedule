@@ -27,14 +27,18 @@
 }
 .mast-title-row .brief-share {
   position: absolute;
-  /* 2026-09-30 用户定：贴右下角微挪，深蓝实底白字，两侧留白收紧（宽度随文字自适应） */
+  /* 2026-09-30 用户定：深蓝实底白字、圆角矩形、贴右下。
+     ⚠️ 必须写死宽度：不设 width 时微信 button 在部分渲染器会把默认样式撑开，
+     电脑预览实测按钮被拉到约半屏宽、盖住标题（20:31 截图）。 */
   right: 0;
-  top: calc(50% + 8rpx);
+  top: 58%;
   transform: translateY(-50%);
   margin: 0;
+  width: 144rpx;
   height: 60rpx;
   line-height: 54rpx;
-  padding: 0 20rpx;
+  padding: 0;
+  text-align: center;
   font-size: 24rpx;
   color: #fff;
   background: #14235c;

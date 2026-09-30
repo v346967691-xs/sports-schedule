@@ -338,15 +338,29 @@ async function run() {
 
   if (soonTeam) tfMod.remove(soonTeam.comp, soonTeam.id)
 
-  // 卡片小字 = 轮次，不重复 tag 上的赛事名
+  // 卡片小字 = 轮次；拿不到轮次（足球/NBA，ESPN 不提供）就退回赛事名，不留空
   const viewMod = require(path.join(ROOT, 'utils/view'))
   check('卡片小字：赛事名前缀被去掉',
     viewMod.roundLabel('全球总决赛 · 瑞士轮', '全球总决赛') === '瑞士轮'
     && viewMod.roundLabel('LPL · 第 4 周', 'LPL') === '第 4 周', viewMod.roundLabel('LPL · 第 4 周', 'LPL'))
   check('卡片小字：本身是阶段的保留',
     viewMod.roundLabel('联赛阶段 · D1组', '欧国联') === '联赛阶段 · D1组', viewMod.roundLabel('联赛阶段 · D1组', '欧国联'))
-  check('卡片小字：拿不到轮次就不显示',
-    viewMod.roundLabel('英超', '英超') === '' && viewMod.roundLabel('', '英超') === '')
+  // 2026-09-30 用户决定：足球/NBA 没有轮次号时小字显示赛事名，别留空
+  check('卡片小字：拿不到轮次时退回赛事名',
+    viewMod.roundLabel('英超', '英超') === '英超' && viewMod.roundLabel('', '英超') === '英超',
+    viewMod.roundLabel('英超', '英超'))
+  // ⚠️ 防「欧联 欧联」这类重复：削完前缀后不能把赛事名再拼一遍
+  check('卡片小字：不会把赛事名重复一遍',
+    viewMod.roundLabel('欧联', '欧联') === '欧联' && viewMod.roundLabel('欧联 · 欧联', '欧联') === '欧联',
+    viewMod.roundLabel('欧联 · 欧联', '欧联'))
+  // 足球/NBA 卡片小字必须非空（曾经短暂留空，卡片看着太空）
+  const footCards = ['epl', 'liga', 'ucl', 'uel', 'nations', 'nba']
+    .map((k) => dataMod.matches().find((m) => m.comp === k))
+    .filter(Boolean)
+    .map((m) => viewMod.decorate.call({ compOf: dataMod.compOf }, m))
+  check('卡片小字：足球与 NBA 不留空',
+    footCards.length > 0 && footCards.every((c) => !!c._stageLabel),
+    footCards.map((c) => c._compName + '=' + c._stageLabel).join(' '))
   const esportCard = viewMod.decorate.call({ compOf: dataMod.compOf }, dataMod.matches().find((m) => m.comp === 'demacia'))
   check('卡片小字：德玛西亚杯显示轮次', /轮|周|组/.test(esportCard._stageLabel), esportCard._stageLabel)
 

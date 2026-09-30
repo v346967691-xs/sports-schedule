@@ -18,23 +18,23 @@ function isRoundPart(s) {
 }
 
 /**
- * 「赛事名 · 轮次」→「轮次」
+ * 「赛事名 · 轮次」→「轮次」；拿不到轮次时退回「赛事名」
  *
- * 卡片 tag 上已经写着赛事名，小字再写一遍就是截图里那种「欧联 欧联」。
- * 第一段不是轮次描述时视为赛事名前缀，去掉；「联赛阶段 · D1组」这类第一段
- * 本身就是阶段，保留。
+ * 第一段不是轮次描述时视为赛事名前缀，削掉，避免「LPL · 第 1 周」在小字里
+ * 又写一遍 LPL；「联赛阶段 · D1组」这类第一段本身就是阶段，保留。
  *
- * ⚠️ 拿不到轮次就返回空串，由 WXML 用 wx:if 整行隐藏 —— 宁缺毋滥，
- * 绝不写 ESPN 数据里没有的东西（ESPN 各端点实测都没有足球轮次号，见 sync.js 注释）。
+ * ⚠️ 足球与 NBA 的 stage 数据里**只有赛事名**（实测："英超"/"欧冠"/"NBA"），
+ * 因为 ESPN 各端点都不提供轮次号（见 sync.js 注释）。
+ * 2026-09-30 用户决定：这种情况**小字显示赛事名**，不留空（曾短暂改成留空，
+ * 卡片看着太空）。别再改回留空，也别去「推导」轮次（第几场=第几轮的算法已被否决）。
  */
 function roundLabel(stage, compName) {
   const raw = String(stage || '').trim()
-  if (!raw) return ''
+  const name = String(compName || '').trim()
+  if (!raw) return name
   const parts = raw.split('·').map((s) => s.trim()).filter(Boolean)
   if (parts.length > 1 && !isRoundPart(parts[0])) parts.shift()
-  const label = parts.join(' · ')
-  // 退化检查：削完还是赛事名（说明数据里根本没有轮次），就别显示了
-  return label === compName ? '' : label
+  return parts.join(' · ') || name
 }
 
 function decorate(m) {

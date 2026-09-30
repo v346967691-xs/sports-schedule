@@ -1,4 +1,5 @@
 const share = require('../../utils/share')
+const poster = require('../../utils/poster')
 const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
@@ -15,6 +16,7 @@ Page({
     favBusy: false,
     isRemind: false,
     authState: 'unknown',
+    shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
   },
 
   onLoad(query) {
@@ -44,7 +46,30 @@ Page({
       isFav: app.isFav(match.id),
       isRemind: reminders.has(match.id),
       authState: app.globalData.authState,
+    }, () => this.buildShareImage())
+  },
+
+  /**
+   * 转发卡图：画「对阵双方 + 比分」。
+   * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
+   */
+  async buildShareImage() {
+    const m = this.data.match
+    const comp = this.data.comp || {}
+    if (!m) return
+    const img = await poster.build(this, 'share-canvas', 'match', {
+      comp: comp.full || comp.name || '',
+      stage: m.stage || '',
+      home: m.home.zhName || m.home.name,
+      away: m.away.zhName || m.away.name,
+      homeScore: m.home.score,
+      awayScore: m.away.score,
+      dateText: fmt.dayLabel(m.date),
+      timeText: m.time,
+      statusText: m.status === 'upcoming' ? '未开始' : (m.statusText || '已结束'),
+      accent: comp.accent || '#2E7CF6',
     })
+    if (img) this.setData({ shareImage: img })
   },
 
   onShow() {
@@ -141,9 +166,13 @@ Page({
     if (!m) return share.message()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
+    const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
+    // 有比分就把结果写进标题，比「赛程与比分」更值得点
+    const tail = hasScore ? `${m.home.score}-${m.away.score}` : (m.status === 'live' ? '进行中' : '赛程')
     return share.message({
-      title: h + ' vs ' + a + ' · 赛程与比分',
+      title: `${h} ${tail} ${a}`,
       path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}`,
+      imageUrl: this.data.shareImage,
     })
   },
 
@@ -152,6 +181,11 @@ Page({
     if (!m) return share.timeline()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
-    return share.timeline({ title: h + ' vs ' + a + ' · 赛程与比分' })
+    const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
+    const tail = hasScore ? `${m.home.score}-${m.away.score}` : '赛程'
+    return share.timeline({
+      title: `${h} ${tail} ${a}`,
+      imageUrl: this.data.shareImage,
+    })
   },
 })

@@ -1,4 +1,5 @@
 const share = require('../../utils/share')
+const poster = require('../../utils/poster')
 const briefApi = require('../../utils/brief')
 
 Page({
@@ -9,6 +10,7 @@ Page({
     loading: true,
     errTip: '',
     pubText: '',
+    shareImage: '',    // 转发卡图
   },
 
   onLoad() {
@@ -39,7 +41,24 @@ Page({
       idx,
       cur,
       pubText: briefApi.fmtPubAt(cur.pubAt),
+    }, () => this.buildShareImage())
+  },
+
+  /**
+   * 转发卡图：统一写「X月X日 闪现早/晚报」，副标题带这一期的摘要。
+   * 每次切期次都要重画（标题跟着期次变）。
+   */
+  async buildShareImage() {
+    const cur = this.data.cur
+    if (!cur) return
+    const dateText = briefApi.fmtPubAt(cur.pubAt).replace(/\s*\d{2}:\d{2}$/, '')
+    const img = await poster.build(this, 'share-canvas', 'brief', {
+      dateText,
+      kindZh: cur.kindZh || briefApi.kindZh(cur.kind),
+      sub: briefApi.teaser(cur) || (cur.preview && cur.preview.intro) || '',
+      accent: cur.kind === 'evening' ? '#3B4E8C' : '#C8952A',
     })
+    if (img && cur === this.data.cur) this.setData({ shareImage: img, shareDate: dateText })
   },
 
   onPrev() { this.pick(this.data.idx - 1) },
@@ -67,11 +86,24 @@ Page({
     if (!id) return
     wx.navigateTo({ url: '/pages/detail/detail?id=' + encodeURIComponent(id) })
   },
+  /** 分享标题统一为「X月X日闪现早/晚报」，与卡面一致 */
+  shareTitle() {
+    const cur = this.data.cur
+    if (!cur) return '闪现赛程助手 · 每日赛事日报'
+    const kind = cur.kindZh || briefApi.kindZh(cur.kind)
+    const d = this.data.shareDate || ''
+    return d ? `${d}闪现${kind}` : `闪现${kind}`
+  },
+
   onShareAppMessage() {
-    return share.message({ title: '闪现赛程助手 · 每日赛事日报', path: '/pages/brief/brief' })
+    return share.message({
+      title: this.shareTitle(),
+      path: '/pages/brief/brief',
+      imageUrl: this.data.shareImage,
+    })
   },
 
   onShareTimeline() {
-    return share.timeline({ title: '闪现赛程助手 · 每日赛事日报' })
+    return share.timeline({ title: this.shareTitle(), imageUrl: this.data.shareImage })
   },
 })

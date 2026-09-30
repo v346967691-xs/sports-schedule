@@ -1,3 +1,6 @@
+<!-- 离屏 canvas：转发前画分享卡用 -->
+<canvas type="2d" id="share-canvas" class="share-canvas"></canvas>
+
 <view class="paper">
 
   <!-- 报头 -->

@@ -380,6 +380,63 @@ async function run() {
   // 朋友圈分享不支持 path，必须走 query
   const tl = shareMod.timeline({ title: 'T', query: 'id=1' })
   check('分享：朋友圈走 query 而不是 path', tl.query === 'id=1' && tl.path === undefined, JSON.stringify(tl))
+
+  /* ---------- 转发卡图（utils/poster.js，离屏 canvas 绘制） ---------- */
+  const posterMod = require(path.join(ROOT, 'utils/poster.js'))
+  // 假 ctx：只记录画了什么文字，用来验证卡面内容
+  function fakeCtx() {
+    const texts = []
+    return {
+      texts,
+      font: '', fillStyle: '', textAlign: '', textBaseline: '',
+      measureText: (s) => ({ width: String(s || '').length * 10 }),
+      fillText: (s) => texts.push(String(s)),
+      fillRect() {}, clearRect() {}, scale() {},
+      beginPath() {}, moveTo() {}, arcTo() {}, closePath() {}, fill() {},
+    }
+  }
+
+  const ctxM = fakeCtx()
+  posterMod.drawMatch(ctxM, {
+    comp: '亚运会男足', stage: '半决赛',
+    home: '中国U23亚运队', away: '韩国U23',
+    homeScore: 1, awayScore: 2,
+    dateText: '9月30日', timeText: '14:00', statusText: '已结束', accent: '#C8102E',
+  })
+  const mText = ctxM.texts.join(' | ')
+  check('卡图：比赛卡画出双方队名',
+    mText.indexOf('中国U23亚运队') > -1 && mText.indexOf('韩国U23') > -1, mText.slice(0, 80))
+  check('卡图：比赛卡画出比分 1 - 2', mText.indexOf('1 - 2') > -1, mText.slice(0, 80))
+
+  // 未开赛（无比分）必须显示 VS，不能画成 "null - null"
+  const ctxU = fakeCtx()
+  posterMod.drawMatch(ctxU, { comp: '英超', home: '阿森纳', away: '切尔西', homeScore: null, awayScore: null })
+  const uText = ctxU.texts.join(' | ')
+  check('卡图：未开赛显示 VS 而不是 null',
+    uText.indexOf('VS') > -1 && uText.indexOf('null') < 0, uText.slice(0, 80))
+
+  const ctxB = fakeCtx()
+  posterMod.drawBrief(ctxB, { dateText: '9月30日', kindZh: '晚报', sub: '今夜看点：三场值得留意', accent: '#3B4E8C' })
+  const bText = ctxB.texts.join(' | ')
+  check('卡图：日报卡写「X月X日 + 闪现早/晚报」',
+    bText.indexOf('9月30日') > -1 && bText.indexOf('闪现晚报') > -1, bText.slice(0, 80))
+
+  // 长副标题要折行截断，不能溢出卡面
+  const ctxL = fakeCtx()
+  posterMod.drawBrief(ctxL, { dateText: '9月30日', kindZh: '早报', sub: '一'.repeat(200) })
+  const longLines = ctxL.texts.filter((t) => t.indexOf('一一') > -1)
+  check('卡图：日报副标题最多两行且带省略号',
+    longLines.length <= 2 && longLines.every((t) => t.length < 60), `${longLines.length} 行`)
+
+  // 页面接线：详情页与日报页都要有 canvas + buildShareImage
+  ;['detail', 'brief'].forEach((p) => {
+    const js = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')
+    const wxml = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.wxml'), 'utf8')
+    const wxss = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.wxss'), 'utf8')
+    check(`卡图：${p} 页接线完整（canvas + 生成逻辑 + 离屏样式）`,
+      js.indexOf('buildShareImage') > -1 && js.indexOf('poster.build') > -1
+      && wxml.indexOf('share-canvas') > -1 && wxss.indexOf('share-canvas') > -1)
+  })
   const esportCard = viewMod.decorate.call({ compOf: dataMod.compOf }, dataMod.matches().find((m) => m.comp === 'demacia'))
   check('卡片小字：德玛西亚杯显示轮次', /轮|周|组/.test(esportCard._stageLabel), esportCard._stageLabel)
 

@@ -2,8 +2,14 @@ const data = require('../../utils/data')
 const follows = require('../../utils/team-follows')
 const { appInstance } = require('../../utils/app-instance')
 
-/** 开放关注的赛事：五大联赛 + 欧国联（欧洲国家队） + NBA + LPL + LCK */
-const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'nba', 'lpl', 'lck']
+/**
+ * 开放关注的赛事：五大联赛 + 欧国联（欧洲国家队）+ 中国之队 + NBA + LPL + LCK
+ *
+ * chn（中国之队）里是国字号球队的比赛：男足、女足、U17 等。
+ * 球队的名单不是单独维护的，直接从 data.teamsOf(comp) 里抽，
+ * 所以只要有中国队的比赛进快照，这里就能选到，不用额外维护名单。
+ */
+const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'nba', 'lpl', 'lck']
 
 Page({
   data: {

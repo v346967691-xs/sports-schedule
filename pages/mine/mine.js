@@ -15,6 +15,7 @@ Page({
     favs: [],
     teams: [],
     teamMatches: [],
+    teamResults: [],
     reminderList: [],
     remindCount: 0,
     stat: { matches: 0, upcoming: 0, comps: 0, range: '' },
@@ -98,7 +99,12 @@ Page({
     wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(id)}` })
   },
 
-  /** 我关注的球队 + 他们的待开赛比赛 */
+  /**
+   * 我关注的球队 + 他们的比赛
+   *
+   * ⚠️ 不只列未来赛程：24 小时内打完的比赛也要展示（teamResults）。
+   * 只给未来赛程的话，用户刚看完的那场恰恰找不到，而那才是他最想回来看一眼的。
+   */
   buildTeams() {
     const list = follows.all()
     const teams = list.map((t) => Object.assign({}, t, {
@@ -106,12 +112,16 @@ Page({
       compName: data.compOf(t.comp).name,
       accent: data.compOf(t.comp).accent,
     }))
+    const filter = follows.asFilter()
+    const ctx = { compOf: data.compOf }
+    const results = list.length ? data.recentFinished({ teams: filter }, 24).slice(0, 6) : []
     const matches = list.length
-      ? data.query({ teams: follows.asFilter(), status: ['upcoming', 'live'] }).slice(0, 8)
+      ? data.query({ teams: filter, status: ['upcoming', 'live'] }).slice(0, 8)
       : []
     this.setData({
       teams,
-      teamMatches: view.decorateList(matches, { compOf: data.compOf }),
+      teamResults: view.decorateList(results, ctx),
+      teamMatches: view.decorateList(matches, ctx),
     })
   },
 

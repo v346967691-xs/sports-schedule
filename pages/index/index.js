@@ -143,12 +143,17 @@ Page({
       },
     })
 
-    // 我关注的球队：他们接下来的比赛，放在「按日查看」前面
+    // 我关注的球队：最近赛果 + 接下来的比赛，放在「按日查看」前面。
+    // ⚠️ 24 小时内打完的也要展示（teamResults）—— 只看未来的话，刚看完的那场反而找不到。
     const tf = follows.asFilter()
+    const ctx = { compOf: data.compOf }
     this.setData({
       teamCount: tf.length,
+      teamResults: tf.length
+        ? view.decorateList(data.recentFinished({ teams: tf }, 24).slice(0, 4), ctx)
+        : [],
       teamMatches: tf.length
-        ? view.decorateList(data.query({ teams: tf, status: ['upcoming', 'live'] }).slice(0, 8), { compOf: data.compOf })
+        ? view.decorateList(data.query({ teams: tf, status: ['upcoming', 'live'] }).slice(0, 8), ctx)
         : [],
     })
 

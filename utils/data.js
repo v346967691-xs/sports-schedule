@@ -158,6 +158,30 @@ function finished(opt) {
   return query(Object.assign({}, opt, { status: 'finished' })).slice().reverse()
 }
 
+/**
+ * 最近 hours 小时内已结束的比赛，按开赛时间倒序（最新在前）。
+ *
+ * 用于「关注球队的赛果」：只列未来赛程的话，用户刚看完的那场比赛反而找不到，
+ * 而那恰恰是他最想回来看一眼的。
+ *
+ * ⚠️ 用开赛时刻近似结束时刻 —— 数据里只有开赛时间，没有终场时间。
+ * 24 小时窗口按开赛算：够把「昨晚那场」捞出来，也不会翻出三天前的旧账。
+ *
+ * @param {Object} opt 同 query（一般传 teams 筛选）
+ * @param {number} [hours=24]
+ */
+function recentFinished(opt, hours) {
+  const h = Number(hours) || 24
+  const since = Date.now() - h * 3600000
+  return query(Object.assign({}, opt, { status: 'finished' }))
+    .filter((m) => {
+      const t = Date.parse(m.start)
+      return Number.isFinite(t) && t >= since
+    })
+    .slice()
+    .reverse()
+}
+
 /** 赛事的所有比赛日期（升序去重） */
 function datesOf(list) {
   const set = []
@@ -280,6 +304,7 @@ module.exports = {
   teamsOf,
   upcoming,
   finished,
+  recentFinished,
   datesOf,
   nextMatchByComp,
   lastMatchByComp,

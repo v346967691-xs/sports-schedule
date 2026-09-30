@@ -239,6 +239,11 @@ async function run() {
   check('关注页：默认英超列出 20 队', ctxTeams.data.activeCat === 'epl' && ctxTeams.data.teams.length === 20, `球队 ${ctxTeams.data.teams.length}`)
   check('关注页：欧国联（欧洲国家队）已开放关注', ctxTeams.data.cats.some((c) => c.key === 'nations'), `cats=${ctxTeams.data.cats.map((c) => c.key).join('/')}`)
   check('数据层：欧国联可抽出国家队', dataMod.teamsOf('nations').length > 0, `球队 ${dataMod.teamsOf('nations').length}`)
+  check('关注页：中国之队已开放关注', ctxTeams.data.cats.some((c) => c.key === 'chn'),
+    `cats=${ctxTeams.data.cats.map((c) => c.key).join('/')}`)
+  const chnTeams = dataMod.teamsOf('chn')
+  check('数据层：中国之队可抽出国字号球队', chnTeams.some((t) => /^中国/.test(t.display)),
+    chnTeams.map((t) => t.display).join('/'))
   check('数据层：query 支持 status 数组（live 归入即将开赛）', (() => {
     const up = dataMod.query({ status: 'upcoming' }).length
     const upLive = dataMod.query({ status: ['upcoming', 'live'] }).length
@@ -266,6 +271,29 @@ async function run() {
   const ctxMineTeam = makeCtx(mineOpts)
   mineOpts.buildTeams.call(ctxMineTeam)
   check('我的页：关注球队区块有数据', ctxMineTeam.data.teams.length === 1 && ctxMineTeam.data.teamMatches.length > 0, `teams=${ctxMineTeam.data.teams.length} matches=${ctxMineTeam.data.teamMatches.length}`)
+
+  // 关注球队不能只列未来赛程：24 小时内打完的比赛也要展示
+  const recentPool = dataMod.recentFinished({}, 24)
+  check('数据层：recentFinished 能捞出 24 小时内的已结束比赛', recentPool.length > 0, `${recentPool.length} 场`)
+  check('数据层：recentFinished 按时间倒序（最新在前）',
+    recentPool.every((m, i) => i === 0 || Date.parse(recentPool[i - 1].start) >= Date.parse(m.start)))
+  const oneHour = dataMod.recentFinished({}, 1)
+  check('数据层：recentFinished 窗口收窄后只留更近的',
+    oneHour.every((m) => Date.parse(m.start) >= Date.now() - 3600000 - 1000), `${oneHour.length} 场`)
+
+  const recentTeam = recentPool[0] && recentPool[0].home
+  if (recentTeam && recentTeam.id) {
+    tfMod.toggle({ comp: recentPool[0].comp, id: String(recentTeam.id), zh: recentTeam.zh, display: recentTeam.zh })
+    const ctxRes = makeCtx(mineOpts)
+    mineOpts.buildTeams.call(ctxRes)
+    check('我的页：24 小时内的赛果展示出来', ctxRes.data.teamResults.length > 0,
+      `teamResults=${ctxRes.data.teamResults.length}（关注 ${recentTeam.zh}）`)
+    check('我的页：赛果带比分', ctxRes.data.teamResults.every((m) => m._hasScore))
+    check('我的页：赛果都是已结束的', ctxRes.data.teamResults.every((m) => m.status === 'finished'))
+    tfMod.remove(recentPool[0].comp, String(recentTeam.id))
+  } else {
+    check('我的页：24 小时内的赛果展示出来', false, '数据里找不到近 24 小时已结束的比赛，用例无法验证')
+  }
 
   // 赛程页按球队筛选
   const ctxSchTeam = makeCtx(schOpts)
@@ -437,6 +465,36 @@ async function run() {
   check('晚报前瞻：纳入正在进行的比赛', Pv.pick([pvMatch('live')], pvNow, true).length === 1)
   check('晚报前瞻：已结束的比赛不进前瞻', Pv.pick([pvMatch('finished')], pvNow, true).length === 0)
   check('早报前瞻：只取未开赛（进行中的不算）', Pv.pick([pvMatch('live')], pvNow, false).length === 0)
+
+  // ⚠️ 标题措辞必须与比分自洽（2026-09-30 翻车：西班牙 4-1 克罗地亚，
+  // 标题写成「欧国联德比：斗牛士一球制胜格子军团」—— 分差 3 球，措辞写死在模板里没跟着比分走）。
+  // 这里把 0-0 ~ 6-6 全扫一遍，任何一句措辞和比分矛盾都会红。
+  const Wr = require(path.join(ROOT, 'tools/brief-write.js'))
+  const mkScore = (hs, as) => ({
+    comp: 'nations', stage: '欧国联', date: '2026-09-30', time: '02:45', bo: null,
+    home: { zh: '西班牙', score: hs }, away: { zh: '克罗地亚', score: as },
+  })
+  const wordingBad = []
+  for (let hs = 0; hs <= 6; hs += 1) {
+    for (let as = 0; as <= 6; as += 1) {
+      const diff = Math.abs(hs - as)
+      const mn = Math.min(hs, as)
+      for (let seq = 0; seq < 3; seq += 1) {
+        const text = Wr.title(mkScore(hs, as), seq).text
+        const hit = (re) => re.test(text)
+        if (hit(/一球|险胜|险过关/) && diff !== 1) wordingBad.push(`${hs}-${as} 非一球之差却说「险」：${text}`)
+        if (hit(/大胜|血洗|碾压/) && diff < 3) wordingBad.push(`${hs}-${as} 分差 ${diff} 却说大胜：${text}`)
+        if (hit(/零封|横扫/) && mn !== 0) wordingBad.push(`${hs}-${as} 对手有进球却说零封：${text}`)
+        if (hit(/力压|击败|拿下|战胜|过关|笑到最后/) && diff === 0) wordingBad.push(`${hs}-${as} 平局却说胜负：${text}`)
+        // 德比 = 同城/同地区对手，判据只是「双方都是 T1」，判不出来就不许写
+        if (hit(/德比/)) wordingBad.push(`${hs}-${as} 误称德比：${text}`)
+      }
+    }
+  }
+  check('标题措辞与比分自洽（0-0 ~ 6-6 全扫）', wordingBad.length === 0,
+    wordingBad.length ? `${wordingBad.length} 处矛盾，例：${wordingBad[0]}` : '147 组比分 × 3 套模板')
+  check('4-1 的豪门对决不再说「一球制胜」',
+    !/一球/.test(Wr.title(mkScore(4, 1), 0).text), Wr.title(mkScore(4, 1), 0).text)
 
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸

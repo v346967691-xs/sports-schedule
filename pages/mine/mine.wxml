@@ -51,6 +51,39 @@
         </view>
       </scroll-view>
 
+      <!-- 24 小时内已结束的赛果：只看未来赛程的话，刚打完的比赛反而找不到 -->
+      <block wx:if="{{teamResults.length}}">
+        <view class="section-sub">最近赛果</view>
+        <view class="mc" wx:for="{{teamResults}}" wx:key="id" data-id="{{item.id}}" bindtap="onTeamMatchTap" hover-class="mc-hover">
+          <view class="mc-head">
+            <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+            <view class="mc-stage">{{item.stage}}</view>
+            <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+          </view>
+          <view class="mc-body">
+            <view class="mc-time">
+              <view class="mc-time-main">{{item.time}}</view>
+              <view class="mc-time-sub">{{item._dayLabel}}</view>
+            </view>
+            <view class="mc-line"></view>
+            <view class="mc-teams">
+              <view class="mc-row">
+                <view class="mc-dot" style="background: {{item.home.color}}"></view>
+                <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+                <view class="mc-abbr">{{item.home.abbr}}</view>
+                <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+              </view>
+              <view class="mc-row">
+                <view class="mc-dot" style="background: {{item.away.color}}"></view>
+                <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+                <view class="mc-abbr">{{item.away.abbr}}</view>
+                <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </block>
+
       <view class="section-sub">他们接下来的比赛</view>
       <view class="mc" wx:for="{{teamMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="onTeamMatchTap" hover-class="mc-hover">
         <view class="mc-head">
@@ -80,7 +113,7 @@
           </view>
         </view>
       </view>
-      <view class="empty" wx:if="{{!teamMatches.length}}">
+      <view class="empty" wx:if="{{!teamMatches.length && !teamResults.length}}">
         <view class="empty-title">近期没有已公布的比赛</view>
         <view class="empty-desc">关注的球队正处于间歇期，有新赛程会第一时间出现在这里</view>
       </view>

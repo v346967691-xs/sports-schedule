@@ -82,8 +82,10 @@ function narrative(m) {
     if (bo >= 3 && best === 2 && worst === 0) return { key: 'sweep', label: '直落两局' };
   }
 
-  // 5. 德比 / 豪门对决
-  if (T.isT1(h.zh) && T.isT1(a.zh)) return { key: 'derby', label: '豪门对决' };
+  // 5. 豪门对决
+  // ⚠️ 平局要排除在外：平局归下面的 draw / goalless，
+  // 落到这一栏会被写成「斗牛士力压格子军团，比分 3-3」—— 自相矛盾。
+  if (diff > 0 && T.isT1(h.zh) && T.isT1(a.zh)) return { key: 'derby', label: '豪门对决' };
 
   // 6. 平局
   if (diff === 0) {
@@ -149,10 +151,17 @@ const TITLE_TPL = {
     (c) => c.w + '三局苦战拿下' + c.l + '，比分' + c.ws,
     (c) => c.ws + '：' + c.w + '在第三局分出胜负',
   ],
+  // ⚠️ 措辞必须跟着实际分差走（2026-09-30 翻车过）：
+  // 这一栏曾经写死「一球制胜」，结果西班牙 4-1 克罗地亚的早报标题也写成
+  // 「欧国联德比：斗牛士一球制胜格子军团」—— 分差是 3 球，直接被打脸。
+  // 现在按 diff 分档：1 球才说「一球险胜」，3 球及以上说「大胜」，其余只说「力压」。
+  //
+  // ⚠️ 另外不再用「德比」二字：德比指同城/同地区的对手，而这里判据只是「双方都是 T1」，
+  // 西班牙 vs 克罗地亚这种国家队碰面根本不是德比。写成德比是硬伤。
   derby: [
-    (c) => c.comp + '德比：' + c.w + '一球制胜' + c.l,
+    (c) => c.comp + '豪门对决：' + c.w + (c.diff === 1 ? '一球险胜' : (c.diff >= 3 ? '大胜' : '力压')) + c.l + '，比分' + c.ws,
     (c) => c.w + '与' + c.l + '的对话，' + c.ws + '分出胜负',
-    (c) => '豪门对决：' + c.w + '力压' + c.l + '，比分' + c.ws,
+    (c) => '豪门对决：' + c.w + '拿下' + c.l + '，比分' + c.ws,
   ],
   nailbiter: [
     (c) => '一球之差：' + c.w + ' ' + c.ws + ' 险胜' + c.l,
@@ -201,6 +210,7 @@ function title(m, seq) {
     stage: stageZh(m.stage),
     score: hs + '-' + as,                                    // 主队在前
     ws: win ? Math.max(hs, as) + '-' + Math.min(hs, as) : hs + '-' + as, // 胜者在前
+    diff: Math.abs(hs - as),                                 // 分差：措辞分档要用
     h2: lh, a2: la,
     w: win ? N.label(win.zh) : lh,
     l: lose ? N.label(lose.zh) : la,

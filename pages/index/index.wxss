@@ -207,3 +207,11 @@
   color: var(--muted);
   font-size: 32rpx;
 }
+
+/* 关注球队区块里「最近赛果 / 接下来的比赛」的小标题（与我的页保持一致） */
+.section-sub {
+  margin: 30rpx 0 16rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--sub);
+}

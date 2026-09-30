@@ -464,6 +464,14 @@ async function run() {
   check('卡图：BG 常量已指向底图',
     posterMod.BG.match === '/images/share-match.jpg' && posterMod.BG.brief === '/images/share-brief.jpg')
 
+  // 页面内分享按钮：open-type=share 才能在页面里直接唤起转发面板（不只靠右上角菜单）
+  const shareBtnPages = ['detail', 'brief']
+  const noBtn = shareBtnPages.filter((p) => {
+    const w = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.wxml'), 'utf8')
+    return w.indexOf('open-type="share"') < 0
+  })
+  check('分享：详情页与日报页都有页面内分享按钮', noBtn.length === 0, noBtn.join(' '))
+
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {
     const js = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')

@@ -28,6 +28,24 @@
   border-top: 1rpx solid #14235c;
   margin-top: 14rpx;
 }
+
+/* 页面内分享按钮（open-type=share）：报纸风格的细边框小按钮 */
+.brief-share {
+  display: block;
+  margin: 18rpx auto 0;
+  width: 260rpx;
+  height: 60rpx;
+  line-height: 58rpx;
+  padding: 0;
+  font-size: 24rpx;
+  color: #14235c;
+  background: transparent;
+  border: 2rpx solid #14235c;
+  border-radius: 30rpx;
+}
+.brief-share::after {
+  border: none;
+}
 .mast-meta {
   font-size: 24rpx;
   color: #6b7280;

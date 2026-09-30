@@ -12,6 +12,7 @@
       <text wx:else>每日 06:00 / 21:00 出报</text>
     </view>
     <view class="rule"></view>
+    <button class="brief-share" open-type="share">分享这期日报</button>
   </view>
 
   <!-- 期次翻阅 -->

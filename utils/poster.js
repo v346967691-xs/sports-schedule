@@ -205,31 +205,26 @@ function drawBrief(ctx, opt) {
   ctx.font = font(50, 700)
   ctx.fillText(`闪现${o.kindZh || '日报'}`, W / 2, 168)
 
-  // 副标题（头条标题或前瞻导语），最多两行
+  // 副标题（头条标题或前瞻导语），最多两行。
+  // 2026-09-30 用户定：换行后左对齐（整块仍水平居中），第二行不再居中
   if (o.sub) {
     ctx.fillStyle = '#5A6272'
     ctx.font = font(19)
+    ctx.textAlign = 'left'
     const lines = wrap(ctx, o.sub, 400, 2)
     lines.forEach((ln, i) => {
-      ctx.fillText(ln, W / 2, 236 + i * 30)
+      ctx.fillText(ln, W / 2 - 200, 236 + i * 30)
     })
   }
 
-  // 底部小徽标：底框算装饰（底图自带就不画），里面的早/晚报文案始终填。
-  // 有底图时底部常是彩色装饰区，白字 + 深描边才压得住（PIL 预览验证过）。
+  // 底部小徽标：仅在无底图的兜底模式画（2026-09-30 用户定：底图模式下整个去掉，
+  // 底部波浪区放"晚报"两字反而干扰画面）
   if (!o.bg) {
     ctx.fillStyle = accent
     roundRect(ctx, W / 2 - 46, H - 78, 92, 32, 16)
     ctx.fill()
     ctx.fillStyle = '#ffffff'
     ctx.font = font(16, 600)
-    ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
-  } else {
-    ctx.font = font(16, 600)
-    ctx.lineWidth = 6
-    ctx.strokeStyle = 'rgba(31,36,48,0.9)'
-    ctx.strokeText(o.kindZh || '日报', W / 2, H - 62)
-    ctx.fillStyle = '#ffffff'
     ctx.fillText(o.kindZh || '日报', W / 2, H - 62)
   }
 

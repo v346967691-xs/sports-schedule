@@ -451,8 +451,9 @@ async function run() {
 
   const ctxBriefBg = fakeCtx()
   posterMod.drawBrief(ctxBriefBg, { bg: {}, dateText: '9月30日', kindZh: '早报' })
-  check('卡图：日报底图自带品牌时不重复画水印',
-    ctxBriefBg.texts.indexOf('闪现赛程助手') < 0, ctxBriefBg.texts.join(' | ').slice(0, 60))
+  check('卡图：日报底图模式下不画品牌水印也不画「早/晚报」徽标字',
+    ctxBriefBg.texts.indexOf('闪现赛程助手') < 0 && ctxBriefBg.texts.indexOf('早报') < 0,
+    ctxBriefBg.texts.join(' | ').slice(0, 60))
 
   // 底图文件必须真的在包里，否则 loadBg 静默失败、悄悄退回纯色底
   const bgFiles = ['images/share-match.jpg', 'images/share-brief.jpg']

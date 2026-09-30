@@ -68,12 +68,10 @@ text(d, '9月30日', (500, 184), 44, '#8A93A6', 'mm')
 text(d, '闪现晚报', (500, 336), 100, '#1f2430', 'mm', bold=True)
 sub = '今夜看点：德玛西亚杯与亚运会电竞，三场值得留意的比赛'
 f38 = font(38)
+# 2026-09-30 用户定：换行后左对齐（块整体居中，块宽 800 → 左边缘 x=100）
 for i, ln in enumerate(wrap(d, sub, 800, f38, 2)):
-    text(d, ln, (500, 472 + i * 60), 38, '#5A6272', 'mm')
-text(d, '晚报', (500, 676), 32, '#ffffff', 'mm', bold=True)
-# 底部落在彩色波浪上，白字需要深色描边才可读（小程序端用 strokeText 实现同样效果）
-d.text((500, 676), '晚报', font=font(32, True), fill=rgba('#ffffff'),
-       anchor='mm', stroke_width=6, stroke_fill=rgba('#1f2430', 230))
+    text(d, ln, (100, 472 + i * 60), 38, '#5A6272', 'lm')
+# 底部「晚报」徽标已按用户要求去掉
 
 img.convert('RGB').save(os.path.join(OUT, 'preview-brief.jpg'), quality=92)
 print('brief ok')

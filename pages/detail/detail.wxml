@@ -50,8 +50,11 @@
   </view>
 
   <view class="actions">
-    <view class="btn primary {{isFav ? 'added' : ''}}" bindtap="onFavTap">
-      {{isFav ? '已关注 · 点击取消' : '关注这场比赛'}}
+    <view class="btn-row">
+      <view class="btn primary {{isFav ? 'added' : ''}}" bindtap="onFavTap">
+        {{isFav ? '已关注 · 点击取消' : '关注这场比赛'}}
+      </view>
+      <button class="btn primary share-btn" open-type="share">分享赛果</button>
     </view>
     <view
       wx:if="{{match.status === 'upcoming'}}"
@@ -61,7 +64,6 @@
       {{isRemind ? '已设开赛提醒 · 点此取消' : '开赛前 30 分钟提醒我'}}
     </view>
     <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>
-    <button class="btn ghost share-btn" open-type="share">分享这场比赛</button>
   </view>
 
   <view class="foot-note">

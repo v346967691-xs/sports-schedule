@@ -18,6 +18,30 @@
   letter-spacing: 6rpx;
   color: #14235c;
 }
+/* 2026-09-30 用户定：分享按钮放标题右侧，紧凑小按钮 */
+.mast-title-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mast-title-row .brief-share {
+  position: absolute;
+  right: 8rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  width: 148rpx;
+  height: 52rpx;
+  line-height: 48rpx;
+  padding: 0;
+  font-size: 22rpx;
+  color: #14235c;
+  background: transparent;
+  border: 2rpx solid #14235c;
+  border-radius: 26rpx;
+  box-sizing: border-box;
+}
 .rule-double {
   margin: 18rpx 0 10rpx;
   border-top: 4rpx solid #14235c;
@@ -29,20 +53,7 @@
   margin-top: 14rpx;
 }
 
-/* 页面内分享按钮（open-type=share）：报纸风格的细边框小按钮 */
-.brief-share {
-  display: block;
-  margin: 18rpx auto 0;
-  width: 260rpx;
-  height: 60rpx;
-  line-height: 58rpx;
-  padding: 0;
-  font-size: 24rpx;
-  color: #14235c;
-  background: transparent;
-  border: 2rpx solid #14235c;
-  border-radius: 30rpx;
-}
+/* 页面内分享按钮（open-type=share）：重置微信 button 默认样式 */
 .brief-share::after {
   border: none;
 }

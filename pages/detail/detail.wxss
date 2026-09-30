@@ -233,6 +233,23 @@
   margin: 28rpx 24rpx 0;
 }
 
+/* 2026-09-30 用户定：关注按钮缩到一半，分享赛果占右半边，中间留 20rpx 缝 */
+.btn-row {
+  display: flex;
+  align-items: stretch;
+}
+.btn-row .btn {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  /* view 与 button 的默认 line-height 不同，显式统一才能等高 */
+  line-height: 40rpx;
+}
+/* 用 margin 而不是 gap：旧版 iOS WebView 的 flex gap 支持不稳定 */
+.btn-row .btn + .btn {
+  margin-left: 20rpx;
+}
+
 .btn {
   padding: 26rpx 0;
   margin-bottom: 20rpx;

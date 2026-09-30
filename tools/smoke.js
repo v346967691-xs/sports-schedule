@@ -472,6 +472,27 @@ async function run() {
   })
   check('分享：详情页与日报页都有页面内分享按钮', noBtn.length === 0, noBtn.join(' '))
 
+  // 按钮布局（2026-09-30 用户定稿）：详情页关注+分享并排占左右两半，日报页按钮贴标题右侧
+  const dWxml = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
+  const dWxss = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxss'), 'utf8')
+  const row = (dWxml.match(/<view class="btn-row">([\s\S]*?)<\/view>\s*<view/) || [])[1] || ''
+  check('布局：详情页关注与「分享赛果」同排并各占一半',
+    row.indexOf('onFavTap') > -1 && row.indexOf('分享赛果') > -1 && /\.btn-row\s*\{[^}]*display:\s*flex/.test(dWxss))
+  check('布局：并排按钮之间留缝（不用 flex gap，兼容旧 WebView）',
+    /\.btn-row\s*\.btn\s*\+\s*\.btn\s*\{[^}]*margin-left/.test(dWxss) && dWxss.indexOf('gap:') < 0,
+    dWxss.indexOf('gap:') > -1 ? '检测到 gap，旧 iOS WebView 可能不生效' : '')
+  check('布局：分享赛果按钮是深蓝主色（.btn.primary）',
+    /class="btn primary share-btn"/.test(dWxml))
+  const bWxml = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.wxml'), 'utf8')
+  const bWxss = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.wxss'), 'utf8')
+  // 非贪婪匹配到 </button>：只取标题行整块（匹配到 </view> 会在 mast-title 处提前截断）
+  const titleRow = (bWxml.match(/<view class="mast-title-row">[\s\S]*?<\/button>/) || [])[0] || ''
+  check('布局：日报页「分享好友」在标题行右侧',
+    titleRow.indexOf('mast-title') > -1 && titleRow.indexOf('分享好友') > -1
+    && /\.mast-title-row\s+\.brief-share\s*\{[^}]*position:\s*absolute/.test(bWxss))
+  check('布局：日报页分享按钮已收窄（宽 ≤ 160rpx）',
+    /\.mast-title-row\s+\.brief-share\s*\{[^}]*width:\s*(1[0-5]\d|[1-9]\d)rpx/.test(bWxss))
+
   // 页面接线：详情页与日报页都要有 canvas + buildShareImage
   ;['detail', 'brief'].forEach((p) => {
     const js = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')

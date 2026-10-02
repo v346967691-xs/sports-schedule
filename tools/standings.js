@@ -117,55 +117,78 @@ function groupLabel(name) {
 }
 
 /**
- * 每个赛事的 ERP 表列定义。
- * 足球看积分，篮球没有「积分」概念所以看胜率 —— 这不是偷懒，是两类运动的真实差别。
+ * 紧凑列定义（2026-10-02 按用户参考图改版）：
+ * 原来平铺 8 列把队名挤成两个字的折叠，现在合并成 4 列，
+ * 「胜/平/负」「进/失」各自合成一个单元格，宽度让给队名。
+ * 单元格文本在页面端 renderRow() 按 key 拼接，两边必须配套改。
  */
 const COLUMNS = {
   football: [
-    { key: 'played', label: '场' },
-    { key: 'wins', label: '胜' },
-    { key: 'draws', label: '平' },
-    { key: 'losses', label: '负' },
-    { key: 'scored', label: '进' },
-    { key: 'conceded', label: '失' },
-    { key: 'diff', label: '净' },
-    { key: 'pts', label: '分', strong: true },
+    { key: 'played', label: '赛' },
+    { key: 'wdl', label: '胜/平/负' },
+    { key: 'goals', label: '进/失' },
+    { key: 'pts', label: '积分', strong: true },
   ],
   basketball: [
-    { key: 'wins', label: '胜' },
-    { key: 'losses', label: '负' },
+    { key: 'played', label: '赛' },
+    { key: 'wdl', label: '胜/负' },
     { key: 'winPct', label: '胜率', strong: true },
-    { key: 'ppg', label: '均得' },
-    { key: 'oppg', label: '均失' },
-    { key: 'streak', label: '连续' },
+    { key: 'goals', label: '得/失' },
   ],
   esports: [
-    { key: 'wins', label: '胜' },
-    { key: 'losses', label: '负' },
+    { key: 'played', label: '赛' },
+    { key: 'wdl', label: '胜/负' },
     { key: 'winPct', label: '胜率', strong: true },
   ],
 }
 
-/** 欧战 / 降级分区（只对足球有意义）。越界自动不画。 */
-function zonesFor(compKey, count) {
-  if (count <= 12) return []
-  if (compKey === 'epl') return [
-    { from: 1, to: 5, label: '欧冠区', color: '#2F6F4E' },
-    { from: 18, to: 20, label: '降级区', color: '#A93A3A' },
-  ]
-  if (compKey === 'liga' || compKey === 'seriea') return [
-    { from: 1, to: 4, label: '欧冠区', color: '#2F6F4E' },
-    { from: 18, to: 20, label: '降级区', color: '#A93A3A' },
-  ]
-  if (compKey === 'bundesliga' || compKey === 'ligue1') return [
-    { from: 1, to: 4, label: '欧冠区', color: '#2F6F4E' },
-    { from: count - 1, to: count, label: '降级区', color: '#A93A3A' },
-  ]
-  if (compKey === 'csl') return [
-    { from: 1, to: 2, label: '亚冠区', color: '#2F6F4E' },
-    { from: count - 1, to: count, label: '降级区', color: '#A93A3A' },
-  ]
-  return []
+/**
+ * 分区配色（参考用户给的对照图：欧冠区红、欧联区蓝）。
+ * color = 标签块底色，bg = 整行底色（浅色版）。
+ */
+const ZONE_STYLE = {
+  ucl: { label: '欧冠区', color: '#D03A3A', bg: '#FCECEB' },
+  uel: { label: '欧联区', color: '#2C6BC9', bg: '#E9F0FC' },
+  uecl: { label: '欧协联区', color: '#12977E', bg: '#E6F4F0' },
+  rel: { label: '降级区', color: '#5C6470', bg: '#F0F1F4' },
+  relpo: { label: '降级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
+  r16: { label: '直接晋级', color: '#2F7A52', bg: '#E9F4EE' },
+  po: { label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
+  out: { label: '淘汰区', color: '', bg: '' },
+  acl: { label: '亚冠区', color: '#2F7A52', bg: '#E9F4EE' },
+  po2: { label: '季后赛区', color: '#2F7A52', bg: '#E9F4EE' },
+  playin: { label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
+}
+
+/** ESPN 的英文 note → 我们的分区。用前缀匹配，qualifying 归并到同一分区（标签保持简短） */
+function zoneFromNote(note) {
+  const n = String(note || '')
+  if (/^champions league/i.test(n)) return ZONE_STYLE.ucl
+  if (/^europa league/i.test(n)) return ZONE_STYLE.uel
+  if (/^conference league/i.test(n)) return ZONE_STYLE.uecl
+  if (/relegation playoff/i.test(n)) return ZONE_STYLE.relpo
+  if (/relegation/i.test(n)) return ZONE_STYLE.rel
+  // 欧冠/欧联的 36 队联赛阶段：直接晋级 / 附加赛 / 淘汰
+  if (/qualifies for round of 16/i.test(n)) return ZONE_STYLE.r16
+  if (/knockout phase playoffs/i.test(n)) return ZONE_STYLE.po
+  if (/eliminated/i.test(n)) return ZONE_STYLE.out
+  return null
+}
+
+/** 没有官方 note 时的固定区间兜底（自算榜 / NBA） */
+function zoneFallback(compKey, cat, pos, count) {
+  if (compKey === 'csl') {
+    if (pos <= 2) return ZONE_STYLE.acl
+    if (pos >= count - 1) return ZONE_STYLE.rel
+    return null
+  }
+  if (cat === 'basketball') {
+    // NBA 每个分区前 6 进季后赛、7-10 打附加赛
+    if (pos <= 6) return ZONE_STYLE.po2
+    if (pos <= 10) return ZONE_STYLE.playin
+    return null
+  }
+  return null
 }
 
 /** 从 ESPN standings entry 里抽出我们自己的行结构（足球 / 篮球字段不同） */
@@ -187,25 +210,42 @@ function espnRow(entry, cat, index) {
     scored: pick(stats, 'pointsFor') || 0,
     conceded: pick(stats, 'pointsAgainst') || 0,
     diff: pick(stats, 'pointDifferential', 'differential') || 0,
-    pts: null,
-    winPct: cat === 'football' ? null : Number((pick(stats, 'winPercent') || 0).toFixed(3)),
-    ppg: cat === 'basketball' ? Number((pick(stats, 'avgPointsFor') || 0).toFixed(1)) : null,
-    oppg: cat === 'basketball' ? Number((pick(stats, 'avgPointsAgainst') || 0).toFixed(1)) : null,
-    streak: cat === 'basketball' ? pickText(stats, 'streak') : '',
     pts: cat === 'football' ? pick(stats, 'points') : null,
-    note: '',
+    winPct: cat === 'football' ? null : Number((pick(stats, 'winPercent') || 0).toFixed(3)),
+    streak: cat === 'basketball' ? pickText(stats, 'streak') : '',
   }
-  if (Array.isArray(entry.note)) {
-    row.note = entry.note.map((n) => n.description).filter(Boolean).join(' ')
-  } else if (entry.note && entry.note.description) {
-    row.note = entry.note.description
+  // 分区直接采信 ESPN 的官方标注（note），它连「西甲 1-5 欧冠、10 也是欧联」
+  // 这种不规则区间都能表达；没有 note 的（自算榜 / NBA）走固定区间兜底
+  const notes = Array.isArray(entry.note)
+    ? entry.note.map((n) => n.description).filter(Boolean)
+    : (entry.note && entry.note.description ? [entry.note.description] : [])
+  for (const n of notes) {
+    const z = zoneFromNote(n)
+    if (z && z.bg) { row.zone = { label: z.label, color: z.color, bg: z.bg }; break }
   }
   return row
 }
 
-/** 排序：足球按积分、其余按胜率，同分时依次比净胜球 / 进球 */
+/** 给整张表补分区：官方 note 优先（espnRow 里已标），剩余按固定区间兜底 */
+function applyZones(table, compKey, cat) {
+  ;(table.groups || []).forEach((g) => {
+    const count = (g.rows || []).length
+    ;(g.rows || []).forEach((r) => {
+      if (r.zone) return
+      const z = zoneFallback(compKey, cat, r.pos, count)
+      if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg }
+    })
+  })
+  return table
+}
+
+/**
+ * 排序：足球按积分、其余按胜率，同分时依次比净胜球 / 进球。
+ * ⚠️ 排完必须按数组顺序重新编号 —— NBA 季前赛全 0 胜时 ESPN 的 playoffSeed
+ * 会整体退化成 1，直接用它的值会出现「15 支球队都排第 1」的荒唐场面。
+ */
 function sortRows(rows, cat) {
-  return rows.sort((a, b) => {
+  rows.sort((a, b) => {
     if (cat === 'football') {
       if (b.pts !== a.pts) return (b.pts || 0) - (a.pts || 0)
       if (b.diff !== a.diff) return (b.diff || 0) - (a.diff || 0)
@@ -216,6 +256,8 @@ function sortRows(rows, cat) {
     if (b.wins !== a.wins) return (b.wins || 0) - (a.wins || 0)
     return String(a.name).localeCompare(String(b.name))
   })
+  rows.forEach((r, i) => { r.pos = i + 1 })
+  return rows
 }
 
 async function fetchEspnTable(comp) {
@@ -250,13 +292,12 @@ async function fetchEspnTable(comp) {
   }
   if (!out.length) return null
 
-  return {
+  return applyZones({
     comp: comp.key,
     season: (seasonPool[0] && seasonPool[0].name) || '',
     columns: COLUMNS[comp.cat] || COLUMNS.football,
-    zones: [],
     groups: out,
-  }
+  }, comp.key, comp.cat)
 }
 
 /* ------------------------------------------------------------------ ② CBA / KPL：没有官方排名，自己算 */
@@ -275,7 +316,7 @@ function computeTable(rows, opt) {
         id, name, zh: name, abbr: name.slice(0, 6),
         pos: 0, played: 0, wins: 0, losses: 0, draws: opt.draws ? 0 : null,
         scored: 0, conceded: 0, diff: 0, pts: opt.usePoints ? 0 : null,
-        winPct: null, ppg: null, oppg: null, streak: '', note: '',
+        winPct: null, streak: '',
       }
     }
     return teams[id]
@@ -333,13 +374,12 @@ async function fetchCbaTable(comp) {
   // ⚠️ 赛季还没开打时所有比分都是 null，此时算出来的「全队 0 胜」会误导，
   //    不如直接返回 null，让页面显示「赛季尚未开始」。
   if (table.length < 4 || !table.some((t) => t.played > 0)) return null
-  return {
+  return applyZones({
     comp: comp.key,
     season: '本赛季',
     columns: COLUMNS.basketball,
-    zones: [],
     groups: [{ name: '', rows: table }],
-  }
+  }, comp.key, 'basketball')
 }
 
 /** KPL：POST getScheduleList 返回当前赛季赛程，按已结束的场次算 */
@@ -376,7 +416,6 @@ async function fetchKplTable(comp) {
     comp: comp.key,
     season: '本赛季',
     columns: COLUMNS.esports,
-    zones: [],
     groups: [{ name: '', rows: table }],
   }
 }
@@ -418,14 +457,10 @@ async function main() {
       log(`${comp.key} 异常：${err.message}`)
     }
     if (table) {
-      // 分区着色只用「单组 + 足够多队伍」的表
-      const g0 = table.groups[0]
-      if (comp.cat === 'football' && table.groups.length === 1) {
-        table.zones = zonesFor(comp.key, g0.rows.length)
-      }
-      tables[comp.key] = table
       ok += 1
+      const g0 = table.groups[0]
       console.log(` ${g0.rows.length} 队${table.groups.length > 1 ? `（${table.groups.length} 组）` : ''}`)
+      tables[comp.key] = table
     } else {
       failed.push(comp.key)
       console.log(' 失败')

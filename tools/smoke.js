@@ -965,8 +965,10 @@ async function run() {
   const eplTable = stData.epl
   const eplRows = eplTable && eplTable.groups[0].rows
   check('积分榜：英超 20 队', !!eplRows && eplRows.length === 20, eplRows ? `${eplRows.length} 队` : '无')
-  check('积分榜：足球列含「分」', !!eplTable && eplTable.columns.some((c) => c.label === '分'),
+  // 紧凑列：赛 / 胜平负 / 进失 / 积分 —— 2026-10-02 改版后队名不再被折叠
+  check('积分榜：足球用合并列（≤4 列）', !!eplTable && eplTable.columns.length === 4,
     eplTable ? eplTable.columns.map((c) => c.label).join('/') : '')
+  check('积分榜：含「积分」列', !!eplTable && eplTable.columns.some((c) => c.label === '积分'))
 
   // ⚠️ 排序红线：足球必须按积分降序。曾踩过把 entry 原序当成排名的情况
   const ptsDesc = eplRows ? eplRows.every((r, i) => i === 0 || eplRows[i - 1].pts >= r.pts) : false
@@ -983,10 +985,18 @@ async function run() {
     nbaGroups.map((g) => g.name + ':' + g.rows.length).join(' / '))
   check('积分榜：NBA 分区名已汉化', nbaGroups.every((g) => /联盟$/.test(g.name)), nbaGroups.map((g) => g.name).join('/'))
 
-  // 欧战/降级分区只在单组表上画，且不能越界
-  const zones = (eplTable && eplTable.zones) || []
-  check('积分榜：英超有欧战区与降级区', zones.length === 2 && zones[0].to <= eplRows.length,
-    zones.map((z) => z.label).join('/'))
+  // ⚠️ 名次必须与数组顺序一致 —— NBA 季前赛全 0 胜时 ESPN 的 playoffSeed
+  //    整体退化成 1，直接用会出现「15 队都排第 1」
+  check('积分榜：名次连续无重复', eplRows ? eplRows.every((r, i) => r.pos === i + 1) : false
+    && nbaGroups.every((g) => g.rows.every((r, i) => r.pos === i + 1)))
+
+  // 分区色带：欧战/降级取自 ESPN 官方 note，红色欧冠、蓝色欧联、灰色降级
+  const zoneOf = (i) => (eplRows[i] && eplRows[i].zone && eplRows[i].zone.label) || ''
+  check('积分榜：英超榜首在欧冠区', zoneOf(0) === '欧冠区', zoneOf(0))
+  check('积分榜：英超末三位在降级区', [17, 18, 19].every((i) => zoneOf(i) === '降级区'),
+    [17, 18, 19].map(zoneOf).join('/'))
+  const nbaZone = (nbaGroups[0].rows[6] && nbaGroups[0].rows[6].zone && nbaGroups[0].rows[6].zone.label) || ''
+  check('积分榜：NBA 第 7 名在附加赛区', nbaZone === '附加赛区', nbaZone)
 
   /* ---------- 球队详情页 ---------- */
   require(path.join(ROOT, 'pages/team/team.js'))

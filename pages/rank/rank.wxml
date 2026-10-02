@@ -44,7 +44,7 @@
           wx:for-item="col"
           wx:for-index="ci"
           wx:key="key"
-          class="td {{col.strong ? 'strong' : ''}}"
+          class="td num {{col.strong ? 'strong' : ''}}"
         >{{col.label}}</view>
       </view>
 
@@ -52,33 +52,45 @@
         wx:for="{{item.rows}}"
         wx:for-item="row"
         wx:key="id"
-        class="tr {{index % 2 === 1 ? 'odd' : ''}}"
+        class="tr {{row.zoneBg ? 'zoned' : ''}}"
+        style="background: {{row.zoneBg}};"
         data-id="{{row.id}}"
         bindtap="onRowTap"
         hover-class="tr-hover"
       >
         <view class="td-pos">
-          <view class="zone-bar" wx:if="{{row.zoneLabel}}" style="background: {{row.zoneColor}}"></view>
           <text class="pos-num">{{row.pos}}</text>
         </view>
         <view class="td-team">
           <view class="team-name">{{row.name}}</view>
-          <view class="team-note" wx:if="{{row.zoneLabel || row.note}}">{{row.zoneLabel || row.note}}</view>
         </view>
-        <!-- 单元格是纯字符串数组，值会重复（一堆 0），不能用 *this 当 key，直接省略 -->
         <view
           wx:for="{{row.cells}}"
           wx:for-item="cell"
           wx:for-index="ci"
-          class="td {{columns[ci].strong ? 'strong' : ''}}"
+          class="td num {{columns[ci].strong ? 'strong' : ''}}"
         >{{cell}}</view>
+
+        <!-- 区块标签：只画在色带第一行，悬在行顶部与上一行的交界处 -->
+        <view wx:if="{{row.zoneFirst}}" class="zone-chip" style="background: {{row.zoneColor}};">
+          {{row.zoneLabel}}
+        </view>
       </view>
     </view>
   </block>
 
+  <view class="legend" wx:if="{{legend.length}}">
+    <block wx:for="{{legend}}" wx:key="label">
+      <view class="legend-item" wx:if="{{item.label}}">
+        <view class="legend-dot" style="background: {{item.color}}"></view>
+        <text>{{item.label}}</text>
+      </view>
+    </block>
+  </view>
+
   <view class="foot-note">
     足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
-    电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
+    欧战 / 降级分区取自官方标注；电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
   </view>
 
   <view class="safe-bottom"></view>

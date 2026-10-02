@@ -61,18 +61,21 @@
   color: var(--sub);
 }
 
-/* ------------------------------------------------------------------ 表格 */
+/* ------------------------------------------------------------------ 表格
+   紧凑排版：# + 球队 + 3~4 个数字列。球队列吃掉全部剩余宽度，
+   名字不再折叠（2026-10-02 用户反馈 8 列时「巴塞罗那」只剩「巴」）。 */
 
 .table {
   margin: 12rpx 24rpx 0;
-  padding: 0 4rpx;
+  overflow: visible; /* zone-chip 要悬出行边界 */
 }
 
 .tr {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 0 20rpx;
-  height: 76rpx;
+  height: 72rpx;
   border-bottom: 2rpx solid var(--line);
 }
 
@@ -80,26 +83,23 @@
   border-bottom: none;
 }
 
-.tr.odd {
-  background: #fafbfd;
-}
-
 .tr-hover {
-  background: var(--brand-soft);
+  opacity: 0.75;
 }
 
 .th {
-  height: 64rpx;
+  height: 60rpx;
   background: #f6f7fa;
   font-size: 22rpx;
   color: var(--muted);
   font-weight: 600;
 }
 
+/* 数字列固定宽、右对齐（tabular 数字），队名列占满剩余空间 */
 .th-pos,
 .td-pos {
   flex: none;
-  width: 62rpx;
+  width: 56rpx;
   display: flex;
   align-items: center;
 }
@@ -108,17 +108,15 @@
 .td-team {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
 }
 
 .td {
   flex: none;
-  width: 62rpx;
-  text-align: center;
-  font-size: 24rpx;
+  width: 118rpx;
+  text-align: right;
+  font-size: 25rpx;
   color: var(--sub);
+  font-variant-numeric: tabular-nums;
 }
 
 .td.strong {
@@ -126,36 +124,62 @@
   color: var(--text);
 }
 
-/* 分区色条：贴在名次数字左边，一眼看出欧战区 / 降级区 */
-.zone-bar {
-  flex: none;
-  width: 6rpx;
-  height: 28rpx;
-  margin-right: 8rpx;
-  border-radius: 3rpx;
-}
-
 .pos-num {
-  font-size: 24rpx;
-  color: var(--sub);
+  font-size: 25rpx;
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .team-name {
-  font-size: 28rpx;
+  font-size: 27rpx;
   font-weight: 600;
+  color: var(--text);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  padding-right: 12rpx;
 }
 
-.team-note {
-  margin-top: 2rpx;
-  font-size: 18rpx;
-  color: var(--muted);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* 分区标签：悬在色带第一行的上缘（参考图的样式） */
+.zone-chip {
+  position: absolute;
+  right: 12rpx;
+  top: -18rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 6rpx;
+  color: #fff;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1.3;
+  z-index: 2;
+}
+
+/* 色带行交界处压一条细线，标签悬在上面更清楚 */
+.tr.zoned {
+  border-bottom-color: rgba(16, 24, 40, 0.04);
+}
+
+/* ------------------------------------------------------------------ 图例 */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 20rpx 28rpx 0;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  margin-right: 28rpx;
+  font-size: 22rpx;
+  color: var(--sub);
+}
+
+.legend-dot {
+  width: 18rpx;
+  height: 18rpx;
+  margin-right: 8rpx;
+  border-radius: 5rpx;
 }
 
 .empty-btn {

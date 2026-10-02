@@ -12,26 +12,34 @@ const data = require('../../utils/data')
 const fmt = require('../../utils/format')
 const { appInstance } = require('../../utils/app-instance')
 
-/** 把一行积分榜数据压成 WXML 能直接渲染的形状 */
-function renderRow(row, columns, compKey, zones) {
+/**
+ * 把一行积分榜数据压成 WXML 能直接渲染的形状。
+ *
+ * 列是「合并式」的（胜/平/负 一个格子、进/失 一个格子），宽度让给队名 ——
+ * 2026-10-02 用户反馈 8 列平铺时队名被折叠成两个字，体验差。
+ * 这里的 key 必须与 tools/standings.js 的 COLUMNS 配套。
+ */
+function renderRow(row, columns, compKey, prevRow) {
   const cells = columns.map((col) => {
-    const raw = row[col.key]
-    if (col.key === 'winPct') {
-      return typeof raw === 'number' ? `${(raw * 100).toFixed(1)}%` : '—'
+    switch (col.key) {
+      case 'played':
+        return String(row.played == null ? 0 : row.played)
+      case 'wdl':
+        return row.draws == null
+          ? `${row.wins || 0}/${row.losses || 0}`
+          : `${row.wins || 0}/${row.draws || 0}/${row.losses || 0}`
+      case 'goals':
+        return `${row.scored || 0}/${row.conceded || 0}`
+      case 'pts':
+        return row.pts == null ? '—' : String(row.pts)
+      case 'winPct':
+        return typeof row.winPct === 'number' ? `${(row.winPct * 100).toFixed(1)}%` : '—'
+      default:
+        return '—'
     }
-    if (col.key === 'ppg' || col.key === 'oppg') {
-      return typeof raw === 'number' ? String(raw) : '—'
-    }
-    if (col.key === 'diff') {
-      if (typeof raw !== 'number') return '—'
-      return raw > 0 ? `+${raw}` : String(raw)
-    }
-    if (col.key === 'streak') return raw || '—'
-    return raw === null || raw === undefined ? '—' : String(raw)
   })
 
-  const zone = (zones || []).find((z) => row.pos >= z.from && row.pos <= z.to) || null
-
+  const z = row.zone || null
   return {
     id: row.id,
     comp: compKey,
@@ -39,9 +47,11 @@ function renderRow(row, columns, compKey, zones) {
     name: row.zh || row.name,
     abbr: row.abbr || '',
     cells,
-    zoneLabel: zone ? zone.label : '',
-    zoneColor: zone ? zone.color : '',
-    note: row.note || '',
+    zoneLabel: z ? z.label : '',
+    zoneColor: z ? z.color : '',
+    zoneBg: z ? z.bg : '',
+    // 区块标签只画在色带的第一行上，避免每一行都挂一个
+    zoneFirst: !!z && (!prevRow || !prevRow.zone || prevRow.zone.label !== z.label),
   }
 }
 
@@ -66,6 +76,7 @@ Page({
     source: '',
     emptyReason: '',
     totalTeams: 0,
+    legend: [],
   },
 
   onLoad(query) {
@@ -109,11 +120,17 @@ Page({
       return
     }
 
-    const zones = table.zones || []
-    const groups = (table.groups || []).map((g) => ({
-      name: g.name || '',
-      rows: (g.rows || []).map((r) => renderRow(r, table.columns, comp, zones)),
-    }))
+    const groups = (table.groups || []).map((g) => {
+      let prev = null
+      return {
+        name: g.name || '',
+        rows: (g.rows || []).map((r) => {
+          const view = renderRow(r, table.columns, comp, prev)
+          prev = r
+          return view
+        }),
+      }
+    })
     const totalTeams = groups.reduce((n, g) => n + g.rows.length, 0)
 
     this.setData({
@@ -123,11 +140,21 @@ Page({
       groups,
       season: table.season || '',
       totalTeams,
+      // 图例：当前这张表实际出现的分区，去重后按出现顺序排列
+      legend: (function () {
+        const seen = {}
+        const out = []
+        groups.forEach((g) => g.rows.forEach((r) => {
+          if (!r.zoneLabel || seen[r.zoneLabel]) return
+          seen[r.zoneLabel] = true
+          out.push({ label: r.zoneLabel, color: r.zoneColor })
+        }))
+        return out
+      })(),
       updatedAt: timeLabel(data.standingsGeneratedAt()),
       source: data.source() === 'cloud' ? '云端' : '本地',
       emptyReason: '',
-    })
-  },
+    })  },
 
   onCompTap(e) {
     this.setData({ activeComp: e.currentTarget.dataset.key }, () => this.render())

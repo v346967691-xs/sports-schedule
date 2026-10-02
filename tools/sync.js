@@ -37,10 +37,15 @@ const lolBack = Number(process.argv[5] || 180)
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 const LOL = 'https://esports-api.lolesports.com/persisted/gw'
 const LOL_KEY = '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'
+// 王者荣耀 KPL 官方（kpl.qq.com 前端包里挖出来的后端，无需 key，POST + JSON body）
+const KPL = 'https://kplshop-op.timi-esports.qq.com/kplow'
+// CBA 官方（cbaleague.com 前端包里的后端，无需 key，一次返回整赛季）
+const CBA = 'https://portal-server.cbaleague.com'
 
 /* ------------------------------------------------------------------ 竞赛定义 */
 
 const COMPETITIONS = [
+  { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
   { key: 'epl', source: 'espn', sport: 'soccer', cat: 'football', name: '英超', full: '英格兰超级联赛', espn: 'eng.1', accent: '#4B1F6B' },
   { key: 'liga', source: 'espn', sport: 'soccer', cat: 'football', name: '西甲', full: '西班牙甲级联赛', espn: 'esp.1', accent: '#D4700F' },
   { key: 'seriea', source: 'espn', sport: 'soccer', cat: 'football', name: '意甲', full: '意大利甲级联赛', espn: 'ita.1', accent: '#0B4A9E' },
@@ -76,6 +81,8 @@ const COMPETITIONS = [
     teamPick: /^china/i,
   },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
+  { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
+  { key: 'kpl', source: 'kpl', cat: 'esports', name: 'KPL', full: '王者荣耀职业联赛', accent: '#D9A441' },
   { key: 'lpl', source: 'lol', cat: 'esports', name: 'LPL', full: '英雄联盟职业联赛 · 中国大陆赛区', lol: '98767991314006698', lolSlug: 'lpl', accent: '#D4232A' },
   {
     key: 'demacia', source: 'lol', cat: 'esports', name: '德玛西亚杯', full: '德玛西亚杯（LPL 区域杯赛）',
@@ -96,10 +103,10 @@ const COMPETITIONS = [
 const SPORT_CATS = {
   football: {
     name: '足球',
-    competitions: ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'ucl', 'uel', 'nations', 'chn'],
+    competitions: ['csl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'ucl', 'uel', 'nations', 'chn'],
   },
-  basketball: { name: '篮球', competitions: ['nba'] },
-  esports: { name: '电竞', competitions: ['lpl', 'demacia', 'lck', 'lec', 'worlds', 'msi', 'agames'] },
+  basketball: { name: '篮球', competitions: ['cba', 'nba'] },
+  esports: { name: '电竞', competitions: ['kpl', 'lpl', 'demacia', 'lck', 'lec', 'worlds', 'msi', 'agames'] },
 }
 
 /** 解析命令行第四个参数，决定本次要刷哪些赛事 */
@@ -134,6 +141,29 @@ async function getJSON(url, headers) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 30000)
       const res = await fetch(url, { headers, signal: controller.signal })
+      clearTimeout(timer)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json()
+    } catch (err) {
+      if (attempt === 2) throw err
+      await new Promise((r) => setTimeout(r, 700 * (attempt + 1)))
+    }
+  }
+  return null
+}
+
+/** KPL / CBA 这类官方接口是 POST + JSON body，重试策略与 getJSON 一致 */
+async function postJSON(url, body, headers) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 30000)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+        body: JSON.stringify(body || {}),
+        signal: controller.signal,
+      })
       clearTimeout(timer)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json()
@@ -415,6 +445,144 @@ async function fetchLol(comp) {
   return historic.slice(0, 20)
 }
 
+/* ------------------------------------------------------------------ 王者荣耀 KPL */
+
+/**
+ * schedule_status 实测：1=未开赛、4=已结束（2026 夏季赛 136 场全是 4，比分正常）。
+ * 2/3 的语义赛季开打后才能观察到，这里先按 2=进行中、其余未知兜底。
+ * 兜底时如果有比分，就当已结束——比把打完的比赛一直挂成「未开始」要好。
+ */
+const KPL_STATE = { 1: 'upcoming', 2: 'live', 4: 'finished' }
+
+function kplTeam(id, name, accent) {
+  // 季后赛未确定的对阵，两边都是"待定"且同 id，统一成 TBD，免得关注/提醒撞车
+  const tbd = !name || name === '待定' || String(id || '').endsWith('_dd')
+  const label = tbd ? '待定' : name
+  return {
+    id: tbd ? 'TBD' : String(id),
+    name: label,
+    zh: tbd ? '待定' : name,
+    abbr: tbd ? 'TBD' : label,
+    color: accent,
+  }
+}
+
+async function fetchKpl(comp) {
+  const lower = new Date(Date.now() - daysBack * 86400000)
+  const upper = new Date(Date.now() + daysForward * 86400000)
+
+  let json
+  try {
+    // seasonid 传空串 = 当前赛季；接口一次返回整赛季，本地再按时间窗裁
+    json = await postJSON(`${KPL}/getScheduleList`, { seasonid: '' })
+  } catch (err) {
+    console.warn(`\n  ! ${comp.key} 赛程抓取失败: ${err.message}`)
+    return []
+  }
+
+  const list = json?.data?.list || []
+  const out = []
+  for (const ev of list) {
+    const ts = Number(ev.start_timestamp)
+    if (!ts) continue
+    const start = new Date(ts * 1000).toISOString()
+    const t = new Date(start)
+    if (t < lower || t > upper) continue
+
+    let status = KPL_STATE[ev.schedule_status] || 'upcoming'
+    const played = Number(ev.team_a_score || 0) + Number(ev.team_b_score || 0)
+    if (status === 'upcoming' && played > 0) status = 'finished'
+    const showScore = status === 'finished' || status === 'live'
+    const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+
+    out.push({
+      id: `${comp.key}-${ev.scheduleid}`,
+      comp: comp.key,
+      start,
+      date: beijingDay(start),
+      time: beijingTime(start),
+      status,
+      statusText: status === 'finished' ? '已结束' : status === 'live' ? '进行中' : '',
+      stage: `${comp.name} · ${ev.stage_name || '常规赛'}`,
+      venue: ev.arenas || ev.location_name || '',
+      broadcast: [],
+      bo: num(ev.bo_total),
+      home: { ...kplTeam(ev.team_a_id, ev.team_a_name, comp.accent), score: showScore ? num(ev.team_a_score) : null },
+      away: { ...kplTeam(ev.team_b_id, ev.team_b_name, comp.accent), score: showScore ? num(ev.team_b_score) : null },
+    })
+  }
+  return out.sort((a, b) => (a.start < b.start ? -1 : 1))
+}
+
+/* ------------------------------------------------------------------ CBA */
+
+/**
+ * CBA 官方一次返回整赛季（490 场、280KB），本地按时间窗裁。
+ * Status=1 是未开赛；赛后 Home/VisitingTeamScore 有值、Quarter 会回落到空；
+ * 进行中时 Quarter 有值 —— 用这三条推断状态，比只信 Status 稳。
+ */
+async function fetchCba(comp) {
+  const from = beijingDay(new Date(Date.now() - daysBack * 86400000).toISOString())
+  const to = beijingDay(new Date(Date.now() + daysForward * 86400000).toISOString())
+
+  let json
+  try {
+    json = await getJSON(`${CBA}/home/home_schedules`)
+  } catch (err) {
+    console.warn(`\n  ! ${comp.key} 赛程抓取失败: ${err.message}`)
+    return []
+  }
+
+  const list = Array.isArray(json?.data) ? json.data : []
+  const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+  const out = []
+
+  for (const ev of list) {
+    const d = String(ev.dates || '')
+    const tm = String(ev.time || '00:00')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue
+    if (d < from || d > to) continue
+
+    // dates + time 都是北京时间，直接按 +08:00 组装
+    const start = new Date(`${d}T${tm}:00+08:00`).toISOString()
+    const hasScore = num(ev.HomeTeamScore) != null || num(ev.VisitingTeamScore) != null
+    const status = ev.Status === 1 ? 'upcoming' : (num(ev.Quarter) != null ? 'live' : hasScore ? 'finished' : 'upcoming')
+    const showScore = status !== 'upcoming'
+    const typeName = ev.ScheduleTypeID === 3 ? '季前赛' : '常规赛'
+
+    out.push({
+      id: `${comp.key}-${ev.ScheduleID}`,
+      comp: comp.key,
+      start,
+      date: d,
+      time: tm,
+      status,
+      statusText: status === 'finished' ? '已结束' : status === 'live' ? '进行中' : '',
+      stage: `${comp.name} · ${ev.GroupName || typeName}`,
+      venue: '',
+      broadcast: [],
+      bo: null,
+      home: {
+        id: String(ev.HomeTeamID || ev.HomeTeamName || '?'),
+        name: ev.HomeTeamName || '待定',
+        zh: ev.HomeTeamName || '',
+        abbr: ev.HomeTeamName || '待定',
+        color: comp.accent,
+        score: showScore ? num(ev.HomeTeamScore) : null,
+      },
+      away: {
+        id: String(ev.VisitingTeamID || ev.VisitingTeamName || '?'),
+        name: ev.VisitingTeamName || '待定',
+        zh: ev.VisitingTeamName || '',
+        abbr: ev.VisitingTeamName || '待定',
+        color: comp.accent,
+        score: showScore ? num(ev.VisitingTeamScore) : null,
+      },
+    })
+  }
+  return out.sort((a, b) => (a.start < b.start ? -1 : 1))
+}
+
 /* ------------------------------------------------------------------ 主流程 */
 
 /** 赛事覆盖情况报告：一眼看出哪些赛事抓到了数据、未来赛程有没有进来 */
@@ -538,7 +706,13 @@ async function main() {
 
   for (const comp of targets) {
     process.stdout.write(`抓取 ${comp.name.padEnd(6)} …`)
-    const rows = comp.source === 'lol' ? await fetchLol(comp) : await fetchEspn(comp)
+    const rows = comp.source === 'lol'
+      ? await fetchLol(comp)
+      : comp.source === 'kpl'
+        ? await fetchKpl(comp)
+        : comp.source === 'cba'
+          ? await fetchCba(comp)
+          : await fetchEspn(comp)
     rows.sort((a, b) => (a.start < b.start ? -1 : 1))
 
     if (rows.length) {

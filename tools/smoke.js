@@ -85,7 +85,11 @@ async function run() {
   check('首页：赛事入口数量与 meta 一致', d.entries.length === allData.meta.competitions.length,
     `入口 ${d.entries.length} / meta ${allData.meta.competitions.length}`)
   check('首页：正常渲染时不出现错误提示', !d.loadError, d.loadError)
-  check('首页：覆盖足球 9 项赛事', allData.categories().find((c) => c.key === 'football').competitions.length === 9)
+  // 2026-10-02 新增中超：不写死数量，只保证关键赛事都在（以后再加赛事不会误报）
+  const footComps = allData.categories().find((c) => c.key === 'football').competitions
+  check('首页：足球分类齐全（含中超/五大联赛/欧冠欧联/国字号）',
+    footComps.length >= 9 && ['csl', 'epl', 'liga', 'ucl', 'uel', 'chn'].every((k) => footComps.indexOf(k) > -1),
+    `赛事 ${footComps.length} 项`)
   check('首页：含欧国联/欧联/中国国字号入口', ['nations', 'uel', 'chn'].every((k) => d.entries.some((e) => e.key === k)),
     d.entries.filter((e) => ['nations', 'uel', 'chn'].indexOf(e.key) > -1).map((e) => e.name).join('、'))
   check('首页：每个入口都有摘要文案', d.entries.every((e) => e.summary && e.summary.length > 4))
@@ -94,7 +98,9 @@ async function run() {
   check('首页：默认选中一个有比赛的日期', allData.query({ date: d.activeDate, status: '' }).length > 0, d.activeDate)
   check('首页：今日比赛已构建', Array.isArray(d.dayMatches))
   check('首页：卡片视图字段齐全', !d.dayMatches.length || !!d.dayMatches[0]._compName && !!d.dayMatches[0]._statusLabel)
-  check('首页：卡片显示中文队名', d.dayMatches.every((m) => /[一-龥]/.test(m.home.zhName) || m.comp === 'worlds') || !d.dayMatches.length,
+  // 官方队名本身就是拉丁字母的（S 赛的 G2/Fnatic、KPL 的 KSG）不算缺中文名
+  const latinOnly = (s) => /^[\x20-\x7F]+$/.test(String(s || ''))
+  check('首页：卡片显示中文队名', d.dayMatches.every((m) => /[一-龥]/.test(m.home.zhName) || m.comp === 'worlds' || latinOnly(m.home.zhName)) || !d.dayMatches.length,
     d.dayMatches.length ? `${d.dayMatches[0].home.zhName} vs ${d.dayMatches[0].away.zhName}` : '')
   check('首页：赛事入口摘要含具体对阵', d.entries.every((e) => / vs /.test(e.summary)), d.entries[0].summary)
 
@@ -141,7 +147,12 @@ async function run() {
 
   schOpts.onCatTap.call(ctxSch, { currentTarget: { dataset: { key: 'football' } } })
   s = ctxSch.data
-  check('赛程页：足球分类含 9 项赛事', s.catComps.length === 9, `赛事 ${s.catComps.length} 项`)
+  // 同上：只保证关键赛事在，不写死数量（2026-10-02 加了中超）
+  // catComps 是赛事对象数组（不是 key 数组），按 key 判断
+  const catKeys = s.catComps.map((c) => c.key)
+  check('赛程页：足球分类齐全（含中超）',
+    catKeys.length >= 9 && ['csl', 'epl', 'ucl', 'uel', 'chn'].every((k) => catKeys.indexOf(k) > -1),
+    `赛事 ${catKeys.length} 项：${catKeys.join(',')}`)
   schOpts.onCompTap.call(ctxSch, { currentTarget: { dataset: { key: 'chn' } } })
   const chnMatches = matchRows(ctxSch.data.rows)
   check('赛程页：中国国字号能筛选出来', ctxSch.data.activeComp === 'chn' && chnMatches.length > 0, `${chnMatches.length} 场`)
@@ -263,10 +274,13 @@ async function run() {
   // 补录通道：ESPN 的 218 个足球联赛里没有亚运会，中国 U23 亚运队靠 tools/manual-matches.js 兜底
   const manualMod = require(path.join(ROOT, 'tools/manual-matches.js'))
   const bjToday = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
-  const liveManual = manualMod.filter((m) => m.date >= bjToday)
-  check('数据层：补录表未过期的比赛都进了快照',
-    liveManual.length > 0 && liveManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
-    `补录 ${manualMod.length} 场，未过期 ${liveManual.length} 场`)
+  // 亚运会已结束，补录表暂时没有未来场次 —— 改成校验"落在抓取窗口内的补录条目都进了快照"，
+  // 这样无论表里是未来的还是刚打完的，通道本身都能被验到
+  const mRange = (allData.meta && allData.meta.range) || { from: bjToday, to: bjToday }
+  const inRangeManual = manualMod.filter((m) => m.date >= mRange.from && m.date <= mRange.to)
+  check('数据层：补录表窗口内的比赛都进了快照',
+    inRangeManual.length > 0 && inRangeManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
+    `补录 ${manualMod.length} 场，窗口内 ${inRangeManual.length} 场（窗口 ${mRange.from}~${mRange.to}）`)
   check('数据层：query 支持 status 数组（live 归入即将开赛）', (() => {
     const up = dataMod.query({ status: 'upcoming' }).length
     const upLive = dataMod.query({ status: ['upcoming', 'live'] }).length
@@ -463,6 +477,43 @@ async function run() {
   check('卡图：两张底图已进包且单张 ≤ 200KB', badBg.length === 0, badBg.join(' '))
   check('卡图：BG 常量已指向底图',
     posterMod.BG.match === '/images/share-match.jpg' && posterMod.BG.brief === '/images/share-brief.jpg')
+
+  /* ── 2026-10-02 新增三个赛事源：KPL（腾讯官方 POST）、CBA（官方 GET）、中超（ESPN chn.1） ── */
+  const syncSrc = fsMod.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')
+  const compByKey = {}
+  allData.meta.competitions.forEach((c) => { compByKey[c.key] = c })
+  check('赛事：KPL / CBA / 中超 都已注册到 meta',
+    ['kpl', 'cba', 'csl'].every((k) => !!compByKey[k]),
+    ['kpl', 'cba', 'csl'].filter((k) => !compByKey[k]).join(' ') || 'ok')
+  check('赛事：分类归属正确（中超=足球 / CBA=篮球 / KPL=电竞）',
+    compByKey.csl.cat === 'football' && compByKey.cba.cat === 'basketball' && compByKey.kpl.cat === 'esports',
+    `${compByKey.csl.cat}/${compByKey.cba.cat}/${compByKey.kpl.cat}`)
+  const catKeysOf = (k) => ((allData.meta.categories.find((c) => c.key === k) || {}).competitions || [])
+  check('赛事：三个新赛事都进了对应大类',
+    catKeysOf('football').indexOf('csl') > -1 && catKeysOf('basketball').indexOf('cba') > -1 && catKeysOf('esports').indexOf('kpl') > -1)
+  check('赛事：KPL 抓取通道接线完整（fetchKpl + 官方域名 + POST）',
+    syncSrc.indexOf('function fetchKpl(') > -1
+    && syncSrc.indexOf('kplshop-op.timi-esports.qq.com/kplow') > -1
+    && syncSrc.indexOf('getScheduleList') > -1 && syncSrc.indexOf('postJSON(') > -1)
+  check('赛事：CBA 抓取通道接线完整（fetchCba + 官方域名）',
+    syncSrc.indexOf('function fetchCba(') > -1
+    && syncSrc.indexOf('portal-server.cbaleague.com') > -1
+    && syncSrc.indexOf('home/home_schedules') > -1)
+  // 队名中文：KPL/CBA 官方就是中文，中超靠 zh-names.js 映射（16 条按 ESPN team id）
+  const zhMod = require(path.join(ROOT, 'tools/zh-names.js'))
+  const cslIds = [2052, 21355, 131704, 22537, 8240, 131705, 21910, 22198, 7521, 15515, 977, 22199, 8239, 21506, 22536, 18203]
+  const noCslZh = cslIds.filter((id) => !/[一-龥]/.test(zhMod.espnZh(String(id)) || ''))
+  check('中文名：中超 16 队映射齐全', noCslZh.length === 0, `缺 ${noCslZh.join(',')}`)
+  ;['kpl', 'cba', 'csl'].forEach((k) => {
+    const list = dataMod.matches().filter((m) => m.comp === k)
+    const bad = list.filter((m) => !m.home.zh || !m.away.zh)
+    check(`数据层：${k} 有场次且双方队名都有中文`,
+      list.length > 0 && bad.length === 0, `${list.length} 场，缺中文 ${bad.length} 场`)
+  })
+  const kplTbd = dataMod.matches().filter((m) => m.comp === 'kpl' && (m.home.name === '待定' || m.away.name === '待定'))
+  check('数据层：KPL 未确定对阵归一成 TBD（避免关注/提醒撞车）',
+    kplTbd.every((m) => (m.home.name === '待定' ? m.home.id === 'TBD' : true) && (m.away.name === '待定' ? m.away.id === 'TBD' : true)),
+    `${kplTbd.length} 场含待定`)
 
   // 页面内分享按钮：open-type=share 才能在页面里直接唤起转发面板（不只靠右上角菜单）
   const shareBtnPages = ['detail', 'brief']

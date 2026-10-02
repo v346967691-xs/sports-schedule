@@ -139,6 +139,10 @@ const ZONE_STYLE = {
   acl: { label: '亚冠区', color: '#2F7A52', bg: '#E9F4EE' },
   po2: { label: '季后赛区', color: '#2F7A52', bg: '#E9F4EE' },
   playin: { label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
+  // 欧国联专用（note 文本 "Qualifies for QFs" / "Promotion"）
+  qf: { label: '晋级八强', color: '#2F7A52', bg: '#E9F4EE' },
+  promo: { label: '直接升级', color: '#2F7A52', bg: '#E9F4EE' },
+  promo_po: { label: '升级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
 }
 
 /** ESPN 的英文 note → 我们的分区。用前缀匹配，qualifying 归并到同一分区（标签保持简短） */
@@ -151,16 +155,50 @@ function zoneFromNote(note) {
   if (/relegation/i.test(n)) return ZONE_STYLE.rel
   // 欧冠/欧联的 36 队联赛阶段：直接晋级 / 附加赛 / 淘汰
   if (/qualifies for round of 16/i.test(n)) return ZONE_STYLE.r16
+  // 欧国联：A 组前二 "Qualifies for QFs"（必须排在 promotion 之前，
+  // 因为 B-D 的 note 是 "...; B-D: Promotion playoffs"，同一段文字两种含义）
+  if (/qualifies for qf/i.test(n)) return ZONE_STYLE.qf
   if (/knockout phase playoffs/i.test(n)) return ZONE_STYLE.po
+  if (/promotion playoff/i.test(n)) return ZONE_STYLE.promo_po
+  if (/promotion/i.test(n)) return ZONE_STYLE.promo
   if (/eliminated/i.test(n)) return ZONE_STYLE.out
   return null
 }
 
-/** 没有官方 note 时的固定区间兜底（自算榜 / NBA） */
-function zoneFallback(compKey, cat, pos, count) {
+/** 没有官方 note 时的固定区间兜底（自算榜 / NBA / 欧国联各组） */
+function zoneFallback(compKey, cat, pos, count, groupName) {
   if (compKey === 'csl') {
     if (pos <= 2) return ZONE_STYLE.acl
     if (pos >= count - 1) return ZONE_STYLE.rel
+    return null
+  }
+  if (compKey === 'nations') {
+    // 欧国联：ESPN 只给部分组挂了 note（2026-10-02 只挂了 A1），其他组会显得
+    // 「有的有色块有的没有」。这里的规则**逐条取自 ESPN 官方 note 的四个模板**：
+    //   1st：A=晋级八强(QF) / B-D=直接升级
+    //   2nd：A=晋级八强(QF) / B-D=升级附加赛
+    //   3rd：A/B=降级附加赛 / C-D 无
+    //   4th：A/B=降级区 / C=降级附加赛（官方原文 Relegation or playoffs）/ D 无
+    // 组名已被 groupLabel 翻成「A1 组」这种，所以匹配开头的联赛字母。
+    const lg = (String(groupName || '').match(/^([A-D])\d*\s*组/) || [])[1] || ''
+    if (lg === 'A') {
+      if (pos <= 2) return ZONE_STYLE.qf
+      if (pos === 3) return ZONE_STYLE.relpo
+      if (pos === 4) return ZONE_STYLE.rel
+    } else if (lg === 'B') {
+      if (pos === 1) return ZONE_STYLE.promo
+      if (pos === 2) return ZONE_STYLE.promo_po
+      if (pos === 3) return ZONE_STYLE.relpo
+      if (pos === 4) return ZONE_STYLE.rel
+    } else if (lg === 'C') {
+      if (pos === 1) return ZONE_STYLE.promo
+      if (pos === 2) return ZONE_STYLE.promo_po
+      if (pos === 3) return ZONE_STYLE.relpo
+      if (pos === 4) return ZONE_STYLE.relpo
+    } else if (lg === 'D') {
+      if (pos === 1) return ZONE_STYLE.promo
+      if (pos === 2) return ZONE_STYLE.promo_po
+    }
     return null
   }
   if (cat === 'basketball') {
@@ -213,7 +251,7 @@ function applyZones(table, compKey, cat) {
     const count = (g.rows || []).length
     ;(g.rows || []).forEach((r) => {
       if (r.zone) return
-      const z = zoneFallback(compKey, cat, r.pos, count)
+      const z = zoneFallback(compKey, cat, r.pos, count, g.name)
       if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg }
     })
   })
@@ -221,14 +259,22 @@ function applyZones(table, compKey, cat) {
 }
 
 /**
- * 排序：足球按积分、其余按胜率，同分时依次比净胜球 / 进球。
+ * 排序：足球按积分、其余按胜率。
+ * ⚠️ 足球同分时**先比 ESPN 的官方名次（rank），再比净胜球/进球** ——
+ *    rank 里含 head-to-head 等官方同分裁决，我们自己用进球数排会排反：
+ *    2026-10-02 欧国联 A1 意大利21、比利时22 同分同净胜球，官方名次是
+ *    比利时第 2、意大利第 3（互相交锋占优），按进球排就把意大利顶到了第 2，
+ *    分区色带（降级附加赛）也跟着挂到了第 2 名头上，用户一眼看出异常。
  * ⚠️ 排完必须按数组顺序重新编号 —— NBA 季前赛全 0 胜时 ESPN 的 playoffSeed
- * 会整体退化成 1，直接用它的值会出现「15 支球队都排第 1」的荒唐场面。
+ *    会整体退化成 1，直接用它的值会出现「15 支球队都排第 1」的荒唐场面。
  */
 function sortRows(rows, cat) {
+  // espnRow 里 pos 存的是 ESPN 官方 rank，排序前先存下来（排序后会重编号覆盖）
+  rows.forEach((r) => { r._esRank = Number(r.pos) || 0 })
   rows.sort((a, b) => {
     if (cat === 'football') {
       if (b.pts !== a.pts) return (b.pts || 0) - (a.pts || 0)
+      if (a._esRank && b._esRank && a._esRank !== b._esRank) return a._esRank - b._esRank
       if (b.diff !== a.diff) return (b.diff || 0) - (a.diff || 0)
       if (b.scored !== a.scored) return (b.scored || 0) - (a.scored || 0)
       return String(a.name).localeCompare(String(b.name))
@@ -275,7 +321,10 @@ async function fetchEspnTable(comp) {
 
   return applyZones({
     comp: comp.key,
-    season: (seasonPool[0] && seasonPool[0].name) || '',
+    // ⚠️ 只有「赛季型」children（名字带年份）才能当赛季名展示；
+    //    欧国联/NBA 的 children 是分组，children[0].name 是「Group A1」/
+    //    「Eastern Conference」，当赛季名显示会很怪（2026-10-02 用户截图发现）
+    season: seasonKids.length ? ((seasonPool[0] && seasonPool[0].name) || '') : '',
     columns: COLUMNS[comp.cat] || COLUMNS.football,
     groups: out,
   }, comp.key, comp.cat)

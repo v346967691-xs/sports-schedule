@@ -979,6 +979,28 @@ async function run() {
   const nbaZone = (nbaGroups[0].rows[6] && nbaGroups[0].rows[6].zone && nbaGroups[0].rows[6].zone.label) || ''
   check('积分榜：NBA 第 7 名在附加赛区', nbaZone === '附加赛区', nbaZone)
 
+  /* ---------- 欧国联分区（2026-10-02 用户发现 A1 色块错位） ---------- */
+  const nations = stData.nations
+  const a1 = nations && nations.groups.find((g) => g.name === 'A1 组')
+  const a1Names = a1 ? a1.rows.map((r) => r.zh || r.name) : []
+  check('积分榜：欧国联 A1 按官方名次排（比利时第 2、意大利第 3）',
+    a1Names.join('/') === '法国/比利时/意大利/土耳其', a1Names.join('/'))
+  check('积分榜：欧国联 A1 四队都有分区且与前二/第3/第4 对应',
+    !!a1 && a1.rows.map((r) => (r.zone && r.zone.label) || '').join('/') === '晋级八强/晋级八强/降级附加赛/降级区',
+    a1 ? a1.rows.map((r) => (r.zone && r.zone.label) || '无').join('/') : '无')
+  const a2 = nations && nations.groups.find((g) => g.name === 'A2 组')
+  check('积分榜：欧国联其他组也有分区（不再只有 A1 独有）',
+    !!a2 && a2.rows.every((r) => !!r.zone),
+    a2 ? a2.rows.map((r) => r.zh + ':' + (r.zone && r.zone.label)).join(' ') : '无')
+  const d1 = nations && nations.groups.find((g) => g.name === 'D1 组')
+  check('积分榜：D 组只有前二有分区（D 组没有降级）',
+    !!d1 && d1.rows.length >= 3
+      && !!d1.rows[0].zone && !!d1.rows[1].zone
+      && d1.rows.slice(2).every((r) => !r.zone),
+    d1 ? d1.rows.map((r) => (r.zone && r.zone.label) || '无').join('/') : '无')
+  check('积分榜：分组型赛事不再把组名当赛季名',
+    nations && nations.season === '' && !/Group/.test(nations.season || ''), nations ? nations.season : '无')
+
   /* ---------- 球队详情页 ---------- */
   require(path.join(ROOT, 'pages/team/team.js'))
   const teamOpts = global.__page

@@ -510,6 +510,11 @@ async function run() {
     check(`数据层：${k} 有场次且双方队名都有中文`,
       list.length > 0 && bad.length === 0, `${list.length} 场，缺中文 ${bad.length} 场`)
   })
+  // 未确定的对阵不该出现在可关注球队列表里（teamsOf 里剔除 TBD）
+  const kplTeams = dataMod.teamsOf('kpl')
+  check('数据层：KPL 可关注球队不含「待定」',
+    kplTeams.length > 0 && kplTeams.every((t) => t.id !== 'TBD' && t.display !== '待定'),
+    `${kplTeams.length} 队`)
   const kplTbd = dataMod.matches().filter((m) => m.comp === 'kpl' && (m.home.name === '待定' || m.away.name === '待定'))
   check('数据层：KPL 未确定对阵归一成 TBD（避免关注/提醒撞车）',
     kplTbd.every((m) => (m.home.name === '待定' ? m.home.id === 'TBD' : true) && (m.away.name === '待定' ? m.away.id === 'TBD' : true)),

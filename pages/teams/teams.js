@@ -10,7 +10,8 @@ const { appInstance } = require('../../utils/app-instance')
  * 球队的名单不是单独维护的，直接从 data.teamsOf(comp) 里抽，
  * 所以只要有中国队的比赛进快照，这里就能选到，不用额外维护名单。
  */
-const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'nba', 'lpl', 'lck']
+// 2026-10-02：新增的中超 / CBA / KPL 也开放关注（注意这是页面层，改完要发版才生效）
+const SELECTABLE = ['epl', 'csl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'cba', 'nba', 'kpl', 'lpl', 'lck']
 
 /**
  * 某些赛事只开放部分球队供关注。

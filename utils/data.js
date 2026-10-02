@@ -128,6 +128,8 @@ function teamsOf(compKey) {
     ;[m.home, m.away].forEach((t) => {
       if (!t || !t.id) return
       const id = String(t.id)
+      // 未确定的对阵（"待定"）不是一支真球队，不该出现在可关注列表里
+      if (id === 'TBD' || t.name === '待定') return
       if (seen[id]) return
       seen[id] = true
       out.push({

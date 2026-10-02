@@ -16,7 +16,7 @@ const { appInstance } = require('../../utils/app-instance')
  * 只是这里不开放那些"球队池不适合关注"的赛事（欧冠/欧联/世界赛等）。
  * ⚠️ 这是页面层：改完要发版才生效，不像数据层那样推云端就更新。
  */
-const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl', 'nba', 'cba', 'lpl', 'lck', 'kpl']
+const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl', 'u17', 'u17w', 'nba', 'cba', 'lpl', 'lck', 'kpl']
 
 /**
  * 某些赛事只开放部分球队供关注。
@@ -26,6 +26,9 @@ const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 
  */
 const CAT_TEAM_FILTER = {
   chn: /^中国/,
+  // U17 两个世界杯：48 / 24 支队里有 47 / 23 支外国队，用户要关注的是中国队
+  u17: /^中国/,
+  u17w: /^中国/,
 }
 
 Page({
@@ -67,11 +70,15 @@ Page({
     const followedSet = {}
     followedList.forEach((t) => { followedSet[follows.key(t.comp, t.id)] = true })
 
-    const cats = SELECTABLE.map((k) => ({
-      key: k,
-      name: data.compOf(k).name,
-      followed: followedList.filter((t) => t.comp === k).length,
-    }))
+    // 赛会制赛事（U17 世界杯）在窗口外没有比赛 → 抽不出球队，那个分类就不显示，
+    // 等比赛进入抓取窗口会自动冒出来，不用发版
+    const cats = SELECTABLE
+      .filter((k) => data.teamsOf(k).length > 0)
+      .map((k) => ({
+        key: k,
+        name: data.compOf(k).name,
+        followed: followedList.filter((t) => t.comp === k).length,
+      }))
 
     const kw = String(this.data.keyword || '').trim().toLowerCase()
     const catFilter = CAT_TEAM_FILTER[this.data.activeCat]

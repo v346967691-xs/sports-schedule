@@ -86,6 +86,9 @@ const GROUP_ZH = [
   { test: /^western\s*conference$/i, zh: '西部联盟' },
   { test: /^eastern$/i, zh: '东部' },
   { test: /^western$/i, zh: '西部' },
+  // 亚冠精英分东亚区 / 西亚区（不是东/西部联盟，别跟 NBA 的兜底混在一起）
+  { test: /^east\s*region$/i, zh: '东亚区' },
+  { test: /^west\s*region$/i, zh: '西亚区' },
 ]
 function groupLabel(name) {
   const raw = String(name || '').trim()
@@ -266,7 +269,9 @@ function espnRow(entry, cat, index) {
   const row = {
     id,
     name,
-    zh: zhNames.espnZh(id) || '',
+    // 与 sync.js 的 normTeam 同一套三级兜底：id → 英文名（国青队 U17/U20 与
+    // 亚冠外国俱乐部没有 id 映射）→ 留空。否则 U17 世界杯 48 支队全是英文。
+    zh: zhNames.espnZh(id) || zhNames.nameZh(name) || '',
     abbr: (team.abbreviation || team.shortDisplayName || name).slice(0, 6),
     pos: pick(stats, 'rank', 'playoffSeed') || index + 1,
     played: pick(stats, 'gamesPlayed') || 0,
@@ -545,6 +550,11 @@ const TARGETS = [
   { key: 'nations', cat: 'football', sport: 'soccer', espn: 'uefa.nations' },
   { key: 'uel', cat: 'football', sport: 'soccer', espn: 'uefa.europa' },
   { key: 'csl', cat: 'football', sport: 'soccer', espn: 'chn.1' },
+  // 亚冠精英：东/西两个区各 16 队（不是联赛，是一张「小组积分表」）
+  { key: 'acl', cat: 'football', sport: 'soccer', espn: 'afc.champions' },
+  // U17 世界杯：男足 12 组 × 4 队、女足 6 组 × 4 队，children 直接就是分组
+  { key: 'u17', cat: 'football', sport: 'soccer', espn: 'fifa.world.u17' },
+  { key: 'u17w', cat: 'football', sport: 'soccer', espn: 'fifa.wworld.u17' },
   { key: 'nba', cat: 'basketball', sport: 'basketball', espn: 'nba' },
   // 英雄联盟：官方榜，leagueId 与 sync.js 的 COMPETITIONS 保持一致
   { key: 'lpl', cat: 'esports', from: 'lol', lol: '98767991314006698' },

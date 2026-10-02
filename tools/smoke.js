@@ -506,7 +506,7 @@ async function run() {
   // 大类里的展示顺序（2026-10-02 用户定）：欧冠→五大联赛→欧国联→国字号→欧联→中超 /
   // NBA→CBA / 全球总决赛→德玛西亚杯→LPL→LCK→KPL→LEC→季中赛→亚运会
   const ORDER = {
-    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,csl',
+    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,csl,acl,u17,u17w',
     basketball: 'nba,cba',
     esports: 'worlds,demacia,lpl,lck,kpl,lec,msi,agames',
   }
@@ -539,6 +539,34 @@ async function run() {
   const cslIds = [2052, 21355, 131704, 22537, 8240, 131705, 21910, 22198, 7521, 15515, 977, 22199, 8239, 21506, 22536, 18203]
   const noCslZh = cslIds.filter((id) => !/[一-龥]/.test(zhMod.espnZh(String(id)) || ''))
   check('中文名：中超 16 队映射齐全', noCslZh.length === 0, `缺 ${noCslZh.join(',')}`)
+
+  /* ── 2026-10-03 新增三个赛事：亚冠精英（中超球队参赛）+ 两个 U17 世界杯 ── */
+  check('赛事：亚冠精英 / U17 世界杯 / U17 女足世界杯 都已注册',
+    ['acl', 'u17', 'u17w'].every((k) => !!compByKey[k]),
+    ['acl', 'u17', 'u17w'].filter((k) => !compByKey[k]).join(' ') || 'ok')
+  check('赛事：三个新赛事都归在足球大类',
+    ['acl', 'u17', 'u17w'].every((k) => catKeysOf('football').indexOf(k) > -1))
+  // 国青队（"Spain U17"）的 team id 与成年国家队**不同**，ESPN_ZH 按 id 查不到，
+  // 只能按英文名剥掉年龄段后缀再翻 —— 否则 48 支队在小程序上全是英文
+  check('中文名：U17 队名剥掉年龄段后缀再翻',
+    zhMod.nameZh('Spain U17') === '西班牙U17'
+    && zhMod.nameZh('China U17') === '中国U17'
+    && zhMod.nameZh('China PR U17') === '中国U17女足',
+    `${zhMod.nameZh('Spain U17')} / ${zhMod.nameZh('China PR U17')}`)
+  const youthMs = dataMod.matches().filter((m) => m.comp === 'u17' || m.comp === 'u17w')
+  check('数据层：U17 世界杯队名已汉化（不出现 Spain U17）',
+    youthMs.length === 0
+    || youthMs.every((m) => /[一-龥]/.test(m.home.zh || '') && /[一-龥]/.test(m.away.zh || '')),
+    youthMs.length ? youthMs.slice(0, 3).map((m) => `${m.home.zh} vs ${m.away.zh}`).join(' / ') : '窗口内暂无场次')
+  const aclMs = dataMod.matches().filter((m) => m.comp === 'acl')
+  check('数据层：亚冠精英已进快照且队名有中文',
+    aclMs.length > 0 && aclMs.every((m) => /[一-龥]/.test(m.home.zh || '') && /[一-龥]/.test(m.away.zh || '')),
+    aclMs.length ? `${aclMs.length} 场，例：${aclMs[0].home.zh} vs ${aclMs[0].away.zh}` : '窗口内暂无场次')
+  check('数据层：亚冠精英含中超球队（北京国安 / 上海海港）',
+    aclMs.some((m) => /北京国安|上海海港/.test((m.home.zh || '') + (m.away.zh || ''))),
+    aclMs.length
+      ? [...new Set(aclMs.map((m) => [m.home.zh, m.away.zh]).flat())].filter((n) => /国安|海港|申花|泰山|蓉城/.test(n)).join('/')
+      : '无')
   ;['kpl', 'cba', 'csl'].forEach((k) => {
     const list = dataMod.matches().filter((m) => m.comp === k)
     const bad = list.filter((m) => !m.home.zh || !m.away.zh)

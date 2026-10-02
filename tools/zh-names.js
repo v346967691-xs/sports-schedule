@@ -172,8 +172,21 @@ const NAME_ZH = {
   // 大洋洲
   Australia: '澳大利亚', 'New Zealand': '新西兰', Fiji: '斐济', 'Papua New Guinea': '巴布亚新几内亚',
   Samoa: '萨摩亚', Tahiti: '塔希提', Tonga: '汤加', Vanuatu: '瓦努阿图',
+  'New Caledonia': '新喀里多尼亚', Mozambique: '莫桑比克', 'China PR': '中国',
   // 国际足联之外的遗留写法
   'Sao Tome and Principe': '圣多美和普林西比', 'Cape Verde Islands': '佛得角',
+}
+
+/**
+ * 青年队（U17 / U20 世界杯）队名：ESPN 给的是 "Spain U17" / "China PR U17"，
+ * 队 id 与成年国家队不同，ESPN_ZH 查不到，只能按英文名剥掉年龄段后缀再查国家队表。
+ * ⚠️ 中国男女足 U17 会重名（都叫「中国U17」），女足这支显式标出来。
+ */
+const YOUTH_ZH = {
+  'China U17': '中国U17',
+  'China PR U17': '中国U17女足',
+  'China U20': '中国U20',
+  'China PR U20': '中国U20女足',
 }
 
 /**
@@ -207,6 +220,22 @@ const CLUB_ZH = {
   'Melbourne Victory': '墨尔本胜利', 'Adelaide United': '阿德莱德联', 'Brisbane Roar': '布里斯班狮吼',
   'Perth Glory': '珀斯光荣', 'Newcastle Jets': '纽卡斯尔喷气机', 'Western United': '西部联',
   'Wellington Phoenix': '惠灵顿凤凰', 'Macarthur FC': '麦克阿瑟',
+  // 亚冠精英 · 东亚区（含北京国安 / 上海海港）
+  'Cong An Hanoi': '河内公安', 'Jeonbuk Motors': '全北现代',
+  // 亚冠精英 · 西亚区（ESPN 有时写 "Al Hilal" 有时写 "Al-Hilal"，两种都收）
+  'Air Force Club': '空军俱乐部', 'Al Ahli': '吉达国民', 'Al-Ahli': '吉达国民',
+  'Al Ain': '艾因', 'Al-Ain': '艾因',
+  'Al Gharafa': '加拉法', 'Al-Gharafa': '加拉法',
+  'Al Hilal': '利雅得新月', 'Al-Hilal': '利雅得新月', 'AlHilal': '利雅得新月',
+  'Al Ittihad': '吉达联合', 'Al-Ittihad': '吉达联合',
+  'Al Nassr': '利雅得胜利', 'Al-Nassr': '利雅得胜利', 'AlNassr': '利雅得胜利',
+  'Al Qadsiah': '卡迪西亚', 'Al-Qadsiah': '卡迪西亚',
+  'Al Sadd': '萨德', 'Al-Sadd': '萨德',
+  'Al Shamal': '沙马尔', 'Al-Shamal': '沙马尔',
+  'Al Wasl': '瓦斯尔', 'Al-Wasl': '瓦斯尔',
+  'Esteghlal': '德黑兰独立', 'Neftchi Fergana': '费尔干纳石油',
+  'Pakhtakor Tashkent': '塔什干棉农', 'Shabab Al-Ahli': '迪拜青年国民',
+  'Traktor Sazi FC': '大不里士拖拉机',
 }
 
 /** 足球 / NBA 队名（按 ESPN team id） */
@@ -221,10 +250,19 @@ function espnZh(id) {
 const NAME_LC = {}
 Object.keys(NAME_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = NAME_ZH[k] })
 Object.keys(CLUB_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = CLUB_ZH[k] })
+Object.keys(YOUTH_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = YOUTH_ZH[k] })
 
 function nameZh(name) {
   const s = String(name || '').trim()
-  return NAME_ZH[s] || CLUB_ZH[s] || NAME_LC[s.toLowerCase()] || ''
+  const direct = YOUTH_ZH[s] || NAME_ZH[s] || CLUB_ZH[s] || NAME_LC[s.toLowerCase()] || ''
+  if (direct) return direct
+  // "Spain U17" / "China PR U17"：剥掉年龄段后缀查国家队表，再把后缀拼回去
+  const m = s.match(/^(.*?)[\s\-]+(U\d{2})$/i)
+  if (m) {
+    const base = nameZh(m[1])
+    if (base) return `${base}${m[2].toUpperCase()}`
+  }
+  return ''
 }
 
 /** 英雄联盟队名（按官方简码） */
@@ -232,4 +270,4 @@ function lolZh(code) {
   return LOL_ZH[code] || ''
 }
 
-module.exports = { ESPN_ZH, NAME_ZH, CLUB_ZH, LOL_ZH, espnZh, nameZh, lolZh }
+module.exports = { ESPN_ZH, NAME_ZH, CLUB_ZH, YOUTH_ZH, LOL_ZH, espnZh, nameZh, lolZh }

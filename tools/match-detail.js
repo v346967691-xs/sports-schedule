@@ -35,6 +35,9 @@ const SLUG = {
   nations: 'uefa.nations',
   uel: 'uefa.europa',
   csl: 'chn.1',
+  acl: 'afc.champions',
+  u17: 'fifa.world.u17',
+  u17w: 'fifa.wworld.u17',
   nba: 'nba',
 }
 const BASKETBALL = { nba: true }

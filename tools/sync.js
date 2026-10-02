@@ -70,6 +70,7 @@ const COMPETITIONS = [
       { slug: 'fifa.friendly_u21', label: 'U21 友谊赛' },
       { slug: 'fifa.world.u20', label: 'U20 世界杯' },
       { slug: 'fifa.world.u17', label: 'U17 世界杯' },
+      { slug: 'fifa.wworld.u17', label: 'U17 女足世界杯' },
       { slug: 'fifa.friendly.w', label: '女足友谊赛' },
       { slug: 'fifa.wwc', label: '女足世界杯' },
       { slug: 'afc.w.asian.cup', label: '女足亚洲杯' },
@@ -81,6 +82,12 @@ const COMPETITIONS = [
   },
   { key: 'uel', source: 'espn', sport: 'soccer', cat: 'football', name: '欧联', full: '欧足联欧洲联赛', espn: 'uefa.europa', accent: '#E2630F' },
   { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
+  // 亚冠精英：北京国安 / 上海海港等中超球队参加的洲际俱乐部赛事（东亚区 + 西亚区）
+  { key: 'acl', source: 'espn', sport: 'soccer', cat: 'football', name: '亚冠精英', full: '亚足联冠军精英联赛', espn: 'afc.champions', accent: '#0B6E4F' },
+  // ⚠️ 两个 U17 世界杯都是「赛会制 + 短期窗口」：开赛前 45 天才会进入抓取窗口，
+  //    平时这两项是空的（空的赛事入口会自动隐藏，不会白屏）
+  { key: 'u17', source: 'espn', sport: 'soccer', cat: 'football', name: 'U17世界杯', full: '国际足联 U-17 男足世界杯（卡塔尔 2026）', espn: 'fifa.world.u17', accent: '#8B1538' },
+  { key: 'u17w', source: 'espn', sport: 'soccer', cat: 'football', name: 'U17女足世界杯', full: '国际足联 U-17 女足世界杯（摩洛哥 2026）', espn: 'fifa.wworld.u17', accent: '#B0347A' },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
   { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
   // 电竞顺序：全球总决赛 → 德玛西亚杯 → LPL → LCK → KPL → LEC → 季中冠军赛 → 亚运会
@@ -106,7 +113,7 @@ const COMPETITIONS = [
 const SPORT_CATS = {
   football: {
     name: '足球',
-    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'csl'],
+    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'csl', 'acl', 'u17', 'u17w'],
   },
   basketball: { name: '篮球', competitions: ['nba', 'cba'] },
   esports: { name: '电竞', competitions: ['worlds', 'demacia', 'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames'] },
@@ -211,8 +218,10 @@ function normTeam(raw, fallbackName, fallbackColor) {
   return {
     id,
     name,
-    // 中文名：小程序里优先展示，取不到就用英文名
-    zh: zhNames.espnZh(id) || '',
+    // 中文名：小程序里优先展示，取不到就用英文名。
+    // 三级兜底：① ESPN 队 id（俱乐部/国家队主表）② 英文名（国青队 U17/U20 与
+    // 亚冠外国俱乐部没有单独 id 映射，只能按名字翻）③ 留空 → 展示英文名
+    zh: zhNames.espnZh(id) || zhNames.nameZh(name) || '',
     abbr: (raw.abbreviation || raw.shortDisplayName || name).slice(0, 6),
     color: raw.color ? `#${String(raw.color).replace('#', '')}` : fallbackColor || '#6B7280',
   }

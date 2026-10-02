@@ -467,13 +467,13 @@ async function fetchLol(comp) {
  *   （上赛季 KPL2026S2 共 136 场全部为 4，进一步印证 4=已结束）
  *
  * ⚠️ 旧版把 2 当成「进行中」是错的，官方语义 2=已取消。已取消的比赛不进列表：
- *    小程序只有 upcoming/live/finished 三态，挂成未开始会一直占位、还会触发开赛提醒。
+ *    小程序只有 upcoming/live/finished 三态，挂成未开始会一直占位。
  */
 const KPL_STATE = { 1: 'upcoming', 3: 'live', 4: 'finished' }
 const KPL_CANCELED = 2
 
 function kplTeam(id, name, accent) {
-  // 季后赛未确定的对阵，两边都是"待定"且同 id，统一成 TBD，免得关注/提醒撞车
+  // 季后赛未确定的对阵，两边都是"待定"且同 id，统一成 TBD，免得关注撞车
   const tbd = !name || name === '待定' || String(id || '').endsWith('_dd')
   const label = tbd ? '待定' : name
   return {

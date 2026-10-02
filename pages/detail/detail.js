@@ -4,7 +4,6 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
-const reminders = require('../../utils/reminders')
 const { appInstance } = require('../../utils/app-instance')
 
 Page({
@@ -14,7 +13,6 @@ Page({
     rows: [],
     isFav: false,
     favBusy: false,
-    isRemind: false,
     authState: 'unknown',
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
@@ -80,7 +78,6 @@ Page({
       loading: false,
       loadError: '',
       isFav: app.isFav(match.id),
-      isRemind: reminders.has(match.id),
       authState: app.globalData.authState,
       hasStandings: !!data.standingsOf(match.comp),
     }, () => this.buildShareImage())
@@ -122,30 +119,8 @@ Page({
     if (!this.data.match) return
     this.setData({
       isFav: app.isFav(this.data.match.id),
-      isRemind: reminders.has(this.data.match.id),
       authState: app.globalData.authState,
     })
-  },
-
-  /** 开赛前 30 分钟提醒：本地优先存储，登录后自动同步到云端 */
-  onRemindTap() {
-    const match = this.data.match
-    if (!match) return
-    if (this.data.isRemind) {
-      reminders.remove(match.id)
-      wx.showToast({ title: '已取消开赛提醒', icon: 'none' })
-    } else {
-      const res = reminders.add(match)
-      wx.showToast({
-        title: res.already ? '已经设过提醒了' : '已设置，开赛前 30 分钟提醒你',
-        icon: 'none',
-      })
-    }
-    this.setData({ isRemind: reminders.has(match.id) })
-  },
-
-  goReminders() {
-    wx.navigateTo({ url: '/pages/reminders/reminders' })
   },
 
   async onFavTap() {

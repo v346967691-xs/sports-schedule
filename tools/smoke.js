@@ -388,7 +388,7 @@ async function run() {
   // ⚠️ 分享能力：页面不实现 onShareAppMessage，右上角「转发给朋友」和「复制链接」就是灰的，
   //    而「复制链接」还依赖「转发给朋友」。2026-09-30 想在公众号图文挂卡片时才踩到。
   const fsMod = require('fs')
-  const SHARE_PAGES = ['index', 'schedule', 'mine', 'detail', 'brief', 'teams', 'reminders']
+  const SHARE_PAGES = ['index', 'schedule', 'mine', 'detail', 'brief', 'teams', 'rank', 'team']
   const noShare = SHARE_PAGES.filter((p) => {
     const s = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')
     return s.indexOf('onShareAppMessage') < 0 || s.indexOf('onShareTimeline') < 0
@@ -548,7 +548,7 @@ async function run() {
     kplTeams.length > 0 && kplTeams.every((t) => t.id !== 'TBD' && t.display !== '待定'),
     `${kplTeams.length} 队`)
   const kplTbd = dataMod.matches().filter((m) => m.comp === 'kpl' && (m.home.name === '待定' || m.away.name === '待定'))
-  check('数据层：KPL 未确定对阵归一成 TBD（避免关注/提醒撞车）',
+  check('数据层：KPL 未确定对阵归一成 TBD（避免关注撞车）',
     kplTbd.every((m) => (m.home.name === '待定' ? m.home.id === 'TBD' : true) && (m.away.name === '待定' ? m.away.id === 'TBD' : true)),
     `${kplTbd.length} 场含待定`)
 
@@ -674,77 +674,6 @@ async function run() {
   teamsOpts.onFollowTap.call(ctxTeams, { currentTarget: { dataset: { index: arsenalIdx } } })
   check('关注页：再点取消关注', ctxTeams.data.followedCount === 0)
   check('关注存储：取消后 has 不命中', tfMod.has('epl', '359') === false)
-
-  /* ---------- 开赛提醒（特别关注） ---------- */
-  const rmMod = require(path.join(ROOT, 'utils/reminders'))
-  rmMod.resetCache()
-  check('提醒存储：初始为空', rmMod.all().length === 0)
-
-  // 造三场：20 分钟后开赛（该提醒）、2 小时后（不该提醒）、已开赛（不该提醒）
-  const mkMatch = (id, offsetMs) => ({
-    id,
-    comp: 'epl',
-    stage: '测试',
-    home: { zh: '主队', abbr: 'HOM', name: 'Home' },
-    away: { zh: '客队', abbr: 'AWA', name: 'Away' },
-    date: '2026-09-26',
-    time: '12:00',
-    start: new Date(Date.now() + offsetMs).toISOString(),
-  })
-  const soon = mkMatch('rm-soon', 20 * 60000)
-  const later = mkMatch('rm-later', 120 * 60000)
-  const past = mkMatch('rm-past', -30 * 60000)
-
-  check('提醒存储：新增成功', rmMod.add(soon).added === true)
-  check('提醒存储：重复新增返回 already', rmMod.add(soon).already === true)
-  rmMod.add(later)
-  rmMod.add(past)
-  check('提醒存储：共存 3 条', rmMod.all().length === 3, `实际 ${rmMod.all().length}`)
-
-  const due = rmMod.dueReminders()
-  check('提醒：只有 30 分钟内且未开赛的才到期', due.length === 1 && due[0].matchId === 'rm-soon',
-    due.map((r) => r.matchId).join(',') || '无')
-  check('提醒：到期条目剩余时间在窗口内', due.length === 1 && due[0].inMs > 0 && due[0].inMs <= 30 * 60000)
-
-  // 首页提醒卡片
-  const ctxIdxDue = makeCtx(indexOpts)
-  indexOpts.onLoad.call(ctxIdxDue)
-  check('首页：开赛提醒卡片渲染出到期场次', ctxIdxDue.data.dueReminders.length === 1,
-    `dueReminders=${ctxIdxDue.data.dueReminders.length}`)
-  check('首页：提醒卡片含倒计时文案', /开赛/.test((ctxIdxDue.data.dueReminders[0] || {})._countdown || ''))
-
-  // 我的提醒管理页
-  require(path.join(ROOT, 'pages/reminders/reminders.js'))
-  const rmOpts = global.__page
-  const ctxRm = makeCtx(rmOpts)
-  rmOpts.onLoad.call(ctxRm)
-  check('我的提醒页：列出 3 条', ctxRm.data.list.length === 3, `实际 ${ctxRm.data.list.length}`)
-  check('我的提醒页：已开赛的标记为已开赛', ctxRm.data.list.find((r) => r.matchId === 'rm-past').started === true)
-  check('我的提醒页：按开赛时间升序', ctxRm.data.list[0].matchId === 'rm-past')
-
-  rmOpts.onRemove.call(ctxRm, { currentTarget: { dataset: { id: 'rm-soon' } } })
-  check('我的提醒页：取消后剩 2 条', ctxRm.data.list.length === 2, `实际 ${ctxRm.data.list.length}`)
-  check('提醒存储：取消后 has 不命中', rmMod.has('rm-soon') === false)
-
-  // 我的页提醒区块
-  const ctxMineRm = makeCtx(mineOpts)
-  mineOpts.buildReminders.call(ctxMineRm)
-  check('我的页：提醒区块有数据', ctxMineRm.data.remindCount === 2 && ctxMineRm.data.reminderList.length === 2,
-    `count=${ctxMineRm.data.remindCount}`)
-
-  // 详情页提醒按钮
-  const ctxDet2 = makeCtx(detOpts)
-  detOpts.onLoad.call(ctxDet2, { id: encodeURIComponent(target.id) })
-  await waitUntil(() => ctxDet2.data.match || ctxDet2.data.loadError)
-  check('详情页：初始未设提醒', ctxDet2.data.isRemind === false)
-  detOpts.onRemindTap.call(ctxDet2)
-  check('详情页：点提醒后状态变为已设', ctxDet2.data.isRemind === true)
-  detOpts.onRemindTap.call(ctxDet2)
-  check('详情页：再点取消提醒', ctxDet2.data.isRemind === false)
-
-  // 清理，避免影响后续断言
-  ;['rm-soon', 'rm-later', 'rm-past', target.id].forEach((id) => rmMod.remove(id))
-  rmMod.resetCache()
 
   /* ---------- 赛程日报 ---------- */
   const briefApi = require(path.join(ROOT, 'utils/brief'))

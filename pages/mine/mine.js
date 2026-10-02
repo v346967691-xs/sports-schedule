@@ -4,7 +4,6 @@ const fmt = require('../../utils/format')
 const view = require('../../utils/view')
 const favorites = require('../../utils/favorites')
 const follows = require('../../utils/team-follows')
-const reminders = require('../../utils/reminders')
 const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
@@ -20,8 +19,6 @@ Page({
     teams: [],
     teamMatches: [],
     teamResults: [],
-    reminderList: [],
-    remindCount: 0,
     stat: { matches: 0, upcoming: 0, comps: 0, range: '' },
     loadingFavs: false,
     brief: null,
@@ -31,7 +28,6 @@ Page({
     const app = appInstance()
     this.setData({ cloudReady: app.globalData.cloudReady, authState: app.globalData.authState })
     this.buildStat()
-    this.buildReminders()
     this.loadBrief()
     data.refresh().then((r) => { if (r.updated) this.buildStat() })
   },
@@ -46,10 +42,8 @@ Page({
     // 登录后先把云端关注球队并回本地，再渲染，换设备也能看到
     if (appInstance().globalData.authState === 'signed-in') {
       await follows.pullFromCloud()
-      await reminders.pullFromCloud()
     }
     this.buildTeams()
-    this.buildReminders()
     data.refresh().then((r) => { if (r.updated) { this.buildTeams(); this.buildStat() } })
   },
 
@@ -68,39 +62,6 @@ Page({
 
   goBrief() {
     wx.navigateTo({ url: '/pages/brief/brief' })
-  },
-
-  /** 我设的开赛提醒（只列最近 3 条，完整管理在「我的开赛提醒」页） */
-  buildReminders() {
-    const now = Date.now()
-    const list = reminders
-      .all()
-      .map((r) => {
-        const ts = r.startAt ? Date.parse(r.startAt) : NaN
-        const started = Number.isFinite(ts) && ts <= now
-        return {
-          matchId: r.matchId,
-          compName: data.compOf(r.comp).name,
-          accent: data.compOf(r.comp).accent,
-          home: r.home,
-          away: r.away,
-          when: started ? '已开赛' : (r.startAt ? fmt.countdownText(r.startAt) : ''),
-          startAt: r.startAt || '',
-        }
-      })
-      .sort((a, b) => (a.startAt < b.startAt ? -1 : a.startAt > b.startAt ? 1 : 0))
-
-    this.setData({ reminderList: list.slice(0, 3), remindCount: list.length })
-  },
-
-  goReminders() {
-    wx.navigateTo({ url: '/pages/reminders/reminders' })
-  },
-
-  /** 点提醒 → 跳到那场比赛的详情页（可在那里取消提醒） */
-  onReminderTap(e) {
-    const id = e.currentTarget.dataset.id
-    wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(id)}` })
   },
 
   /**
@@ -225,10 +186,10 @@ Page({
     wx.switchTab({ url: '/pages/index/index' })
   },
   onShareAppMessage() {
-    return share.message({ title: '闪现赛程助手 · 我的关注与提醒', path: '/pages/index/index' })
+    return share.message({ title: '闪现赛程助手 · 我的关注与赛程', path: '/pages/index/index' })
   },
 
   onShareTimeline() {
-    return share.timeline({ title: '闪现赛程助手 · 我的关注与提醒' })
+    return share.timeline({ title: '闪现赛程助手 · 我的关注与赛程' })
   },
 })

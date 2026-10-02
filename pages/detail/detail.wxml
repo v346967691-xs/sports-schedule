@@ -61,13 +61,6 @@
       </view>
       <button class="btn primary share-btn" open-type="share">分享赛果</button>
     </view>
-    <view
-      wx:if="{{match.status === 'upcoming'}}"
-      class="btn primary {{isRemind ? 'added' : ''}}"
-      bindtap="onRemindTap"
-    >
-      {{isRemind ? '已设开赛提醒 · 点此取消' : '开赛前 30 分钟提醒我'}}
-    </view>
     <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>
     <view class="btn ghost" wx:if="{{hasStandings}}" bindtap="onStandingsTap">查看{{comp.name}}积分榜</view>
   </view>

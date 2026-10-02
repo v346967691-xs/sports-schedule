@@ -7,7 +7,6 @@
     "pages/detail/detail",
     "pages/team/team",
     "pages/teams/teams",
-    "pages/reminders/reminders",
     "pages/brief/brief"
   ],
   "window": {

@@ -36,30 +36,6 @@
     <view class="empty-desc">{{loadError}}</view>
   </view>
 
-  <view class="section" wx:if="{{dueReminders.length}}">
-    <view class="section-head">
-      <view class="section-title">开赛提醒</view>
-      <view class="section-more" bindtap="goReminders">管理 ›</view>
-    </view>
-    <view class="card">
-      <view
-        wx:for="{{dueReminders}}"
-        wx:key="matchId"
-        class="due"
-        data-id="{{item.matchId}}"
-        bindtap="goDetail"
-        hover-class="due-hover"
-      >
-        <view class="due-comp" style="background: {{item._accent}}">{{item._compName}}</view>
-        <view class="due-main">
-          <view class="due-teams">{{item.home}} vs {{item.away}}</view>
-          <view class="due-time">{{item.time}} 开赛 · {{item._countdown}}</view>
-        </view>
-        <view class="due-arrow">›</view>
-      </view>
-    </view>
-  </view>
-
   <view class="section" wx:if="{{liveMatches.length}}">
     <view class="section-head">
       <view class="section-title">正在进行</view>

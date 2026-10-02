@@ -163,40 +163,6 @@
 
   <view class="section">
     <view class="section-head">
-      <view class="section-title">我的开赛提醒</view>
-      <view class="section-more" bindtap="goReminders">{{remindCount ? '管理' : '去设置'}} ›</view>
-    </view>
-
-    <view class="fav-list" wx:if="{{reminderList.length}}">
-      <view
-        wx:for="{{reminderList}}"
-        wx:key="matchId"
-        class="fav"
-        data-id="{{item.matchId}}"
-        bindtap="onReminderTap"
-        hover-class="fav-hover"
-      >
-        <view class="fav-bar" style="background: {{item.accent}}"></view>
-        <view class="fav-main">
-          <view class="fav-title">{{item.home}} vs {{item.away}}</view>
-          <view class="fav-time">{{item.compName}} · {{item.when}}</view>
-        </view>
-        <view class="fav-arrow">›</view>
-      </view>
-      <view class="section-sub" wx:if="{{remindCount > reminderList.length}}">
-        还有 {{remindCount - reminderList.length}} 条提醒，点右上角「管理」查看全部
-      </view>
-    </view>
-
-    <view class="empty" wx:else>
-      <view class="empty-title">还没有设置开赛提醒</view>
-      <view class="empty-desc">在比赛详情页点「开赛前 30 分钟提醒我」，临近开赛时会在首页提醒你</view>
-      <view class="empty-btn" bindtap="goHome">去看看赛程</view>
-    </view>
-  </view>
-
-  <view class="section">
-    <view class="section-head">
       <view class="section-title">赛程日报</view>
       <view class="section-more" bindtap="goBrief">翻阅 ›</view>
     </view>

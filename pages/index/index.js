@@ -3,7 +3,6 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
-const reminders = require('../../utils/reminders')
 const briefApi = require('../../utils/brief')
 const { appInstance } = require('../../utils/app-instance')
 
@@ -44,7 +43,6 @@ Page({
     stats: { upcoming: 0, days: 0, comps: 0, updatedAt: '' },
     teamMatches: [],
     teamCount: 0,
-    dueReminders: [],
     loadError: '',
     brief: null,
   },
@@ -152,7 +150,6 @@ Page({
       dateStrip: strip,
       activeDate: this.pickStartDay(strip),
       entries,
-      dueReminders: this.buildDueReminders(),
       liveMatches: view.decorateList(data.query({ status: 'live' }), { compOf: data.compOf }),
       stats: {
         upcoming: upcoming.length,
@@ -183,31 +180,6 @@ Page({
     })
 
     this.applyFilter()
-  },
-
-  /**
-   * 开赛提醒：开赛前 30 分钟内、且还没开赛的「特别关注」场次。
-   * 只要时间落在窗口里就会显示，开赛后自动消失，不需要额外的「已提醒」标记。
-   * 展示信息优先取实时赛程（这样临时改期也能跟着变），取不到再用存下来的快照。
-   */
-  buildDueReminders() {
-    return reminders.dueReminders().map((r) => {
-      const live = data.findMatch(r.matchId)
-      const mins = Math.ceil(r.inMs / 60000)
-      return {
-        matchId: r.matchId,
-        home: live ? (live.home.zh || live.home.name) : r.home,
-        away: live ? (live.away.zh || live.away.name) : r.away,
-        time: live ? live.time : r.time,
-        _compName: data.compOf(r.comp).name,
-        _accent: data.compOf(r.comp).accent,
-        _countdown: mins >= 60 ? '1 小时后开赛' : (mins > 1 ? `${mins} 分钟后开赛` : '即将开赛'),
-      }
-    })
-  },
-
-  goReminders() {
-    wx.navigateTo({ url: '/pages/reminders/reminders' })
   },
 
   goTeams() {

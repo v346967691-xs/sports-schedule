@@ -54,6 +54,71 @@
     </view>
   </view>
 
+  <!-- ① 事件时间轴 -->
+  <view class="section card" wx:if="{{detail.hasTimeline}}">
+    <view class="sec-title">比赛事件</view>
+    <view class="tl">
+      <view class="tl-row {{item.goal ? 'is-goal' : ''}} {{item.key ? '' : 'is-minor'}}"
+            wx:for="{{detail.shownEvents}}" wx:key="idx">
+        <view class="tl-min">{{item.m}}</view>
+        <view class="tl-dot {{item.side}}"></view>
+        <view class="tl-body">
+          <view class="tl-type">{{item.t}}</view>
+          <view class="tl-desc" wx:if="{{item.s}}">{{item.s}}</view>
+        </view>
+      </view>
+    </view>
+    <view class="tl-toggle" wx:if="{{detail.subCount}}" bindtap="onToggleSubs">
+      {{detailAll ? '收起换人' : '展开换人（' + detail.subCount + '）'}}
+    </view>
+  </view>
+
+  <!-- ② 技术统计 -->
+  <view class="section card" wx:if="{{detail.hasStats}}">
+    <view class="sec-title">技术统计</view>
+    <view class="st-row" wx:for="{{detail.stats}}" wx:key="k">
+      <view class="st-key">{{item.k}}</view>
+      <view class="st-line">
+        <view class="st-val" style="color: {{match.home.color}}">{{item.h}}</view>
+        <view class="st-bar">
+          <view class="st-fill h" style="width: {{item.hp}}%; background: {{match.home.color}}"></view>
+          <view class="st-fill a" style="width: {{item.ap}}%; background: {{match.away.color}}"></view>
+        </view>
+        <view class="st-val" style="color: {{match.away.color}}">{{item.a}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ③ 双方近况 -->
+  <view class="section card" wx:if="{{detail.hasForm}}">
+    <view class="sec-title">双方近况</view>
+    <view class="sec-sub">最近 5 场正式比赛</view>
+    <view class="form-block" wx:for="{{detail.formRows}}" wx:key="idx">
+      <view class="form-side">{{item.side}}</view>
+      <view class="form-item" wx:for="{{item.list}}" wx:for-item="g" wx:key="i">
+        <view class="f-badge {{g.r}}">{{g.rText}}</view>
+        <view class="f-at">{{g.at}}</view>
+        <view class="f-opp">{{g.opp}}</view>
+        <view class="f-sc">{{g.sc}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ④ 历史交锋 -->
+  <view class="section card" wx:if="{{detail.hasH2H}}">
+    <view class="sec-title">历史交锋</view>
+    <view class="sec-sub" wx:if="{{detail.h2h.summary}}">{{detail.h2h.summary}}</view>
+    <view class="h2h-row" wx:for="{{detail.h2h.list}}" wx:key="d">
+      <view class="h2h-date">{{item.d}}</view>
+      <view class="h2h-teams">
+        <text class="{{item.hs > item.as ? 'win' : ''}}">{{item.ho}}</text>
+        <text class="h2h-sc">{{item.hs}} - {{item.as}}</text>
+        <text class="{{item.as > item.hs ? 'win' : ''}}">{{item.ao}}</text>
+      </view>
+    </view>
+    <view class="foot-note tight">交锋记录为公开数据源可查到的最近若干次，官方未收录的早期比赛不在其中。</view>
+  </view>
+
   <view class="actions">
     <view class="btn-row">
       <view class="btn primary {{isFav ? 'added' : ''}}" bindtap="onFavTap">

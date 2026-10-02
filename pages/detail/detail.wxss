@@ -299,3 +299,267 @@
   width: 500px;
   height: 400px;
 }
+
+/* ---------- 比赛详情：事件时间轴 / 技术统计 / 双方近况 / 历史交锋 ---------- */
+/* 这四个区块共用「section 管外边距 + card 管卡片底」的组合，与页面其他卡片保持一致 */
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 26rpx 28rpx;
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.sec-title {
+  display: flex;
+  align-items: center;
+  font-size: 30rpx;
+  font-weight: 700;
+  letter-spacing: 0.5rpx;
+}
+
+.sec-title::before {
+  content: '';
+  display: block;
+  width: 8rpx;
+  height: 28rpx;
+  margin-right: 14rpx;
+  border-radius: 4rpx;
+  background: var(--brand);
+}
+
+.sec-sub {
+  font-size: 24rpx;
+  color: var(--muted);
+  margin: 8rpx 0 12rpx;
+}
+
+/* 事件时间轴 */
+.tl-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.tl-row:last-child {
+  border-bottom: 0;
+}
+
+.tl-min {
+  flex: none;
+  width: 96rpx;
+  font-size: 24rpx;
+  color: var(--muted);
+  padding-top: 2rpx;
+}
+
+.tl-dot {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  margin: 10rpx 16rpx 0 0;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.tl-dot.home {
+  background: var(--brand);
+}
+
+.tl-dot.away {
+  background: #2c6bc9;
+}
+
+.tl-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-type {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tl-desc {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--sub);
+}
+
+.tl-row.is-goal .tl-type {
+  color: var(--live);
+}
+
+.tl-row.is-minor .tl-type {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.tl-toggle {
+  margin-top: 12rpx;
+  padding: 10rpx 0;
+  font-size: 25rpx;
+  color: var(--brand);
+  text-align: center;
+}
+
+/* 技术统计 */
+.st-row {
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.st-row:last-child {
+  border-bottom: 0;
+}
+
+.st-key {
+  margin-bottom: 10rpx;
+  font-size: 23rpx;
+  color: var(--muted);
+  text-align: center;
+}
+
+.st-line {
+  display: flex;
+  align-items: center;
+}
+
+.st-val {
+  flex: none;
+  width: 110rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.st-val + .st-val {
+  text-align: right;
+}
+
+.st-bar {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 12rpx;
+  border-radius: 6rpx;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.st-fill {
+  height: 100%;
+}
+
+.st-fill.a {
+  margin-left: auto;
+}
+
+/* 双方近况 */
+.form-block {
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.form-block:last-child {
+  border-bottom: 0;
+}
+
+.form-side {
+  margin-bottom: 8rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.form-item {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 0;
+  font-size: 24rpx;
+  color: var(--sub);
+}
+
+.f-badge {
+  flex: none;
+  width: 40rpx;
+  height: 40rpx;
+  margin-right: 14rpx;
+  line-height: 40rpx;
+  border-radius: 8rpx;
+  font-size: 22rpx;
+  color: #fff;
+  text-align: center;
+  background: var(--muted);
+}
+
+.f-badge.W {
+  background: #d93b3b;
+}
+
+.f-badge.L {
+  background: #6b7a90;
+}
+
+.f-at {
+  flex: none;
+  width: 44rpx;
+  color: var(--muted);
+}
+
+.f-opp {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.f-sc {
+  flex: none;
+  color: var(--sub);
+}
+
+/* 历史交锋 */
+.h2h-row {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 0;
+  border-bottom: 2rpx solid var(--line);
+  font-size: 25rpx;
+}
+
+.h2h-row:last-of-type {
+  border-bottom: 0;
+}
+
+.h2h-date {
+  flex: none;
+  width: 168rpx;
+  font-size: 23rpx;
+  color: var(--muted);
+}
+
+.h2h-teams {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.h2h-teams text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.h2h-teams .win {
+  font-weight: 500;
+}
+
+.h2h-sc {
+  flex: none;
+  margin: 0 14rpx;
+  color: var(--muted);
+}

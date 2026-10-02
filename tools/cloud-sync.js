@@ -113,6 +113,17 @@ async function main() {
     console.warn('[cloud-sync] ⚠ 积分榜抓取失败，本次跳过推送：', (err && err.message) || err)
   }
 
+  // 2b) 抓取比赛详情（事件时间轴 / 双方近况 / 历史交锋 / 技术统计）
+  //     同样属于附加数据：失败只告警，不让赛程主链路跟着失败
+  let details = null
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js')], { stdio: 'inherit' })
+    delete require.cache[require.resolve('../data/match-details.js')]
+    details = require('../data/match-details.js')
+  } catch (err) {
+    console.warn('[cloud-sync] ⚠ 比赛详情抓取失败，本次跳过推送：', (err && err.message) || err)
+  }
+
   // 3) 读取刚生成的快照（注意：本进程尚未 require 过，拿到的是新文件）
   //    用新进程跑 sync，避免 sync.js 底部的 main() 在 require 时被执行两次
   delete require.cache[require.resolve('../data/matches.js')]
@@ -161,6 +172,41 @@ async function main() {
   } else {
     console.warn('[cloud-sync] ⚠ 本次没有可用的积分榜数据，跳过推送')
   }
+
+  if (details && details.buckets && details.buckets.length) {
+    log(`推送云端 match_detail（${details.buckets.length} 个日桶）…`)
+    let done = 0
+    const nowIso = new Date().toISOString()
+    for (const b of details.buckets) {
+      const r = await pushRow(cloud, 'match_detail', {
+        id: b.id,
+        day: b.day,
+        payload: b.payload,
+        generated_at: nowIso,
+        updated_at: nowIso,
+      })
+      if (r.ok) done += 1
+      else console.warn(`[cloud-sync] ⚠ 详情桶 ${b.id} 推送失败：`, r.problem)
+    }
+    log(`已写入云端 match_detail：${done}/${details.buckets.length} 个日桶`)
+
+    // 清理过期桶（RLS 只允许删 7 天前的，写在这里才删得动）
+    try {
+      const cutoff = dayStamp(Date.now() - 7 * 24 * 3600 * 1000)
+      await cloud.database.from('match_detail').delete().lt('day', cutoff)
+      log(`已清理 match_detail 早于 ${cutoff} 的日桶`)
+    } catch (err) {
+      console.warn('[cloud-sync] ⚠ 清理过期详情桶失败：', (err && err.message) || err)
+    }
+  } else {
+    console.warn('[cloud-sync] ⚠ 本次没有可用的比赛详情，跳过推送')
+  }
+}
+
+/** 北京时间（UTC+8）下的 YYYYMMDD */
+function dayStamp(ms) {
+  const d = new Date(ms + 8 * 3600 * 1000)
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 main().catch((err) => {

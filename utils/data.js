@@ -388,6 +388,38 @@ async function refreshStandings() {
   }
 }
 
+/**
+ * 北京时间（UTC+8）下的 YYYYMMDD —— 与 tools/match-detail.js 归档口径必须一致，
+ * 两边算法不同会导致「明明抓到了，页面却读不到」。
+ */
+function dayStampCN(iso) {
+  const d = new Date(new Date(iso).getTime() + 8 * 3600 * 1000)
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
+/**
+ * 比赛详情（事件时间轴 / 双方近况 / 历史交锋 / 技术统计）。
+ *
+ * 云端按天分桶存（id = 'd-YYYYMMDD'），这里一次只读 1 行，避免把整表拖下来。
+ * ⚠️ 读不到就返回 null，详情页据此把模块整个藏掉 —— 详情是增强内容，
+ *    没有它页面照样要能用，绝不能因为拿不到就报错或留白块。
+ */
+async function matchDetail(match) {
+  if (!match || !match.start || !cloudClient.isReady()) return null
+  try {
+    const { data, error } = await cloudClient.cloud.database
+      .from('match_detail')
+      .select('payload')
+      .eq('id', `d-${dayStampCN(match.start)}`)
+      .maybeSingle()
+    if (error || !data || !data.payload) return null
+    return data.payload[match.id] || null
+  } catch (err) {
+    console.warn('[赛程助手] 云端比赛详情读取失败', err)
+    return null
+  }
+}
+
 async function doRefresh() {
   try {
     // 并行拉两张表：它们互不依赖，串行只会白白多等一个 RTT
@@ -449,6 +481,7 @@ module.exports = {
   teamStanding,
   teamForm,
   teamUpcoming,
+  matchDetail,
   refresh,
   source,
   generatedAt,

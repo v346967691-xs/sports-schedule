@@ -1054,6 +1054,59 @@ async function run() {
       return true
     })(), ligaRows.map((r) => (r.zone && r.zone.label) || '').filter(Boolean).join('/'))
 
+  /* ---------- 比赛详情：事件时间轴 / 双方近况 / 历史交锋 / 技术统计 ---------- */
+  const md = require(path.join(ROOT, 'tools/match-detail.js'))
+  // ESPN 的 keyEvents 里约 1/4 是 "Start Delay" / "End Delay"，还有开哨、中场这类
+  // 结构性节点 —— 全放出来时间轴会又臭又长
+  check('详情：过滤掉 ESPN 的噪音事件（Delay / 开哨 / 中场）',
+    !md.keepEvent({ type: { text: 'Start Delay' } })
+      && !md.keepEvent({ type: { text: 'End Delay' } })
+      && !md.keepEvent({ type: { text: 'Kickoff' } })
+      && !md.keepEvent({ type: { text: 'Halftime' } })
+      && !md.keepEvent({ type: { text: 'End Regular Time' } })
+      && md.keepEvent({ type: { text: 'Yellow Card' } })
+      && md.keepEvent({ type: { text: 'Substitution' } })
+      && md.keepEvent({ type: { text: 'Goal' }, scoringPlay: true }))
+  const zhTypes = ['Yellow Card', 'Red Card', 'Substitution', 'Goal', 'Goal - Header', 'Penalty Goal', 'Own Goal']
+  check('详情：事件类型已汉化', zhTypes.every((t) => /[一-龥]/.test(md.zhEvent(t) || '')),
+    zhTypes.map((t) => md.zhEvent(t)).join('/'))
+  check('详情：换人只留「谁换下谁」且不带伤病因',
+    md.briefOf('Substitution, Germany. A replaces B because of an injury.', '换人') === 'A 换下 B',
+    md.briefOf('Substitution, Germany. A replaces B because of an injury.', '换人'))
+  check('详情：黄牌只留球员名',
+    md.briefOf('Kenny Kindle (Liechtenstein) is shown the yellow card', '黄牌') === 'Kenny Kindle',
+    md.briefOf('Kenny Kindle (Liechtenstein) is shown the yellow card', '黄牌'))
+
+  const mdFile = path.join(ROOT, 'data', 'match-details.js')
+  if (fsMod.existsSync(mdFile)) {
+    const mdData = require(mdFile)
+    const all = []
+    mdData.buckets.forEach((b) => Object.keys(b.payload || {}).forEach((k) => all.push(b.payload[k])))
+    const evs = all.reduce((acc, d) => acc.concat(d.events || []), [])
+    check('详情：抽出的事件类型全部是中文', evs.length > 0 && evs.every((e) => /[一-龥]/.test(e.t)),
+      evs.length ? evs.slice(0, 5).map((e) => e.t).join('/') : '无事件')
+    const opps = all.reduce((acc, d) => acc.concat((d.form && d.form.home) || [], (d.form && d.form.away) || []), [])
+    check('详情：双方近况的对手名已汉化',
+      opps.length > 0 && opps.every((g) => /[一-龥]/.test(g.opp || '')),
+      opps.slice(0, 5).map((g) => g.opp).join('/'))
+    check('详情：交锋战绩已汉化（不出现 Series / leads）',
+      all.every((d) => !d.h2h || !d.h2h.summary || (/[一-龥]/.test(d.h2h.summary) && !/Series|leads/i.test(d.h2h.summary))),
+      (all.find((d) => d.h2h && d.h2h.summary) || {}).h2h ? all.find((d) => d.h2h && d.h2h.summary).h2h.summary : '无')
+
+    const deco = require(path.join(ROOT, 'pages/detail/detail.js')).decorateDetail
+    const sample = all.find((d) => (d.stats || []).length)
+    const decoed = deco(sample || { events: [], stats: [], form: {} }, { home: { zhName: '主' }, away: { zhName: '客' } })
+    // 对比条两段宽度必须合计 100，否则百分比类统计（控球率 74 + 传球 90）会撑破容器
+    check('详情：技术统计对比条宽度合计为 100',
+      decoed.stats.length > 0 && decoed.stats.every((s) => s.hp + s.ap === 100),
+      decoed.stats.map((s) => `${s.k}:${s.hp}+${s.ap}`).join(' '))
+    check('详情：换人默认折叠（先只展示进球与牌）',
+      decoed.shownEvents === decoed.keyEvents && decoed.subCount === decoed.events.length - decoed.keyEvents.length,
+      `展示 ${decoed.shownEvents.length} / 共 ${decoed.events.length}`)
+    check('详情：只有 ESPN 赛事才有详情（LoL 等不入桶）',
+      all.every((d) => !/^man-/.test(d.id)), all.length ? all[0].id : '无')
+  }
+
   /* ---------- 球队详情页 ---------- */
   require(path.join(ROOT, 'pages/team/team.js'))
   const teamOpts = global.__page

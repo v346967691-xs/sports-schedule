@@ -104,9 +104,86 @@ const LOL_ZH = {
   TBD: '待定',
 }
 
+/**
+ * 英文名 → 中文名的兜底字典（国家队为主）
+ *
+ * 为什么要这一张：ESPN 的 `getTeams?hl=zh-CN` 实测**拿不到中文名**（1586 支队里
+ * 含中文的 0 个），而 `lastFiveGames` / `seasonseries` 里出现的对手往往不在我们的
+ * 赛程窗口内，ESPN_ZH 按 id 查不到。这时候只能按英文名兜底，否则界面上会冒出
+ * "Ivory Coast" 这种原文。俱乐部基本都能按 id 命中，这里主要补国字号。
+ */
+const NAME_ZH = {
+  // 亚洲
+  China: '中国', 'Hong Kong': '中国香港', 'Chinese Taipei': '中国台北', Macau: '中国澳门',
+  Japan: '日本', 'South Korea': '韩国', 'North Korea': '朝鲜', Mongolia: '蒙古',
+  India: '印度', Indonesia: '印度尼西亚', Thailand: '泰国', Vietnam: '越南', Myanmar: '缅甸',
+  Malaysia: '马来西亚', Singapore: '新加坡', Philippines: '菲律宾', Syria: '叙利亚',
+  Jordan: '约旦', Lebanon: '黎巴嫩', Palestine: '巴勒斯坦', Kuwait: '科威特', Bahrain: '巴林',
+  Oman: '阿曼', 'United Arab Emirates': '阿联酋', Qatar: '卡塔尔', 'Saudi Arabia': '沙特阿拉伯',
+  Iraq: '伊拉克', Iran: '伊朗', Uzbekistan: '乌兹别克斯坦', Kazakhstan: '哈萨克斯坦',
+  Turkmenistan: '土库曼斯坦', Kyrgyzstan: '吉尔吉斯斯坦', Tajikistan: '塔吉克斯坦',
+  Afghanistan: '阿富汗', Nepal: '尼泊尔', 'Sri Lanka': '斯里兰卡', Bangladesh: '孟加拉国',
+  Maldives: '马尔代夫', Bhutan: '不丹', Brunei: '文莱', Laos: '老挝', Cambodia: '柬埔寨',
+  'Timor-Leste': '东帝汶',
+  // 欧洲
+  Albania: '阿尔巴尼亚', Andorra: '安道尔', Armenia: '亚美尼亚', Austria: '奥地利',
+  Azerbaijan: '阿塞拜疆', Belarus: '白俄罗斯', Belgium: '比利时',
+  'Bosnia and Herzegovina': '波黑', Bulgaria: '保加利亚', Croatia: '克罗地亚',
+  Cyprus: '塞浦路斯', Czechia: '捷克', Denmark: '丹麦', England: '英格兰',
+  Estonia: '爱沙尼亚', 'Faroe Islands': '法罗群岛', Finland: '芬兰', France: '法国',
+  Georgia: '格鲁吉亚', Germany: '德国', Gibraltar: '直布罗陀', Greece: '希腊',
+  Hungary: '匈牙利', Iceland: '冰岛', Israel: '以色列', Italy: '意大利',
+  Kosovo: '科索沃', Latvia: '拉脱维亚', Liechtenstein: '列支敦士登', Lithuania: '立陶宛',
+  Luxembourg: '卢森堡', Malta: '马耳他', Moldova: '摩尔多瓦', Montenegro: '黑山',
+  Netherlands: '荷兰', 'North Macedonia': '北马其顿', 'Northern Ireland': '北爱尔兰',
+  Norway: '挪威', Poland: '波兰', Portugal: '葡萄牙', 'Republic of Ireland': '爱尔兰',
+  Romania: '罗马尼亚', Russia: '俄罗斯', 'San Marino': '圣马力诺', Scotland: '苏格兰',
+  Serbia: '塞尔维亚', Slovakia: '斯洛伐克', Slovenia: '斯洛文尼亚', Spain: '西班牙',
+  Sweden: '瑞典', Switzerland: '瑞士', Turkey: '土耳其', Ukraine: '乌克兰', Wales: '威尔士',
+  // 非洲
+  Algeria: '阿尔及利亚', Angola: '安哥拉', Benin: '贝宁', Botswana: '博茨瓦纳',
+  'Burkina Faso': '布基纳法索', Burundi: '布隆迪', Cameroon: '喀麦隆',
+  'Cape Verde': '佛得角', 'Central African Republic': '中非', Chad: '乍得',
+  Comoros: '科摩罗', Congo: '刚果', 'Congo DR': '刚果民主共和国', Djibouti: '吉布提',
+  Egypt: '埃及', 'Equatorial Guinea': '赤道几内亚', Eritrea: '厄立特里亚',
+  Eswatini: '斯威士兰', Ethiopia: '埃塞俄比亚', Gabon: '加蓬', Gambia: '冈比亚',
+  Ghana: '加纳', Guinea: '几内亚', 'Guinea-Bissau': '几内亚比绍', 'Ivory Coast': '科特迪瓦',
+  Kenya: '肯尼亚', Lesotho: '莱索托', Liberia: '利比里亚', Libya: '利比亚',
+  Madagascar: '马达加斯加', Malawi: '马拉维', Mali: '马里', Mauritania: '毛里塔尼亚',
+  Mauritius: '毛里求斯', Morocco: '摩洛哥', Mozambique: '莫桑比克', Namibia: '纳米比亚',
+  Niger: '尼日尔', Nigeria: '尼日利亚', Rwanda: '卢旺达', Senegal: '塞内加尔',
+  Seychelles: '塞舌尔', 'Sierra Leone': '塞拉利昂', Somalia: '索马里',
+  'South Africa': '南非', 'South Sudan': '南苏丹', Sudan: '苏丹', Tanzania: '坦桑尼亚',
+  Togo: '多哥', Tunisia: '突尼斯', Uganda: '乌干达', Zambia: '赞比亚', Zimbabwe: '津巴布韦',
+  // 中北美
+  Canada: '加拿大', 'Costa Rica': '哥斯达黎加', Cuba: '古巴', Curacao: '库拉索',
+  'Dominican Republic': '多米尼加', 'El Salvador': '萨尔瓦多', Grenada: '格林纳达',
+  Guatemala: '危地马拉', Haiti: '海地', Honduras: '洪都拉斯', Jamaica: '牙买加',
+  Mexico: '墨西哥', Nicaragua: '尼加拉瓜', Panama: '巴拿马', 'Puerto Rico': '波多黎各',
+  'Trinidad and Tobago': '特立尼达和多巴哥', 'United States': '美国',
+  Aruba: '阿鲁巴', Bahamas: '巴哈马', Barbados: '巴巴多斯', Belize: '伯利兹',
+  Bermuda: '百慕大', 'British Virgin Islands': '英属维尔京群岛',
+  'Cayman Islands': '开曼群岛', Dominica: '多米尼克', Guyana: '圭亚那',
+  'Saint Kitts and Nevis': '圣基茨和尼维斯', 'Saint Lucia': '圣卢西亚', Suriname: '苏里南',
+  // 南美
+  Argentina: '阿根廷', Bolivia: '玻利维亚', Brazil: '巴西', Chile: '智利',
+  Colombia: '哥伦比亚', Ecuador: '厄瓜多尔', Paraguay: '巴拉圭', Peru: '秘鲁',
+  Uruguay: '乌拉圭', Venezuela: '委内瑞拉',
+  // 大洋洲
+  Australia: '澳大利亚', 'New Zealand': '新西兰', Fiji: '斐济', 'Papua New Guinea': '巴布亚新几内亚',
+  Samoa: '萨摩亚', Tahiti: '塔希提', Tonga: '汤加', Vanuatu: '瓦努阿图',
+  // 国际足联之外的遗留写法
+  'Sao Tome and Principe': '圣多美和普林西比', 'Cape Verde Islands': '佛得角',
+}
+
 /** 足球 / NBA 队名（按 ESPN team id） */
 function espnZh(id) {
   return ESPN_ZH[String(id)] || ''
+}
+
+/** 英文名兜底（国家队为主），查不到就返回空串让调用方回落到原文 */
+function nameZh(name) {
+  return NAME_ZH[String(name || '').trim()] || ''
 }
 
 /** 英雄联盟队名（按官方简码） */
@@ -114,4 +191,4 @@ function lolZh(code) {
   return LOL_ZH[code] || ''
 }
 
-module.exports = { ESPN_ZH, LOL_ZH, espnZh, lolZh }
+module.exports = { ESPN_ZH, NAME_ZH, LOL_ZH, espnZh, nameZh, lolZh }

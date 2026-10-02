@@ -6,6 +6,74 @@ const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
 const { appInstance } = require('../../utils/app-instance')
 
+const RESULT_ZH = { W: '胜', D: '平', L: '负' }
+
+/**
+ * 把云端详情整理成页面直接可用的形状。
+ *
+ * 两处需要算而不能直出：
+ *  ① 换人事件一场能有 8~10 条，全铺开会比进球/牌多几倍，默认折叠掉。
+ *  ② 技术统计的对比条要归一化到 100：计数类（射门）按占比分，
+ *     百分比类（控球率、传球成功率）用主队值，客队补 100-h —— 否则两条加起来
+ *     超过 100 会把容器撑破。
+ */
+function decorateDetail(d, match) {
+  const events = (d.events || []).map((e, i) => ({
+    idx: i,
+    m: e.m,
+    t: e.t,
+    s: e.s,
+    side: e.side,
+    goal: !!e.goal,
+    key: e.t !== '换人',
+  }))
+  const keyEvents = events.filter((e) => e.key)
+  const stats = (d.stats || []).map((s) => {
+    const hs = String(s.h)
+    const as = String(s.a)
+    const isPct = hs.indexOf('%') >= 0 || as.indexOf('%') >= 0
+    const h = parseFloat(hs.replace('%', '')) || 0
+    const a = parseFloat(as.replace('%', '')) || 0
+    let hp = 50
+    if (isPct) hp = Math.max(0, Math.min(100, Math.round(h)))
+    else if (h + a > 0) hp = Math.round((h / (h + a)) * 100)
+    return { k: s.k, h: hs, a: as, hp, ap: 100 - hp }
+  })
+  const sideName = (side) => (match[side] && (match[side].zhName || match[side].name)) || ''
+  const formRows = ['home', 'away']
+    .map((side) => ({
+      idx: side,
+      side: sideName(side),
+      list: ((d.form && d.form[side]) || []).map((g, i) => ({
+        i,
+        at: g.at,
+        opp: g.opp,
+        sc: g.sc,
+        r: g.r,
+        rText: RESULT_ZH[g.r] || '',
+      })),
+    }))
+    .filter((r) => r.list.length)
+  const h2h = d.h2h
+    ? Object.assign({}, d.h2h, {
+        list: (d.h2h.list || []).map((e, i) => Object.assign({ i }, e)),
+      })
+    : null
+  return {
+    events,
+    keyEvents,
+    shownEvents: keyEvents,
+    subCount: events.length - keyEvents.length,
+    hasTimeline: events.length > 0,
+    stats,
+    hasStats: stats.length > 0,
+    formRows,
+    hasForm: formRows.length > 0,
+    h2h,
+    hasH2H: !!(h2h && h2h.list && h2h.list.length),
+  }
+}
+
 Page({
   data: {
     match: null,
@@ -15,6 +83,8 @@ Page({
     favBusy: false,
     authState: 'unknown',
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
+    detail: null,        // 比赛详情（事件时间轴 / 近况 / 交锋 / 技术统计），没有就整块隐藏
+    detailAll: false,    // 是否展开换人事件
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
     loading: false,
     loadError: '',
@@ -56,6 +126,23 @@ Page({
     }
   },
 
+  /**
+   * 比赛详情：独立于主流程异步加载，拿不到就整块不显示。
+   * 详情只覆盖「进行中 + 近 48 小时已结束」的比赛，老比赛本来就没有，这不是错误。
+   */
+  async loadDetail(match) {
+    const raw = await data.matchDetail(match)
+    if (!raw || !this.data.match || this.data.match.id !== match.id) return
+    this.setData({ detail: decorateDetail(raw, match), detailAll: false })
+  },
+
+  onToggleSubs() {
+    const d = this.data.detail
+    if (!d) return
+    const next = !this.data.detailAll
+    this.setData({ 'detail.shownEvents': next ? d.events : d.keyEvents, detailAll: next })
+  },
+
   /** 用一场比赛对象刷新整页（onLoad 与云端回补共用同一套逻辑） */
   applyMatch(raw) {
     const app = appInstance()
@@ -80,7 +167,10 @@ Page({
       isFav: app.isFav(match.id),
       authState: app.globalData.authState,
       hasStandings: !!data.standingsOf(match.comp),
-    }, () => this.buildShareImage())
+    }, () => {
+      this.buildShareImage()
+      this.loadDetail(match)
+    })
   },
 
   /**
@@ -231,3 +321,5 @@ Page({
     })
   },
 })
+
+module.exports = { decorateDetail }

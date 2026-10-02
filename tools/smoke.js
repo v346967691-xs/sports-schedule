@@ -505,6 +505,15 @@ async function run() {
   const compOrder = allData.meta.competitions.map((c) => c.key).join(',')
   check('赛事：赛事总表顺序与大类顺序一致',
     compOrder === `${ORDER.football},${ORDER.basketball},${ORDER.esports}`, compOrder)
+  // 关注页自己的赛事顺序（页面层）也要跟着走，不能跟首页/赛程页打架
+  const teamsSrc = fsMod.readFileSync(path.join(ROOT, 'pages/teams/teams.js'), 'utf8')
+  const selectable = ((teamsSrc.match(/const SELECTABLE = \[([^\]]+)\]/) || [])[1] || '')
+    .split(',').map((s) => s.trim().replace(/'/g, '')).filter(Boolean)
+  const order = allData.meta.competitions.map((c) => c.key)
+  const pos = selectable.map((k) => order.indexOf(k))
+  check('关注页：赛事顺序与全局顺序一致（单调递增）',
+    selectable.length > 0 && pos.every((v, i) => v >= 0 && (i === 0 || v > pos[i - 1])),
+    selectable.join(','))
   check('赛事：KPL 抓取通道接线完整（fetchKpl + 官方域名 + POST）',
     syncSrc.indexOf('function fetchKpl(') > -1
     && syncSrc.indexOf('kplshop-op.timi-esports.qq.com/kplow') > -1

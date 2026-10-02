@@ -10,8 +10,13 @@ const { appInstance } = require('../../utils/app-instance')
  * 球队的名单不是单独维护的，直接从 data.teamsOf(comp) 里抽，
  * 所以只要有中国队的比赛进快照，这里就能选到，不用额外维护名单。
  */
-// 2026-10-02：新增的中超 / CBA / KPL 也开放关注（注意这是页面层，改完要发版才生效）
-const SELECTABLE = ['epl', 'csl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'cba', 'nba', 'kpl', 'lpl', 'lck']
+/**
+ * 可关注的赛事及其展示顺序。
+ * 顺序与 tools/sync.js 的 COMPETITIONS / SPORT_CATS 保持一致（2026-10-02 用户定），
+ * 只是这里不开放那些"球队池不适合关注"的赛事（欧冠/欧联/世界赛等）。
+ * ⚠️ 这是页面层：改完要发版才生效，不像数据层那样推云端就更新。
+ */
+const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl', 'nba', 'cba', 'lpl', 'lck', 'kpl']
 
 /**
  * 某些赛事只开放部分球队供关注。

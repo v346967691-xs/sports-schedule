@@ -1001,6 +1001,38 @@ async function run() {
   check('积分榜：分组型赛事不再把组名当赛季名',
     nations && nations.season === '' && !/Group/.test(nations.season || ''), nations ? nations.season : '无')
 
+  /* ---------- 分区成带校验（2026-10-02 用户定） ---------- */
+  const ligaRows = stData.liga ? stData.liga.groups[0].rows : []
+  const zoneAt = (i) => (ligaRows[i] && ligaRows[i].zone && ligaRows[i].zone.label) || ''
+  // ESPN 给西甲第 10 毕尔巴鄂误挂了 Europa League（对不上任何规则：上赛季第 12 无欧战，
+  // 国王杯冠军是皇家社会）→ 成带校验必须把它丢掉，第 6 名那段保留
+  check('积分榜：西甲孤立的欧联区脏数据已被清掉', zoneAt(9) === '', zoneAt(9) || '无')
+  check('积分榜：西甲正常的欧战区仍在（6 欧联 / 7 欧协联）',
+    zoneAt(5) === '欧联区' && zoneAt(6) === '欧协联区', `${zoneAt(5)}/${zoneAt(6)}`)
+  // 同一种分区必须连成一段，不许出现断开的重复段
+  const dupCheck = (function () {
+    const seen = {}
+    let broken = false
+    ligaRows.forEach((r, i) => {
+      const label = (r.zone && r.zone.label) || ''
+      if (!label) return
+      if (seen[label] != null && i !== seen[label] + 1) broken = true
+      seen[label] = i
+    })
+    return !broken
+  })()
+  check('积分榜：同一种分区连成一段（无断开重复）', dupCheck)
+  // 红线：杯赛冠军拿到的欧战资格与联赛名次无关，任何情况下都不能挂进积分榜
+  check('积分榜：欧战区从第 1 名或紧邻上一段开始（不接杯赛名额）',
+    (function () {
+      const euro = []
+      ligaRows.forEach((r, i) => { if (r.zone && r.zone.kind !== 'bottom') euro.push(i) })
+      if (!euro.length) return false
+      if (euro[0] !== 0) return false
+      for (let k = 1; k < euro.length; k += 1) if (euro[k] - euro[k - 1] > 1) return false
+      return true
+    })(), ligaRows.map((r) => (r.zone && r.zone.label) || '').filter(Boolean).join('/'))
+
   /* ---------- 球队详情页 ---------- */
   require(path.join(ROOT, 'pages/team/team.js'))
   const teamOpts = global.__page

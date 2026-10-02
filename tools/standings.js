@@ -127,22 +127,27 @@ const COLUMNS = {
  * 分区配色（参考用户给的对照图：欧冠区红、欧联区蓝）。
  * color = 标签块底色，bg = 整行底色（浅色版）。
  */
+/**
+ * kind：决定这段色带在「成带校验」里怎么取舍
+ *   euro   —— 欧战 / 晋级类，名次带从榜首往下排（欧冠→欧联→欧协联…）
+ *   bottom —— 降级 / 淘汰类，名次带贴在榜尾
+ */
 const ZONE_STYLE = {
-  ucl: { label: '欧冠区', color: '#D03A3A', bg: '#FCECEB' },
-  uel: { label: '欧联区', color: '#2C6BC9', bg: '#E9F0FC' },
-  uecl: { label: '欧协联区', color: '#12977E', bg: '#E6F4F0' },
-  rel: { label: '降级区', color: '#5C6470', bg: '#F0F1F4' },
-  relpo: { label: '降级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
-  r16: { label: '直接晋级', color: '#2F7A52', bg: '#E9F4EE' },
-  po: { label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
-  out: { label: '淘汰区', color: '', bg: '' },
-  acl: { label: '亚冠区', color: '#2F7A52', bg: '#E9F4EE' },
-  po2: { label: '季后赛区', color: '#2F7A52', bg: '#E9F4EE' },
-  playin: { label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
+  ucl: { kind: 'euro', label: '欧冠区', color: '#D03A3A', bg: '#FCECEB' },
+  uel: { kind: 'euro', label: '欧联区', color: '#2C6BC9', bg: '#E9F0FC' },
+  uecl: { kind: 'euro', label: '欧协联区', color: '#12977E', bg: '#E6F4F0' },
+  rel: { kind: 'bottom', label: '降级区', color: '#5C6470', bg: '#F0F1F4' },
+  relpo: { kind: 'bottom', label: '降级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
+  r16: { kind: 'euro', label: '直接晋级', color: '#2F7A52', bg: '#E9F4EE' },
+  po: { kind: 'euro', label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
+  out: { kind: 'bottom', label: '淘汰区', color: '', bg: '' },
+  acl: { kind: 'euro', label: '亚冠区', color: '#2F7A52', bg: '#E9F4EE' },
+  po2: { kind: 'euro', label: '季后赛区', color: '#2F7A52', bg: '#E9F4EE' },
+  playin: { kind: 'euro', label: '附加赛区', color: '#C77E1F', bg: '#FBF2E3' },
   // 欧国联专用（note 文本 "Qualifies for QFs" / "Promotion"）
-  qf: { label: '晋级八强', color: '#2F7A52', bg: '#E9F4EE' },
-  promo: { label: '直接升级', color: '#2F7A52', bg: '#E9F4EE' },
-  promo_po: { label: '升级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
+  qf: { kind: 'euro', label: '晋级八强', color: '#2F7A52', bg: '#E9F4EE' },
+  promo: { kind: 'euro', label: '直接升级', color: '#2F7A52', bg: '#E9F4EE' },
+  promo_po: { kind: 'euro', label: '升级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
 }
 
 /** ESPN 的英文 note → 我们的分区。用前缀匹配，qualifying 归并到同一分区（标签保持简短） */
@@ -240,7 +245,10 @@ function espnRow(entry, cat, index) {
     : (entry.note && entry.note.description ? [entry.note.description] : [])
   for (const n of notes) {
     const z = zoneFromNote(n)
-    if (z && z.bg) { row.zone = { label: z.label, color: z.color, bg: z.bg }; break }
+    if (z && z.bg) {
+      row.zone = { label: z.label, color: z.color, bg: z.bg, kind: z.kind }
+      break
+    }
   }
   return row
 }
@@ -252,7 +260,70 @@ function applyZones(table, compKey, cat) {
     ;(g.rows || []).forEach((r) => {
       if (r.zone) return
       const z = zoneFallback(compKey, cat, r.pos, count, g.name)
-      if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg }
+      if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg, kind: z.kind }
+    })
+  })
+  return pruneZoneNoise(table)
+}
+
+/**
+ * 分区色带的成带校验（2026-10-02 用户定）
+ *
+ * ① 同一种分区在一张表里必须连成一段。ESPN 的 note 是「每队一条」而不是
+ *    「按名次生成」，会有单点脏数据：西甲第 10 毕尔巴鄂被挂了 Europa League
+ *    （与第 6 名阿拉维斯同文），核对下来它对不上任何规则——上赛季第 12 无欧战、
+ *    国王杯冠军是皇家社会。多段时：欧战类取最靠上那段，降级类取最靠下那段。
+ *
+ * ② ⚠️ 硬性红线：**通过杯赛冠军拿到的欧战资格永远不能挂进积分榜**。
+ *    那种资格与联赛名次无关，画在榜上就是错的。所以欧战段必须贴着名次带 ——
+ *    要么从第 1 名开始，要么紧邻上方的欧战段（最多隔 1 行），否则一律丢弃。
+ */
+function pruneZoneNoise(table) {
+  ;(table.groups || []).forEach((g) => {
+    const rows = (g.rows || []).slice().sort((a, b) => a.pos - b.pos)
+
+    // 1) 按「同分区 + 名次连续」切段
+    const runs = []
+    let cur = null
+    rows.forEach((r) => {
+      const z = r.zone
+      if (!z) { cur = null; return }
+      if (cur && cur.label === z.label && r.pos === cur.end + 1) {
+        cur.end = r.pos
+        cur.rows.push(r)
+      } else {
+        cur = { label: z.label, kind: z.kind || 'euro', start: r.pos, end: r.pos, rows: [r] }
+        runs.push(cur)
+      }
+    })
+    if (!runs.length) return
+
+    // 2) 每种分区只留一段
+    const best = {}
+    runs.forEach((run) => {
+      const prev = best[run.label]
+      if (!prev) { best[run.label] = run; return }
+      const better = run.kind === 'bottom' ? run.end > prev.end : run.start < prev.start
+      if (better) best[run.label] = run
+    })
+
+    // 3) 降级/淘汰段直接保留；欧战段必须接得上名次带
+    const kept = []
+    Object.keys(best).forEach((k) => { if (best[k].kind === 'bottom') kept.push(best[k]) })
+    const euroRuns = Object.keys(best).map((k) => best[k])
+      .filter((r) => r.kind !== 'bottom')
+      .sort((a, b) => a.start - b.start)
+    euroRuns.forEach((run) => {
+      if (run.start === 1) { kept.push(run); return }
+      const attached = euroRuns.some((x) => kept.indexOf(x) > -1 && x.end < run.start && run.start - x.end <= 2)
+      if (attached) kept.push(run)
+    })
+
+    // 4) 不在保留段里的行，撤掉色带
+    rows.forEach((r) => {
+      if (!r.zone) return
+      const ok = kept.some((run) => run.rows.indexOf(r) > -1)
+      if (!ok) delete r.zone
     })
   })
   return table

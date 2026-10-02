@@ -45,14 +45,13 @@ const CBA = 'https://portal-server.cbaleague.com'
 /* ------------------------------------------------------------------ 竞赛定义 */
 
 const COMPETITIONS = [
-  { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
+  // 赛事顺序即展示顺序：欧冠 → 五大联赛 → 欧国联 → 中国国字号 → 欧联 → 中超（2026-10-02 用户定）
+  { key: 'ucl', source: 'espn', sport: 'soccer', cat: 'football', name: '欧冠', full: '欧洲冠军联赛', espn: 'uefa.champions', accent: '#1B2A6B' },
   { key: 'epl', source: 'espn', sport: 'soccer', cat: 'football', name: '英超', full: '英格兰超级联赛', espn: 'eng.1', accent: '#4B1F6B' },
   { key: 'liga', source: 'espn', sport: 'soccer', cat: 'football', name: '西甲', full: '西班牙甲级联赛', espn: 'esp.1', accent: '#D4700F' },
   { key: 'seriea', source: 'espn', sport: 'soccer', cat: 'football', name: '意甲', full: '意大利甲级联赛', espn: 'ita.1', accent: '#0B4A9E' },
   { key: 'bundesliga', source: 'espn', sport: 'soccer', cat: 'football', name: '德甲', full: '德国甲级联赛', espn: 'ger.1', accent: '#D0021B' },
   { key: 'ligue1', source: 'espn', sport: 'soccer', cat: 'football', name: '法甲', full: '法国甲级联赛', espn: 'fra.1', accent: '#123A78' },
-  { key: 'ucl', source: 'espn', sport: 'soccer', cat: 'football', name: '欧冠', full: '欧洲冠军联赛', espn: 'uefa.champions', accent: '#1B2A6B' },
-  { key: 'uel', source: 'espn', sport: 'soccer', cat: 'football', name: '欧联', full: '欧足联欧洲联赛', espn: 'uefa.europa', accent: '#E2630F' },
   { key: 'nations', source: 'espn', sport: 'soccer', cat: 'football', name: '欧国联', full: '欧洲国家联赛', espn: 'uefa.nations', accent: '#0B4EA2' },
   {
     key: 'chn',
@@ -80,33 +79,37 @@ const COMPETITIONS = [
     // 只保留中国队出场的比赛（男女足各年龄段的队名都以 China 开头）
     teamPick: /^china/i,
   },
+  { key: 'uel', source: 'espn', sport: 'soccer', cat: 'football', name: '欧联', full: '欧足联欧洲联赛', espn: 'uefa.europa', accent: '#E2630F' },
+  { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
   { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
-  { key: 'kpl', source: 'kpl', cat: 'esports', name: 'KPL', full: '王者荣耀职业联赛', accent: '#D9A441' },
-  { key: 'lpl', source: 'lol', cat: 'esports', name: 'LPL', full: '英雄联盟职业联赛 · 中国大陆赛区', lol: '98767991314006698', lolSlug: 'lpl', accent: '#D4232A' },
+  // 电竞顺序：全球总决赛 → 德玛西亚杯 → LPL → LCK → KPL → LEC → 季中冠军赛 → 亚运会
+  { key: 'worlds', source: 'lol', cat: 'esports', name: '全球总决赛', full: '英雄联盟全球总决赛', lol: '98767975604431411', lolSlug: 'worlds', accent: '#B99433' },
   {
     key: 'demacia', source: 'lol', cat: 'esports', name: '德玛西亚杯', full: '德玛西亚杯（LPL 区域杯赛）',
     // LoL Esports API 的 leagues 列表里叫 DCGI（demacia_cup）
     lol: '117126995932274206', lolSlug: 'demacia_cup', accent: '#2E7CF6',
   },
+  { key: 'lpl', source: 'lol', cat: 'esports', name: 'LPL', full: '英雄联盟职业联赛 · 中国大陆赛区', lol: '98767991314006698', lolSlug: 'lpl', accent: '#D4232A' },
+  { key: 'lck', source: 'lol', cat: 'esports', name: 'LCK', full: '英雄联盟冠军联赛 · 韩国赛区', lol: '98767991310872058', lolSlug: 'lck', accent: '#1155A3' },
+  { key: 'kpl', source: 'kpl', cat: 'esports', name: 'KPL', full: '王者荣耀职业联赛', accent: '#D9A441' },
+  { key: 'lec', source: 'lol', cat: 'esports', name: 'LEC', full: '英雄联盟锦标赛 · EMEA 赛区', lol: '98767991302996019', lolSlug: 'lec', accent: '#6B3FA0' },
+  { key: 'msi', source: 'lol', cat: 'esports', name: '季中冠军赛', full: '英雄联盟季中冠军赛', lol: '98767991325878492', lolSlug: 'msi', accent: '#0E8C8C' },
   {
     key: 'agames', source: 'lol', cat: 'esports', name: '亚运会电竞', full: '亚运会 · 英雄联盟项目',
     // LoL Esports API 的 leagues 列表里叫 Asian Games（asian_games）
     lol: '117228885404001005', lolSlug: 'asian_games', accent: '#C8952A',
   },
-  { key: 'lck', source: 'lol', cat: 'esports', name: 'LCK', full: '英雄联盟冠军联赛 · 韩国赛区', lol: '98767991310872058', lolSlug: 'lck', accent: '#1155A3' },
-  { key: 'lec', source: 'lol', cat: 'esports', name: 'LEC', full: '英雄联盟锦标赛 · EMEA 赛区', lol: '98767991302996019', lolSlug: 'lec', accent: '#6B3FA0' },
-  { key: 'worlds', source: 'lol', cat: 'esports', name: '全球总决赛', full: '英雄联盟全球总决赛', lol: '98767975604431411', lolSlug: 'worlds', accent: '#B99433' },
-  { key: 'msi', source: 'lol', cat: 'esports', name: '季中冠军赛', full: '英雄联盟季中冠军赛', lol: '98767991325878492', lolSlug: 'msi', accent: '#0E8C8C' },
 ]
 
+/* 各大类里的展示顺序（2026-10-02 用户定，与上面 COMPETITIONS 的顺序保持一致） */
 const SPORT_CATS = {
   football: {
     name: '足球',
-    competitions: ['csl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'ucl', 'uel', 'nations', 'chn'],
+    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'csl'],
   },
-  basketball: { name: '篮球', competitions: ['cba', 'nba'] },
-  esports: { name: '电竞', competitions: ['kpl', 'lpl', 'demacia', 'lck', 'lec', 'worlds', 'msi', 'agames'] },
+  basketball: { name: '篮球', competitions: ['nba', 'cba'] },
+  esports: { name: '电竞', competitions: ['worlds', 'demacia', 'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames'] },
 }
 
 /** 解析命令行第四个参数，决定本次要刷哪些赛事 */

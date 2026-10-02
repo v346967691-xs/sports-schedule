@@ -491,6 +491,20 @@ async function run() {
   const catKeysOf = (k) => ((allData.meta.categories.find((c) => c.key === k) || {}).competitions || [])
   check('赛事：三个新赛事都进了对应大类',
     catKeysOf('football').indexOf('csl') > -1 && catKeysOf('basketball').indexOf('cba') > -1 && catKeysOf('esports').indexOf('kpl') > -1)
+  // 大类里的展示顺序（2026-10-02 用户定）：欧冠→五大联赛→欧国联→国字号→欧联→中超 /
+  // NBA→CBA / 全球总决赛→德玛西亚杯→LPL→LCK→KPL→LEC→季中赛→亚运会
+  const ORDER = {
+    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,csl',
+    basketball: 'nba,cba',
+    esports: 'worlds,demacia,lpl,lck,kpl,lec,msi,agames',
+  }
+  const badOrder = Object.keys(ORDER).filter((k) => catKeysOf(k).join(',') !== ORDER[k])
+  check('赛事：各大类展示顺序符合约定', badOrder.length === 0,
+    badOrder.map((k) => `${k}: ${catKeysOf(k).join(',')}`).join(' | '))
+  // 首页入口顺序跟 meta.competitions 一致，也要按上面的约定排
+  const compOrder = allData.meta.competitions.map((c) => c.key).join(',')
+  check('赛事：赛事总表顺序与大类顺序一致',
+    compOrder === `${ORDER.football},${ORDER.basketball},${ORDER.esports}`, compOrder)
   check('赛事：KPL 抓取通道接线完整（fetchKpl + 官方域名 + POST）',
     syncSrc.indexOf('function fetchKpl(') > -1
     && syncSrc.indexOf('kplshop-op.timi-esports.qq.com/kplow') > -1

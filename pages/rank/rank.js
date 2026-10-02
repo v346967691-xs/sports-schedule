@@ -99,7 +99,10 @@ Page({
     const pending = app.globalData.pendingComp
     if (pending && data.standingsOf(pending)) {
       app.globalData.pendingComp = ''
-      this.setData({ activeComp: pending })
+      if (pending !== this.data.activeComp) {
+        this.setData({ activeComp: pending })
+        this.scrollToTop()
+      }
     }
     this.render()
     data.refresh().then((r) => { if (r.updated) this.render() })
@@ -157,7 +160,17 @@ Page({
     })  },
 
   onCompTap(e) {
-    this.setData({ activeComp: e.currentTarget.dataset.key }, () => this.render())
+    const key = e.currentTarget.dataset.key
+    if (!key || key === this.data.activeComp) return
+    this.setData({ activeComp: key }, () => this.render())
+    // 用户可能已经滚到榜尾，新榜从第 1 名开始看 —— 立刻拉回顶部，别让人手动拖
+    this.scrollToTop()
+  },
+
+  /** 切换赛事后回顶（页面级滚动，duration 0 直接跳，不做事动画拖泥带水） */
+  scrollToTop() {
+    if (typeof wx === 'undefined' || typeof wx.pageScrollTo !== 'function') return
+    wx.pageScrollTo({ scrollTop: 0, duration: 0 })
   },
 
   /** 点一支球队 → 球队详情页 */

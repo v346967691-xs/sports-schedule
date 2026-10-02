@@ -1,9 +1,16 @@
 <view class="page rank">
-  <scroll-view class="chip-bar" scroll-x enable-flex>
+  <scroll-view
+    class="chip-bar"
+    scroll-x
+    enable-flex
+    scroll-into-view="chip-{{activeComp}}"
+    scroll-with-animation
+  >
     <view class="chip-row">
       <view
         wx:for="{{comps}}"
         wx:key="key"
+        id="chip-{{item.key}}"
         class="chip {{item.key === activeComp ? 'active' : ''}}"
         data-key="{{item.key}}"
         bindtap="onCompTap"

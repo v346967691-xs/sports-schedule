@@ -27,6 +27,7 @@ function makeCtx(obj) {
 
 global.wx = {
   navigateTo: (o) => { collected.navigateTo = o.url },
+  pageScrollTo: (o) => { collected.pageScrollTo = o ? o.scrollTop : null },
   switchTab: (o) => { collected.switchTab = o.url },
   showToast: (o) => { collected.toast = o.title },
   showModal: () => {},
@@ -1002,6 +1003,14 @@ async function run() {
     rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
     return ctxRank.data.activeComp === 'csl' && ctxRank.data.groups[0].rows.length === 16
   })(), `active=${ctxRank.data.activeComp}`)
+  check('积分榜页：切赛事后立刻回到顶部（不用手动拖回）', collected.pageScrollTo === 0,
+    `scrollTop=${collected.pageScrollTo}`)
+  check('积分榜页：重复点同一赛事不触发滚动',
+    (function () {
+      collected.pageScrollTo = null
+      rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
+      return collected.pageScrollTo === null
+    })())
 
   // 点行 → 球队详情页
   rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: String(cslTop ? cslTop.id : '') } } })
@@ -1063,6 +1072,9 @@ async function run() {
     appJson.tabBar.list.map((t) => t.text).join('/'))
   check('积分榜页已注册且指向 pages/rank/rank',
     appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
+  const rWxml = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')
+  check('积分榜页：赛事胶囊条随选中项自动滚动',
+    rWxml.indexOf('scroll-into-view="chip-{{activeComp}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1)
 
   /* ---------- 分享进来的详情页（2026-10-02 用户反馈：好友看不到比分） ---------- */
   // 本地包是发版那一刻的快照，比分一定落后云端；详情页必须先渲染本地、再拿云端补。

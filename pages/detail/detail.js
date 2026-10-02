@@ -167,8 +167,8 @@ Page({
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
     const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
-    // 有比分就把结果写进标题，比「赛程与比分」更值得点
-    const tail = hasScore ? `${m.home.score}-${m.away.score}` : (m.status === 'live' ? '进行中' : '赛程')
+    // 有比分就把结果写进标题，比「赛程与比分」更值得点；没比分用 VS（与卡图一致）
+    const tail = hasScore ? `${m.home.score}-${m.away.score}` : (m.status === 'live' ? '进行中' : 'VS')
     return share.message({
       title: `${h} ${tail} ${a}`,
       path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}`,
@@ -182,7 +182,7 @@ Page({
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
     const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
-    const tail = hasScore ? `${m.home.score}-${m.away.score}` : '赛程'
+    const tail = hasScore ? `${m.home.score}-${m.away.score}` : 'VS'
     return share.timeline({
       title: `${h} ${tail} ${a}`,
       imageUrl: this.data.shareImage,

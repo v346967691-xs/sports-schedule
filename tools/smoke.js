@@ -999,18 +999,45 @@ async function run() {
     ctxRank.data.columns.length > 0
     && ctxRank.data.groups.every((g) => g.rows.every((r) => r.cells.length === ctxRank.data.columns.length)),
     `${ctxRank.data.columns.length} 列`)
+  // 刚进页面只渲染当前 ±1 屏（滑过的会留着，所以这条必须在任何切换之前验）
+  check('积分榜页：只渲染当前 ±1 屏，避免首屏铺开全部榜单',
+    (function () {
+      const idx = ctxRank.data.swiperIndex
+      const vis = ctxRank.data.slides.filter((s) => s.visible).length
+      return vis <= 3
+        && ctxRank.data.slides.every((s, i) => (Math.abs(i - idx) <= 1 ? s.visible : !s.visible))
+    })(), `已渲染 ${ctxRank.data.slides.filter((s) => s.visible).length} 屏`)
   check('积分榜页：切换赛事生效', (function () {
     rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
     return ctxRank.data.activeComp === 'csl' && ctxRank.data.groups[0].rows.length === 16
   })(), `active=${ctxRank.data.activeComp}`)
-  check('积分榜页：切赛事后立刻回到顶部（不用手动拖回）', collected.pageScrollTo === 0,
-    `scrollTop=${collected.pageScrollTo}`)
-  check('积分榜页：重复点同一赛事不触发滚动',
+  check('积分榜页：点标签后该榜回到第 1 名（不用手动拖回）',
+    ctxRank.data.slideTop.csl === 0, `slideTop=${JSON.stringify(ctxRank.data.slideTop)}`)
+  check('积分榜页：每个赛事一屏，slides 与赛事数一致',
+    ctxRank.data.slides.length === ctxRank.data.comps.length
+    && ctxRank.data.slides.every((s) => !!s.key),
+    `${ctxRank.data.slides.length} 屏 / ${ctxRank.data.comps.length} 赛事`)
+
+  // 内容区横滑 → 立刻换赛事（顶部标签由 scroll-into-view 跟着锚定）
+  check('积分榜页：横滑内容区立刻切换赛事',
     (function () {
-      collected.pageScrollTo = null
-      rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
-      return collected.pageScrollTo === null
+      const idx = ctxRank.data.comps.findIndex((c) => c.key === 'epl')
+      rankOpts.onSwiperChange.call(ctxRank, { detail: { current: idx } })
+      return ctxRank.data.activeComp === 'epl' && ctxRank.data.swiperIndex === idx
+    })(), `active=${ctxRank.data.activeComp}`)
+  check('积分榜页：横滑不重置滚动位置（滑回来还在原处）',
+    ctxRank.data.slideTop.epl == null || ctxRank.data.slideTop.epl !== 0)
+
+  // 标签区：重复点当前赛事不应有任何动作
+  check('积分榜页：重复点当前赛事不重复渲染',
+    (function () {
+      const before = ctxRank.data.swiperIndex
+      rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: ctxRank.data.activeComp } } })
+      return ctxRank.data.swiperIndex === before && ctxRank.data.activeComp === 'epl'
     })())
+
+  // 回到中超，后面的用例依赖它
+  rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
 
   // 点行 → 球队详情页
   rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: String(cslTop ? cslTop.id : '') } } })
@@ -1075,6 +1102,19 @@ async function run() {
   const rWxml = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')
   check('积分榜页：赛事胶囊条随选中项自动滚动',
     rWxml.indexOf('scroll-into-view="chip-{{activeComp}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1)
+  check('积分榜页：内容区是可横滑的 swiper 且绑定切换事件',
+    rWxml.indexOf('<swiper') > -1
+    && rWxml.indexOf('bindchange="onSwiperChange"') > -1
+    && rWxml.indexOf('current="{{swiperIndex}}"') > -1
+    && typeof rankOpts.onSwiperChange === 'function')
+  check('积分榜页：标签区是独立 scroll-view（横滑标签不切内容）',
+    /<scroll-view[^>]*class="chip-bar"[\s\S]{0,200}?scroll-x/.test(rWxml)
+    && rWxml.indexOf('bindchange="onSwiperChange"') === rWxml.lastIndexOf('bindchange="onSwiperChange"'))
+  const rWxss = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxss'), 'utf8')
+  check('积分榜页：页面定高不竖滚、内容区各自竖滚',
+    rWxss.indexOf('height: 100vh') > -1
+    && rWxss.indexOf('.body {') > -1
+    && rWxss.indexOf('.slide-scroll') > -1)
 
   /* ---------- 分享进来的详情页（2026-10-02 用户反馈：好友看不到比分） ---------- */
   // 本地包是发版那一刻的快照，比分一定落后云端；详情页必须先渲染本地、再拿云端补。

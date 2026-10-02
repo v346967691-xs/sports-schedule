@@ -1,4 +1,5 @@
 <view class="page rank">
+  <!-- 赛事标签区：这里横滑只是挪动标签本身，不切换下方内容；要切换必须点击 -->
   <scroll-view
     class="chip-bar"
     scroll-x
@@ -18,11 +19,98 @@
     </view>
   </scroll-view>
 
-  <view class="meta" wx:if="{{totalTeams}}">
-    <text class="meta-main">{{compName}} · {{totalTeams}} 支球队</text>
-    <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
-  </view>
-  <view class="season-note" wx:if="{{season}}">{{season}}</view>
+  <!-- 内容区：左右横滑立刻换赛事，同时把顶部标签锚定过去 -->
+  <swiper
+    wx:if="{{slides.length}}"
+    class="body"
+    current="{{swiperIndex}}"
+    bindchange="onSwiperChange"
+    duration="240"
+  >
+    <swiper-item wx:for="{{slides}}" wx:key="key">
+      <scroll-view class="slide-scroll" scroll-y scroll-top="{{item.scrollTop}}">
+        <block wx:if="{{item.visible}}">
+          <view class="meta" wx:if="{{item.totalTeams}}">
+            <text class="meta-main">{{item.name}} · {{item.totalTeams}} 支球队</text>
+            <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+          </view>
+          <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
+
+          <view class="empty" wx:if="{{item.empty}}">
+            <view class="empty-title">该赛事暂无积分榜</view>
+            <view class="empty-desc">杯赛和中国国字号本来就没有排名，换一个赛事看看。</view>
+          </view>
+
+          <block wx:for="{{item.groups}}" wx:key="name" wx:for-item="group">
+            <view class="group-head" wx:if="{{group.name}}">
+              <view class="group-line"></view>
+              <view class="group-name">{{group.name}}</view>
+              <view class="group-line"></view>
+            </view>
+
+            <view class="table card">
+              <view class="tr th">
+                <view class="th-pos">#</view>
+                <view class="th-team">球队</view>
+                <view
+                  wx:for="{{item.columns}}"
+                  wx:for-item="col"
+                  wx:for-index="ci"
+                  wx:key="key"
+                  class="td num {{col.strong ? 'strong' : ''}}"
+                >{{col.label}}</view>
+              </view>
+
+              <view
+                wx:for="{{group.rows}}"
+                wx:for-item="row"
+                wx:key="id"
+                class="tr {{row.zoneBg ? 'zoned' : ''}}"
+                style="background: {{row.zoneBg}};"
+                data-id="{{row.id}}"
+                bindtap="onRowTap"
+                hover-class="tr-hover"
+              >
+                <view class="td-pos">
+                  <text class="pos-num">{{row.pos}}</text>
+                </view>
+                <view class="td-team">
+                  <view class="team-name">{{row.name}}</view>
+                </view>
+                <view
+                  wx:for="{{row.cells}}"
+                  wx:for-item="cell"
+                  wx:for-index="ci"
+                  class="td num {{item.columns[ci].strong ? 'strong' : ''}}"
+                >{{cell}}</view>
+
+                <!-- 区块标签：只画在色带第一行，悬在行顶部与上一行的交界处 -->
+                <view wx:if="{{row.zoneFirst}}" class="zone-chip" style="background: {{row.zoneColor}};">
+                  {{row.zoneLabel}}
+                </view>
+              </view>
+            </view>
+          </block>
+
+          <view class="legend" wx:if="{{item.legend.length}}">
+            <block wx:for="{{item.legend}}" wx:key="label">
+              <view class="legend-item" wx:if="{{item.label}}">
+                <view class="legend-dot" style="background: {{item.color}}"></view>
+                <text>{{item.label}}</text>
+              </view>
+            </block>
+          </view>
+
+          <view class="foot-note">
+            足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
+            欧战 / 降级分区取自官方标注；电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
+          </view>
+
+          <view class="safe-bottom"></view>
+        </block>
+      </scroll-view>
+    </swiper-item>
+  </swiper>
 
   <view class="empty" wx:if="{{emptyReason}}">
     <view class="empty-title">没有可展示的积分榜</view>
@@ -34,71 +122,4 @@
     </view>
     <view class="empty-btn" bindtap="goSchedule">去看赛程</view>
   </view>
-
-  <block wx:for="{{groups}}" wx:key="name">
-    <view class="group-head" wx:if="{{item.name}}">
-      <view class="group-line"></view>
-      <view class="group-name">{{item.name}}</view>
-      <view class="group-line"></view>
-    </view>
-
-    <view class="table card">
-      <view class="tr th">
-        <view class="th-pos">#</view>
-        <view class="th-team">球队</view>
-        <view
-          wx:for="{{columns}}"
-          wx:for-item="col"
-          wx:for-index="ci"
-          wx:key="key"
-          class="td num {{col.strong ? 'strong' : ''}}"
-        >{{col.label}}</view>
-      </view>
-
-      <view
-        wx:for="{{item.rows}}"
-        wx:for-item="row"
-        wx:key="id"
-        class="tr {{row.zoneBg ? 'zoned' : ''}}"
-        style="background: {{row.zoneBg}};"
-        data-id="{{row.id}}"
-        bindtap="onRowTap"
-        hover-class="tr-hover"
-      >
-        <view class="td-pos">
-          <text class="pos-num">{{row.pos}}</text>
-        </view>
-        <view class="td-team">
-          <view class="team-name">{{row.name}}</view>
-        </view>
-        <view
-          wx:for="{{row.cells}}"
-          wx:for-item="cell"
-          wx:for-index="ci"
-          class="td num {{columns[ci].strong ? 'strong' : ''}}"
-        >{{cell}}</view>
-
-        <!-- 区块标签：只画在色带第一行，悬在行顶部与上一行的交界处 -->
-        <view wx:if="{{row.zoneFirst}}" class="zone-chip" style="background: {{row.zoneColor}};">
-          {{row.zoneLabel}}
-        </view>
-      </view>
-    </view>
-  </block>
-
-  <view class="legend" wx:if="{{legend.length}}">
-    <block wx:for="{{legend}}" wx:key="label">
-      <view class="legend-item" wx:if="{{item.label}}">
-        <view class="legend-dot" style="background: {{item.color}}"></view>
-        <text>{{item.label}}</text>
-      </view>
-    </block>
-  </view>
-
-  <view class="foot-note">
-    足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
-    欧战 / 降级分区取自官方标注；电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
-  </view>
-
-  <view class="safe-bottom"></view>
 </view>

@@ -1,8 +1,31 @@
+/* ---------- 顶部标签区 + 横滑内容区 = 两个独立操作区 ----------
+   页面本身不竖滚：标签条固定在顶部，swiper 吃掉剩余高度，每个赛事一屏、
+   各自竖滚。这样横滑切赛事时看到的是新榜的第 1 名，不会停在上一屏的位置。
+   ⚠️ swiper 用 flex:1 撑满（flex-basis:0 会盖掉它默认的 150px 高度），
+      别改成 height:100%（会把标签条顶出屏幕）。 */
+.page.rank {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
 .chip-bar {
+  flex: none;
   white-space: nowrap;
   padding: 20rpx 0 18rpx;
   background: #fff;
   border-bottom: 2rpx solid var(--line);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+}
+
+.slide-scroll {
+  height: 100%;
 }
 
 .chip-bar .chip {

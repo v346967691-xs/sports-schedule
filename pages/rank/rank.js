@@ -68,6 +68,13 @@ Page({
   data: {
     comps: [],
     activeComp: '',
+    /** swiper 当前页 —— 与 activeComp 同步，横滑内容区时由 bindchange 反推 */
+    swiperIndex: 0,
+    /** 每个赛事一屏：{ key, name, columns, groups, ... } */
+    slides: [],
+    /** 各赛事内容区自己的竖向滚动位置，点标签时把目标重置回顶部 */
+    slideTop: {},
+    // 以下是当前激活赛事的镜像，供分享标题等使用
     columns: [],
     groups: [],
     season: '',
@@ -80,6 +87,8 @@ Page({
   },
 
   onLoad(query) {
+    // 只渲染当前 ±1 屏，滑过的留着，避免 10 张榜全量铺开拖慢首屏
+    this._rendered = {}
     const keys = data.standingsKeys()
     const wanted = query && query.comp ? decodeURIComponent(query.comp) : ''
     const activeComp = keys.indexOf(wanted) > -1 ? wanted : (keys[0] || '')
@@ -97,80 +106,122 @@ Page({
     // 从别的页面点了某个赛事进来（关注页 / 详情页 → pendingComp）
     const app = appInstance()
     const pending = app.globalData.pendingComp
-    if (pending && data.standingsOf(pending)) {
+    if (pending && data.standingsOf(pending) && pending !== this.data.activeComp) {
       app.globalData.pendingComp = ''
-      if (pending !== this.data.activeComp) {
-        this.setData({ activeComp: pending })
-        this.scrollToTop()
-      }
+      this.setData({ activeComp: pending, slideTop: this.topAt(pending) })
     }
     this.render()
     data.refresh().then((r) => { if (r.updated) this.render() })
   },
 
-  render() {
-    const keys = data.standingsKeys()
-    if (!keys.length) {
-      this.setData({ groups: [], columns: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
-      return
+  /** 把某个赛事的内容区滚动位置归零（点标签进来时，从第 1 名开始看） */
+  topAt(key) {
+    const st = Object.assign({}, this.data.slideTop)
+    st[key] = 0
+    return st
+  },
+
+  indexOfKey(key) {
+    const comps = this.data.comps || []
+    for (let i = 0; i < comps.length; i += 1) {
+      if (comps[i].key === key) return i
     }
-    const comp = this.data.activeComp && keys.indexOf(this.data.activeComp) > -1
-      ? this.data.activeComp
-      : keys[0]
-    const table = data.standingsOf(comp)
-    if (!table) {
-      this.setData({ groups: [], columns: [], emptyReason: '该赛事暂无积分榜' })
-      return
+    return -1
+  },
+
+  /** 构造一个赛事的整屏数据 */
+  buildSlide(key, index, curIdx) {
+    const name = data.compOf(key).name
+    const near = Math.abs(index - curIdx) <= 1
+    const visible = near || !!this._rendered[key]
+    if (visible) this._rendered[key] = true
+
+    const blank = {
+      key, name, index, visible, empty: true,
+      columns: [], groups: [], legend: [], rows: 0,
+      season: '', totalTeams: 0, scrollTop: this.data.slideTop[key] || 0,
     }
+    const table = data.standingsOf(key)
+    if (!table) return blank
 
     const groups = (table.groups || []).map((g) => {
       let prev = null
       return {
         name: g.name || '',
         rows: (g.rows || []).map((r) => {
-          const view = renderRow(r, table.columns, comp, prev)
+          const view = renderRow(r, table.columns, key, prev)
           prev = r
           return view
         }),
       }
     })
-    const totalTeams = groups.reduce((n, g) => n + g.rows.length, 0)
+    const legend = []
+    const seen = {}
+    groups.forEach((g) => g.rows.forEach((r) => {
+      if (!r.zoneLabel || seen[r.zoneLabel]) return
+      seen[r.zoneLabel] = true
+      legend.push({ label: r.zoneLabel, color: r.zoneColor })
+    }))
+
+    return {
+      key, name, index, visible, empty: false,
+      columns: table.columns || [],
+      groups,
+      legend,
+      season: table.season || '',
+      totalTeams: groups.reduce((n, g) => n + g.rows.length, 0),
+      scrollTop: this.data.slideTop[key] || 0,
+    }
+  },
+
+  render() {
+    const keys = data.standingsKeys()
+    if (!keys.length) {
+      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
+      return
+    }
+    const idx = Math.max(0, this.indexOfKey(this.data.activeComp))
+    const slides = keys.map((k, i) => this.buildSlide(k, i, idx))
+    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '' }
 
     this.setData({
-      activeComp: comp,
-      compName: data.compOf(comp).name,
-      columns: table.columns,
-      groups,
-      season: table.season || '',
-      totalTeams,
-      // 图例：当前这张表实际出现的分区，去重后按出现顺序排列
-      legend: (function () {
-        const seen = {}
-        const out = []
-        groups.forEach((g) => g.rows.forEach((r) => {
-          if (!r.zoneLabel || seen[r.zoneLabel]) return
-          seen[r.zoneLabel] = true
-          out.push({ label: r.zoneLabel, color: r.zoneColor })
-        }))
-        return out
-      })(),
+      slides,
+      swiperIndex: idx,
+      emptyReason: '',
+      // 激活赛事的镜像，供分享标题 / 冒烟断言使用
+      compName: cur.name,
+      columns: cur.columns,
+      groups: cur.groups,
+      legend: cur.legend,
+      season: cur.season,
+      totalTeams: cur.totalTeams,
       updatedAt: timeLabel(data.standingsGeneratedAt()),
       source: data.source() === 'cloud' ? '云端' : '本地',
-      emptyReason: '',
-    })  },
+    })
+  },
 
+  /**
+   * 点顶部赛事标签 → 切换内容区。
+   * ⚠️ 只有「点击」才切换：标签区自己横滑不联动（与主流产品一致）。
+   */
   onCompTap(e) {
     const key = e.currentTarget.dataset.key
     if (!key || key === this.data.activeComp) return
-    this.setData({ activeComp: key }, () => this.render())
-    // 用户可能已经滚到榜尾，新榜从第 1 名开始看 —— 立刻拉回顶部，别让人手动拖
-    this.scrollToTop()
+    this.setData({
+      activeComp: key,
+      swiperIndex: this.indexOfKey(key),
+      slideTop: this.topAt(key),
+    }, () => this.render())
   },
 
-  /** 切换赛事后回顶（页面级滚动，duration 0 直接跳，不做事动画拖泥带水） */
-  scrollToTop() {
-    if (typeof wx === 'undefined' || typeof wx.pageScrollTo !== 'function') return
-    wx.pageScrollTo({ scrollTop: 0, duration: 0 })
+  /** 内容区横滑 → 立刻换赛事，并把顶部标签锚定到该赛事 */
+  onSwiperChange(e) {
+    const idx = e && e.detail && typeof e.detail.current === 'number' ? e.detail.current : -1
+    const slides = this.data.slides || []
+    const key = (slides[idx] || {}).key || (this.data.comps[idx] || {}).key
+    if (!key || key === this.data.activeComp) return
+    // 横滑不重置滚动位置：滑回来还在刚才那一行，符合直觉
+    this.setData({ activeComp: key }, () => this.render())
   },
 
   /** 点一支球队 → 球队详情页 */

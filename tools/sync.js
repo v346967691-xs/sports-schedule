@@ -301,12 +301,20 @@ async function fetchEspn(comp) {
 
 /* ------------------------------------------------------------------ LoL */
 
-function lolTeam(raw, accent) {
+/**
+ * ⚠️ 英雄联盟俱乐部队（LPL/LCK/LEC/世界赛/季中赛/德杯）一律用**英文简称** BLG / T1 / G2，
+ *    2026-10-02 用户明确要求 —— 电竞圈的习惯就是叫简码，写「哔哩哔哩」反而认不出来。
+ *    显示口径是 `zh || name`，所以这里把 name 直接放简码、zh 留空。
+ *    ⚠️ 唯一例外是**亚运会电竞**：那是国家队，code 是 IOC 三字码（CHN / TPE / HKG），
+ *    必须走中文映射（且港澳台固定写「中国香港 / 中国澳门 / 中国台北」）。
+ */
+function lolTeam(raw, accent, compKey) {
   const code = (raw.code || raw.name || '?').slice(0, 6)
+  const isNational = compKey === 'agames'
   return {
     id: code,
-    name: raw.name || '待定',
-    zh: zhNames.lolZh(code) || TEAM_CN[code] || '',
+    name: isNational ? (raw.name || '待定') : code,
+    zh: isNational ? (zhNames.lolZh(code) || TEAM_CN[code] || '') : '',
     abbr: code,
     color: accent,
   }
@@ -368,8 +376,8 @@ async function fetchLol(comp) {
   const make = (ev, forced) => {
     const teams = ev.match.teams || []
     const tbd = { id: 'TBD', name: '待定', zh: '待定', abbr: 'TBD', color: '#8A93A6' }
-    const home = teams[0] ? lolTeam(teams[0], comp.accent) : tbd
-    const away = teams[1] ? lolTeam(teams[1], comp.accent) : tbd
+    const home = teams[0] ? lolTeam(teams[0], comp.accent, comp.key) : tbd
+    const away = teams[1] ? lolTeam(teams[1], comp.accent, comp.key) : tbd
     // 上游 state 会滞后于实际赛果，判定逻辑见 tools/lol-status.js
     const st = lolStatus(ev)
     return {

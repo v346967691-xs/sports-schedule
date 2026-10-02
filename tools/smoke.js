@@ -296,8 +296,10 @@ async function run() {
   })())
   teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'lpl' } } })
   check('关注页：切到 LPL 列出 12 队', ctxTeams.data.activeCat === 'lpl' && ctxTeams.data.teams.length === 12)
-  teamsOpts.onSearch.call(ctxTeams, { detail: { value: '京东' } })
-  check('关注页：搜索过滤生效', /京东|JDG/i.test(ctxTeams.data.teams.map((t) => t.display + t.abbr + t.name).join(' ')) && ctxTeams.data.teams.length > 0)
+  // ⚠️ 电竞队名已改成英文简称（2026-10-02），搜索也得按简码搜，不能再用「京东」
+  teamsOpts.onSearch.call(ctxTeams, { detail: { value: 'jdg' } })
+  check('关注页：搜索过滤生效（按英文简称）', /JDG/i.test(ctxTeams.data.teams.map((t) => t.display + t.abbr + t.name).join(' ')) && ctxTeams.data.teams.length > 0,
+    ctxTeams.data.teams.map((t) => t.display).join('/') || '空')
 
   teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'epl' } } })
   teamsOpts.onSearch.call(ctxTeams, { detail: { value: '' } })
@@ -933,9 +935,10 @@ async function run() {
     lplGroups.map((g) => g.name + ':' + g.rows.length).join(' / '))
   check('积分榜：电竞榜用胜率而不是积分', !!lpl && lpl.columns.some((c) => c.label === '胜率')
     && !lpl.columns.some((c) => c.label === '积分'), (lpl ? lpl.columns.map((c) => c.label).join('/') : ''))
-  check('积分榜：英雄联盟队名已汉化',
-    lplGroups.every((g) => g.rows.every((r) => !!r.zh)),
-    lplGroups[0] ? lplGroups[0].rows.slice(0, 3).map((r) => r.zh).join('/') : '无')
+  // ⚠️ 电竞俱乐部用英文简称（BLG / T1 / G2），2026-10-02 用户要求：写中文名反而认不出来
+  check('积分榜：英雄联盟队名用英文简称',
+    lplGroups.every((g) => g.rows.every((r) => !r.zh && /^[A-Za-z0-9]{2,6}$/.test(r.name))),
+    lplGroups[0] ? lplGroups[0].rows.slice(0, 4).map((r) => r.name).join('/') : '无')
   check('积分榜：电竞名次从 1 开始且各组独立编号',
     lplGroups.every((g) => g.rows.every((r, i) => r.pos === i + 1)),
     lplGroups.map((g) => g.rows.map((r) => r.pos).join(',')).join(' | '))

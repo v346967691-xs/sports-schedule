@@ -323,8 +323,10 @@ async function fetchLolTable(comp) {
         const played = wins + losses
         rows.push({
           id: String(tm.id || code),
-          name: tm.name || code,
-          zh: zhNames.lolZh(code) || '',
+          // ⚠️ 电竞俱乐部一律显示英文简称（BLG / T1 / G2），2026-10-02 用户要求；
+          //    显示口径是 `zh || name`，所以 name 放简码、zh 留空
+          name: code || tm.name,
+          zh: '',
           abbr: code || String(tm.name || '').slice(0, 6),
           pos: ordinal,
           played,

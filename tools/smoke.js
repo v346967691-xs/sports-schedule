@@ -1110,6 +1110,12 @@ async function run() {
   check('积分榜页：标签区是独立 scroll-view（横滑标签不切内容）',
     /<scroll-view[^>]*class="chip-bar"[\s\S]{0,200}?scroll-x/.test(rWxml)
     && rWxml.indexOf('bindchange="onSwiperChange"') === rWxml.lastIndexOf('bindchange="onSwiperChange"'))
+  // 选中态配色：.chip-bar .chip 与 .chip.active 同权重且在后面，
+  // 必须用三层选择器 .chip-bar .chip.active 才压得住（2026-10-02 真机：白字打在浅灰底上看不清）
+  const aWxss = fs.readFileSync(path.join(ROOT, 'app.wxss'), 'utf8')
+  check('积分榜：选中赛事胶囊是深蓝底 + 白字',
+    /\.chip-bar\s+\.chip\.active\s*\{[^}]*var\(--brand\)[^}]*#fff/.test(aWxss)
+    && /\.chip\.active\s*\{[^}]*var\(--brand\)[^}]*#fff/.test(aWxss))
   const rWxss = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxss'), 'utf8')
   check('积分榜页：页面定高不竖滚、内容区各自竖滚',
     rWxss.indexOf('height: 100vh') > -1

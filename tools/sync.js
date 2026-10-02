@@ -290,6 +290,9 @@ async function fetchEspn(comp) {
             .filter((v, i, a) => a.indexOf(v) === i)
             .slice(0, 3),
           bo: null,
+          // 多来源赛事（中国国字号）必须把来源联赛带出去 —— match-detail.js 抓
+          // summary 时按 slug 定位 ESPN 端点，没有它就拿不到比赛详情
+          ...(comp.espns ? { slug: src.id } : {}),
           home: { ...normTeam(homeRaw.team || {}, homeRaw.athlete?.displayName, comp.accent), score: num(homeRaw.score) },
           away: { ...normTeam(awayRaw.team || {}, awayRaw.athlete?.displayName, comp.accent), score: num(awayRaw.score) },
         })

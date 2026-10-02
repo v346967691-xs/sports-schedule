@@ -367,7 +367,8 @@
 }
 
 .tl-dot.away {
-  background: #2c6bc9;
+  /* 客队统一用红，与统计条一致 —— 原来两个蓝点分不出主客 */
+  background: #d93b3b;
 }
 
 .tl-body {
@@ -433,26 +434,50 @@
   font-weight: 500;
 }
 
-.st-val + .st-val {
+.st-val.home {
+  color: var(--brand);
+}
+
+.st-val.away {
+  color: #d93b3b;
   text-align: right;
 }
 
+/* 主客双色对比条：从中间往两边长，大值的那边占满 —— 单色连成一条分不清主客 */
 .st-bar {
   display: flex;
   flex: 1;
   min-width: 0;
   height: 12rpx;
-  border-radius: 6rpx;
+}
+
+.st-half {
+  flex: 1;
+  height: 100%;
   background: var(--line);
   overflow: hidden;
+}
+
+.st-half.l {
+  display: flex;
+  justify-content: flex-end;
+  border-radius: 6rpx 0 0 6rpx;
+}
+
+.st-half.r {
+  border-radius: 0 6rpx 6rpx 0;
 }
 
 .st-fill {
   height: 100%;
 }
 
+.st-fill.h {
+  background: var(--brand);
+}
+
 .st-fill.a {
-  margin-left: auto;
+  background: #d93b3b;
 }
 
 /* 双方近况 */

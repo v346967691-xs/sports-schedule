@@ -18,28 +18,37 @@ const RESULT_ZH = { W: '胜', D: '平', L: '负' }
  *     超过 100 会把容器撑破。
  */
 function decorateDetail(d, match) {
-  const events = (d.events || []).map((e, i) => ({
-    idx: i,
-    m: e.m,
-    t: e.t,
-    s: e.s,
-    side: e.side,
-    goal: !!e.goal,
-    key: e.t !== '换人',
-  }))
+  const sideName = (side) => (match[side] && (match[side].zhName || match[side].name)) || ''
+  // ⚠️ 必须把队名拼进类型 —— 光有圆点颜色分不出主客（两队队服常同色系），
+  //    用户真机反馈「进球只有球员名，不知道是哪个队」
+  const events = (d.events || []).map((e, i) => {
+    const teamName = e.side ? sideName(e.side) : ''
+    return {
+      idx: i,
+      m: e.m,
+      t: e.t,
+      s: e.s,
+      side: e.side,
+      teamName,
+      tLabel: e.t + (teamName ? ` · ${teamName}` : ''),
+      goal: !!e.goal,
+      key: e.t !== '换人',
+    }
+  })
   const keyEvents = events.filter((e) => e.key)
+  // 对比条：两边都从中间往外长，**值大的那边占满自己那一半**，小的按比例缩。
+  // 用「值 / 最大值」而不是「值 / 总和」—— 这样控球率 53.7/46.3 和射门 12/19
+  // 看起来是同一种语义（谁强谁满），不会出现 54%+46% 两边都半截的怪相。
   const stats = (d.stats || []).map((s) => {
     const hs = String(s.h)
     const as = String(s.a)
-    const isPct = hs.indexOf('%') >= 0 || as.indexOf('%') >= 0
     const h = parseFloat(hs.replace('%', '')) || 0
     const a = parseFloat(as.replace('%', '')) || 0
-    let hp = 50
-    if (isPct) hp = Math.max(0, Math.min(100, Math.round(h)))
-    else if (h + a > 0) hp = Math.round((h / (h + a)) * 100)
-    return { k: s.k, h: hs, a: as, hp, ap: 100 - hp }
+    const max = Math.max(h, a, 1)
+    const hp = Math.round((h / max) * 100)
+    const ap = Math.round((a / max) * 100)
+    return { k: s.k, h: hs, a: as, hp, ap }
   })
-  const sideName = (side) => (match[side] && (match[side].zhName || match[side].name)) || ''
   const formRows = ['home', 'away']
     .map((side) => ({
       idx: side,

@@ -257,8 +257,17 @@ function pickStats(j, homeId) {
   return rows
 }
 
+/**
+ * 定位 ESPN 端点用的联赛 slug。
+ * 单一来源赛事（五大联赛/欧冠/中超/NBA）直接查 SLUG 表；
+ * 多来源赛事（中国国字号）没有固定 slug，由 sync.js 在抓取时写进比赛对象。
+ */
+function resolveSlug(m) {
+  return m.slug || SLUG[m.comp] || null
+}
+
 async function fetchDetail(m) {
-  const slug = SLUG[m.comp]
+  const slug = resolveSlug(m)
   if (!slug) return null
   const sport = BASKETBALL[m.comp] ? 'basketball' : 'soccer'
   const eid = String(m.id).split('-').pop()
@@ -346,7 +355,8 @@ async function main() {
   const now = Date.now()
 
   const targets = list.filter((m) => {
-    if (!SLUG[m.comp]) return false
+    // ⚠️ 必须走 resolveSlug（含比赛自带的 slug），只查 SLUG 表会把中国国字号漏掉
+    if (!resolveSlug(m)) return false
     const t = new Date(m.start).getTime()
     if (Number.isNaN(t)) return false
     if (m.status === 'finished') return now - t < FINISHED_MS + 6 * 3600 * 1000
@@ -417,4 +427,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats }
+module.exports = { keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug }

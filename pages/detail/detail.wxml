@@ -63,7 +63,7 @@
         <view class="tl-min">{{item.m}}</view>
         <view class="tl-dot {{item.side}}"></view>
         <view class="tl-body">
-          <view class="tl-type">{{item.t}}</view>
+          <view class="tl-type">{{item.tLabel}}</view>
           <view class="tl-desc" wx:if="{{item.s}}">{{item.s}}</view>
         </view>
       </view>
@@ -79,12 +79,12 @@
     <view class="st-row" wx:for="{{detail.stats}}" wx:key="k">
       <view class="st-key">{{item.k}}</view>
       <view class="st-line">
-        <view class="st-val" style="color: {{match.home.color}}">{{item.h}}</view>
+        <view class="st-val home">{{item.h}}</view>
         <view class="st-bar">
-          <view class="st-fill h" style="width: {{item.hp}}%; background: {{match.home.color}}"></view>
-          <view class="st-fill a" style="width: {{item.ap}}%; background: {{match.away.color}}"></view>
+          <view class="st-half l"><view class="st-fill h" style="width: {{item.hp}}%"></view></view>
+          <view class="st-half r"><view class="st-fill a" style="width: {{item.ap}}%"></view></view>
         </view>
-        <view class="st-val" style="color: {{match.away.color}}">{{item.a}}</view>
+        <view class="st-val away">{{item.a}}</view>
       </view>
     </view>
   </view>

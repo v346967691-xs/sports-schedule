@@ -1070,6 +1070,17 @@ async function run() {
   const zhTypes = ['Yellow Card', 'Red Card', 'Substitution', 'Goal', 'Goal - Header', 'Penalty Goal', 'Own Goal']
   check('详情：事件类型已汉化', zhTypes.every((t) => /[一-龥]/.test(md.zhEvent(t) || '')),
     zhTypes.map((t) => md.zhEvent(t)).join('/'))
+  // 多来源赛事（中国国字号）没有固定 slug，抓取时必须写进比赛对象，否则详情拿不到
+  check('详情：slug 定位 —— 单一来源查表、多来源用比赛自带值',
+    md.resolveSlug({ comp: 'epl' }) === 'eng.1'
+      && md.resolveSlug({ comp: 'chn', slug: 'fifa.friendly' }) === 'fifa.friendly'
+      && md.resolveSlug({ comp: 'worlds' }) === null,
+    `epl=${md.resolveSlug({ comp: 'epl' })} chn=${md.resolveSlug({ comp: 'chn', slug: 'fifa.friendly' })} worlds=${md.resolveSlug({ comp: 'worlds' })}`)
+  // ⚠️ 排除 man- 前缀：补录比赛不走 ESPN，本来就没有 event id，天然没有详情
+  const chnFin = (matches() || []).filter((x) => x.comp === 'chn' && x.status === 'finished' && !/^man-/.test(x.id))
+  check('详情：中国国字号场次带来源 slug（中国 0-5 巴勒斯坦查不到详情的根因）',
+    chnFin.length > 0 && chnFin.every((x) => !!x.slug),
+    chnFin.length ? chnFin.map((x) => `${x.id}→${x.slug}`).join(' | ') : '无 chn 已结束场次')
   check('详情：换人只留「谁换下谁」且不带伤病因',
     md.briefOf('Substitution, Germany. A replaces B because of an injury.', '换人') === 'A 换下 B',
     md.briefOf('Substitution, Germany. A replaces B because of an injury.', '换人'))
@@ -1095,11 +1106,18 @@ async function run() {
 
     const deco = require(path.join(ROOT, 'pages/detail/detail.js')).decorateDetail
     const sample = all.find((d) => (d.stats || []).length)
-    const decoed = deco(sample || { events: [], stats: [], form: {} }, { home: { zhName: '主' }, away: { zhName: '客' } })
-    // 对比条两段宽度必须合计 100，否则百分比类统计（控球率 74 + 传球 90）会撑破容器
-    check('详情：技术统计对比条宽度合计为 100',
-      decoed.stats.length > 0 && decoed.stats.every((s) => s.hp + s.ap === 100),
+    const decoed = deco(sample || { events: [], stats: [], form: {} }, {
+      home: { zhName: '主队' }, away: { zhName: '客队' },
+    })
+    // 对比条按「值 / 最大值」归一：大值那边占满，小的等比缩 —— 两边不会都半截
+    // ⚠️ 两队都是 0 的统计项（如红牌 0-0）两边都是空条，这是真实数据不是 bug
+  check('详情：技术统计对比条大值占满（其余等比）',
+      decoed.stats.length > 0 && decoed.stats.every((s) => Math.max(s.hp, s.ap) === 100 || (s.hp === 0 && s.ap === 0)),
       decoed.stats.map((s) => `${s.k}:${s.hp}+${s.ap}`).join(' '))
+    // 用户真机反馈：只有球员名看不出是哪个队的 —— 事件类型必须拼上队名
+    check('详情：事件类型已拼上队别',
+      decoed.events.length > 0 && decoed.events.every((e) => !e.side || /·/.test(e.tLabel)),
+      decoed.events.slice(0, 3).map((e) => e.tLabel).join(' / '))
     check('详情：换人默认折叠（先只展示进球与牌）',
       decoed.shownEvents === decoed.keyEvents && decoed.subCount === decoed.events.length - decoed.keyEvents.length,
       `展示 ${decoed.shownEvents.length} / 共 ${decoed.events.length}`)

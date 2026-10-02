@@ -451,11 +451,26 @@ async function fetchLol(comp) {
 /* ------------------------------------------------------------------ 王者荣耀 KPL */
 
 /**
- * schedule_status 实测：1=未开赛、4=已结束（2026 夏季赛 136 场全是 4，比分正常）。
- * 2/3 的语义赛季开打后才能观察到，这里先按 2=进行中、其余未知兜底。
- * 兜底时如果有比分，就当已结束——比把打完的比赛一直挂成「未开始」要好。
+ * schedule_status 语义——以 KPL 官网前端为权威来源，不再是猜的。
+ * 取证 2026-10-02：官网 https://kpl.qq.com/ → 懒加载 chunk /static/Schedule-B0oR1B8y.js，其中
+ *   const Be = e => ({ 1:"未开始", 2:"已取消", 3:"进行中", 4:"已结束" })[e] || ""   // 卡片状态文案
+ *   const De = e => ({ 1:"notstart", 3:"ongoing" })[e] || ""                       // 卡片样式类
+ * 且模板里 Be(s.schedule_status) 直接用在本接口的字段上；
+ * status===3 渲染 liveIcon +「观看直播」按钮，status===4 渲染回放入口，
+ * 页面自动滚动定位取的是「今天第一场 schedule_status===1 或 3 的比赛」——2 被排除在外。
+ *
+ * 实拉数据佐证（2026-10-02 15:57 北京时间，seasonid:"" 返回本季共 37 场）：
+ *   1 → 35 场，全部未到开赛时间、比分 0:0
+ *   4 → 1 场，14:00 广州TTG 3:0 深圳DYG，已过开赛时间且已结算（round_settle_nums=3）
+ *   3 → 1 场，17:00 KSG vs 济南RW侠（当时距开赛还有 1 小时，比分 0:0）
+ *       ⇒ 上游会在直播开始前就把比赛切成 3，这是源站口径，照它显示即可
+ *   （上赛季 KPL2026S2 共 136 场全部为 4，进一步印证 4=已结束）
+ *
+ * ⚠️ 旧版把 2 当成「进行中」是错的，官方语义 2=已取消。已取消的比赛不进列表：
+ *    小程序只有 upcoming/live/finished 三态，挂成未开始会一直占位、还会触发开赛提醒。
  */
-const KPL_STATE = { 1: 'upcoming', 2: 'live', 4: 'finished' }
+const KPL_STATE = { 1: 'upcoming', 3: 'live', 4: 'finished' }
+const KPL_CANCELED = 2
 
 function kplTeam(id, name, accent) {
   // 季后赛未确定的对阵，两边都是"待定"且同 id，统一成 TBD，免得关注/提醒撞车
@@ -492,6 +507,10 @@ async function fetchKpl(comp) {
     const t = new Date(start)
     if (t < lower || t > upper) continue
 
+    // 2=已取消（官网语义），小程序没有 canceled 态，直接丢弃而不是挂成未开始
+    if (ev.schedule_status === KPL_CANCELED) continue
+
+    // 官方状态未覆盖到的取值兜底成未开赛；真出现上游滞后（打完了还报 1）就按比分补成已结束
     let status = KPL_STATE[ev.schedule_status] || 'upcoming'
     const played = Number(ev.team_a_score || 0) + Number(ev.team_b_score || 0)
     if (status === 'upcoming' && played > 0) status = 'finished'

@@ -352,9 +352,13 @@ async function fetchKplTable(comp) {
   list.forEach((ev) => {
     // ⚠️ 未开赛的接口也返回 0-0，必须先用 schedule_status 判出「真打完了」，
     //    否则会把整份未来赛程当成 0:0 平局算进去，积分榜当场失真。
+    // 官方语义取自官网前端（kpl.qq.com/static/Schedule-*.js）：
+    //   1=未开始 2=已取消 3=进行中 4=已结束
     const state = Number(ev.schedule_status)
     const played = Number(ev.team_a_score || 0) + Number(ev.team_b_score || 0)
-    const finished = state === 4 || (state !== 2 && played > 0)
+    // 只认 4（已结束）；上游滞后时靠比分兜底，但要排除 2（已取消）和 3（进行中——
+    // BO5 打完第一局的 1:0 是中间局比分，算进去会让积分榜提前失真）
+    const finished = state === 4 || (state !== 2 && state !== 3 && played > 0)
     if (!finished) return
     rows.push({
       homeId: String(ev.team_a_id || ev.team_a_name || ''),

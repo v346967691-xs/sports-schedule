@@ -16,7 +16,12 @@ const { appInstance } = require('../../utils/app-instance')
  * 只是这里不开放那些"球队池不适合关注"的赛事（欧冠/欧联/世界赛等）。
  * ⚠️ 这是页面层：改完要发版才生效，不像数据层那样推云端就更新。
  */
-const SELECTABLE = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl', 'u17', 'u17w', 'nba', 'cba', 'lpl', 'lck', 'kpl']
+// ⚠️ 欧战（欧冠/欧联/欧协联）不开放关注 —— 一支队的球队池横跨十几个国家联赛，
+//    跟「按联赛关注」的心智不符（2026-10-02 定的口径，欧协联沿用）
+const SELECTABLE = [
+  'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl',
+  'asiacup', 'u17', 'u17w', 'friendly', 'nba', 'cba', 'lpl', 'lck', 'kpl',
+]
 
 /**
  * 某些赛事只开放部分球队供关注。

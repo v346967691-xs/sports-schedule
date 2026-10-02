@@ -65,6 +65,14 @@ const ESPN_ZH = {
   469: '伊朗', 6724: '吉尔吉斯斯坦', 4390: '马尔代夫', 2666: '新西兰',
   6167: '巴勒斯坦', 4380: '叙利亚', 6723: '塔吉克斯坦', 17815: '越南',
   7507: '土库曼斯坦',
+  // 欧协联（欧战第三级别，队名来源比五大联赛杂，逐条按 team id 映射）
+  139: '阿贾克斯', 152: '特温特', 262: '哈茨', 443: '帕纳辛奈科斯', 489: '哈伊杜克',
+  572: '中日德兰', 620: '布兰', 909: '哥本哈根', 936: '圣图尔登', 997: '特拉布宗体育',
+  2290: '贝尔格莱德红星', 2528: '阿拉木图凯拉特', 2994: '布拉加', 3024: '图恩',
+  3101: '北西兰', 3611: '根特', 7672: '卢加诺', 7853: '奥胡斯', 7922: '亚布洛内茨',
+  8089: '克拉约瓦大学', 8169: '库奥皮奥', 10834: '索菲亚中央陆军', 17856: '林肯红魔',
+  19246: '里加', 20025: '伊比利亚1999', 20028: '考纳斯萨尔基里斯', 20301: '米亚尔比',
+  20703: '埃斯卡尔德斯国际', 20710: '巴尼亚卢卡战士', 21943: '埃格纳蒂亚', 22281: '帕福斯',
   // NBA
   1: '亚特兰大老鹰', 2: '波士顿凯尔特人', 17: '布鲁克林篮网', 30: '夏洛特黄蜂', 4: '芝加哥公牛',
   5: '克利夫兰骑士', 6: '达拉斯独行侠', 7: '丹佛掘金', 8: '底特律活塞', 9: '金州勇士',
@@ -172,7 +180,16 @@ const NAME_ZH = {
   // 大洋洲
   Australia: '澳大利亚', 'New Zealand': '新西兰', Fiji: '斐济', 'Papua New Guinea': '巴布亚新几内亚',
   Samoa: '萨摩亚', Tahiti: '塔希提', Tonga: '汤加', Vanuatu: '瓦努阿图',
+  'Solomon Islands': '所罗门群岛', 'Cook Islands': '库克群岛',
+  Anguilla: '安圭拉', 'Saint Vincent and the Grenadines': '圣文森特和格林纳丁斯',
   'New Caledonia': '新喀里多尼亚', Mozambique: '莫桑比克', 'China PR': '中国',
+  'Kyrgyz Republic': '吉尔吉斯斯坦', Yemen: '也门', Pakistan: '巴基斯坦',
+  'Brunei Darussalam': '文莱', 'Curacao': '库拉索',
+  // 上游同一支队有多种写法（ESPN 不同端点不一致），统一收一份别名
+  "Côte d'Ivoire": '科特迪瓦', 'Türkiye': '土耳其', 'Czech Republic': '捷克',
+  'Korea Republic': '韩国', 'Republic of Korea': '韩国', 'Korea DPR': '朝鲜',
+  'IR Iran': '伊朗', USA: '美国', UAE: '阿联酋', 'Cabo Verde': '佛得角',
+  'Bosnia-Herzegovina': '波黑', 'Congo, DR': '刚果民主共和国',
   // 国际足联之外的遗留写法
   'Sao Tome and Principe': '圣多美和普林西比', 'Cape Verde Islands': '佛得角',
 }
@@ -238,6 +255,36 @@ const CLUB_ZH = {
   'Traktor Sazi FC': '大不里士拖拉机',
 }
 
+/**
+ * 杯赛淘汰赛的「占位对阵」。
+ *
+ * 抽签之后、上一轮打完之前，ESPN 的对手位不是队名而是占位串，而且**没有 team id**：
+ *   "Group A Winner" / "Group A 2nd Place" / "3rd Place Group A/C/D" / "Round of 16 3 Winner"
+ * 不翻的话赛程卡上会直接冒出英文（2026 亚洲杯 2027-01 的 48 场小组赛之后全是这种）。
+ * 认不出来就返回空串，调用方回落到原文，绝不猜。
+ */
+const KO_ROUND_ZH = {
+  quarterfinal: '1/4 决赛', quarterfinals: '1/4 决赛',
+  semifinal: '半决赛', semifinals: '半决赛', final: '决赛',
+}
+
+function placeholderZh(name) {
+  const s = String(name || '').trim()
+  if (!s) return ''
+  let m
+  if ((m = s.match(/^Group\s+([A-Z])\s+Winner$/i))) return `${m[1]} 组第 1`
+  if ((m = s.match(/^Group\s+([A-Z])\s+(\d+)(?:st|nd|rd|th)\s+Place$/i))) return `${m[1]} 组第 ${m[2]}`
+  // "3rd Place Group A" / "3rd Place Group A/C/D"（成绩最好的小组第三）
+  if ((m = s.match(/^(\d+)(?:st|nd|rd|th)\s+Place\s+Group\s+([A-Z](?:\s*\/\s*[A-Z])*)$/i)))
+    return `${m[2].toUpperCase().replace(/\s*\/\s*/g, '/')} 组第 ${m[1]}`
+  // "Round of 16 3 Winner"
+  if ((m = s.match(/^Round\s+of\s+(\d+)\s+(\d+)\s+Winner$/i))) return `${m[1]} 强第 ${m[2]} 场胜者`
+  if ((m = s.match(/^([A-Za-z]+)\s+(\d+)\s+Winner$/i)) && KO_ROUND_ZH[m[1].toLowerCase()])
+    return `${KO_ROUND_ZH[m[1].toLowerCase()]}第 ${m[2]} 场胜者`
+  if ((m = s.match(/^Group\s+([A-Z])$/i))) return `${m[1]} 组`
+  return ''
+}
+
 /** 足球 / NBA 队名（按 ESPN team id） */
 function espnZh(id) {
   return ESPN_ZH[String(id)] || ''
@@ -247,14 +294,24 @@ function espnZh(id) {
  * 英文名兜底（国家队 + 亚冠俱乐部），查不到就返回空串让调用方回落到原文。
  * 大小写不敏感：ESPN 对同一支队在不同端点会给出 "Ulsan HD" / "Ulsan hd" 两种写法。
  */
+/**
+ * 大小写 + 变音符号都不敏感 —— 同一个国家/俱乐部上游有各种写法：
+ * "Curaçao" / "Curacao"、"Côte d'Ivoire" / "Cote d'Ivoire"、"Ulsan HD" / "Ulsan hd"。
+ * 统一剥掉声调符号再比，省得为一个撇号补一条映射。
+ */
+const foldKey = (s) => String(s)
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // 剥声调：Curaçao → Curacao
+  .replace(/['’`]/g, '') // 剥撇号：Côte d'Ivoire → Cote dIvoire
+  .toLowerCase().trim()
+
 const NAME_LC = {}
-Object.keys(NAME_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = NAME_ZH[k] })
-Object.keys(CLUB_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = CLUB_ZH[k] })
-Object.keys(YOUTH_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = YOUTH_ZH[k] })
+Object.keys(NAME_ZH).forEach((k) => { NAME_LC[foldKey(k)] = NAME_ZH[k] })
+Object.keys(CLUB_ZH).forEach((k) => { NAME_LC[foldKey(k)] = CLUB_ZH[k] })
+Object.keys(YOUTH_ZH).forEach((k) => { NAME_LC[foldKey(k)] = YOUTH_ZH[k] })
 
 function nameZh(name) {
   const s = String(name || '').trim()
-  const direct = YOUTH_ZH[s] || NAME_ZH[s] || CLUB_ZH[s] || NAME_LC[s.toLowerCase()] || ''
+  const direct = YOUTH_ZH[s] || NAME_ZH[s] || CLUB_ZH[s] || NAME_LC[foldKey(s)] || ''
   if (direct) return direct
   // "Spain U17" / "China PR U17"：剥掉年龄段后缀查国家队表，再把后缀拼回去
   const m = s.match(/^(.*?)[\s\-]+(U\d{2})$/i)
@@ -270,4 +327,4 @@ function lolZh(code) {
   return LOL_ZH[code] || ''
 }
 
-module.exports = { ESPN_ZH, NAME_ZH, CLUB_ZH, YOUTH_ZH, LOL_ZH, espnZh, nameZh, lolZh }
+module.exports = { ESPN_ZH, NAME_ZH, CLUB_ZH, YOUTH_ZH, LOL_ZH, espnZh, nameZh, placeholderZh, lolZh }

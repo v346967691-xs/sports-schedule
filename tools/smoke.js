@@ -87,8 +87,13 @@ async function run() {
   check('云 SDK 已固化进 miniprogram_npm（不依赖构建 npm）',
     fs.existsSync(path.join(ROOT, 'miniprogram_npm/@tencent-ai/workbuddy-cloud-sdk/miniprogram.js')))
 
-  // 用 meta 里的赛事总数比对，而不是写死数字：新增赛事（如德玛西亚杯）不该让这条用例变红
-  check('首页：赛事入口数量与 meta 一致', d.entries.length === allData.meta.competitions.length,
+  // ⚠️ 入口数可能**少于** meta —— 赛会制赛事（亚洲杯 2027-01 才开赛）在抓取窗口外
+  // 一场比赛都没有，卡片只能写「暂未公布未来赛程」，所以直接不占入口位。
+  // 不写死数字，只保证「有比赛的赛事一个都不少」。
+  check('首页：有比赛的赛事都有入口（未进窗口的不占位）',
+    d.entries.length <= allData.meta.competitions.length
+    && d.entries.every((e) => e.hasNext || e.hasLast)
+    && d.entries.some((e) => e.key === 'csl'),
     `入口 ${d.entries.length} / meta ${allData.meta.competitions.length}`)
   check('首页：正常渲染时不出现错误提示', !d.loadError, d.loadError)
   // 2026-10-02 新增中超：不写死数量，只保证关键赛事都在（以后再加赛事不会误报）
@@ -289,10 +294,17 @@ async function run() {
   check('数据层：补录表窗口内的比赛都进了快照',
     inRangeManual.length > 0 && inRangeManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
     `补录 ${manualMod.length} 场，窗口内 ${inRangeManual.length} 场（窗口 ${mRange.from}~${mRange.to}）`)
+  // ⚠️ 不能拿 upcoming().length 直接等于「upcoming+live」的总数：upcoming() 还会砍掉
+  //    「日期已过但上游还没翻状态」的比赛（比如 23:00 开赛、跨零点还没更新），
+  //    这种跨零点场次时有时无，直接比总数会随开赛时刻时红时绿。按定义验。
   check('数据层：query 支持 status 数组（live 归入即将开赛）', (() => {
     const up = dataMod.query({ status: 'upcoming' }).length
     const upLive = dataMod.query({ status: ['upcoming', 'live'] }).length
-    return upLive >= up && dataMod.upcoming().length === upLive
+    const todayStr = require(path.join(ROOT, 'utils/format')).todayStr()
+    const upc = dataMod.upcoming()
+    return upLive >= up
+      && upc.length <= upLive
+      && upc.every((m) => m.date >= todayStr && (m.status === 'upcoming' || m.status === 'live'))
   })())
   teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'lpl' } } })
   check('关注页：切到 LPL 列出 12 队', ctxTeams.data.activeCat === 'lpl' && ctxTeams.data.teams.length === 12)
@@ -506,7 +518,7 @@ async function run() {
   // 大类里的展示顺序（2026-10-02 用户定）：欧冠→五大联赛→欧国联→国字号→欧联→中超 /
   // NBA→CBA / 全球总决赛→德玛西亚杯→LPL→LCK→KPL→LEC→季中赛→亚运会
   const ORDER = {
-    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,csl,acl,u17,u17w',
+    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,uecl,csl,acl,asiacup,u17,u17w,friendly',
     basketball: 'nba,cba',
     esports: 'worlds,demacia,lpl,lck,kpl,lec,msi,agames',
   }
@@ -567,6 +579,39 @@ async function run() {
     aclMs.length
       ? [...new Set(aclMs.map((m) => [m.home.zh, m.away.zh]).flat())].filter((n) => /国安|海港|申花|泰山|蓉城/.test(n)).join('/')
       : '无')
+
+  /* ── 2026-10-03 第二批：欧协联 / 亚洲杯 / 国际友谊赛 ── */
+  check('赛事：欧协联 / 亚洲杯 / 国际友谊赛 都已注册',
+    ['uecl', 'asiacup', 'friendly'].every((k) => !!compByKey[k]),
+    ['uecl', 'asiacup', 'friendly'].filter((k) => !compByKey[k]).join(' ') || 'ok')
+  check('赛事：三个新赛事都在足球大类',
+    ['uecl', 'asiacup', 'friendly'].every((k) => catKeysOf('football').indexOf(k) > -1))
+  const ueclMs = dataMod.matches().filter((m) => m.comp === 'uecl')
+  check('数据层：欧协联已进快照且队名有中文',
+    ueclMs.length > 0 && ueclMs.every((m) => /[一-龥]/.test(m.home.zh || '') && /[一-龥]/.test(m.away.zh || '')),
+    ueclMs.length ? `${ueclMs.length} 场，例：${ueclMs[0].home.zh} vs ${ueclMs[0].away.zh}` : '窗口内暂无场次')
+  const frMs = dataMod.matches().filter((m) => m.comp === 'friendly')
+  check('数据层：国际友谊赛已进快照且队名有中文',
+    frMs.length > 0 && frMs.every((m) => /[一-龥]/.test(m.home.zh || '') && /[一-龥]/.test(m.away.zh || '')),
+    frMs.length ? `${frMs.length} 场，例：${frMs[0].home.zh} vs ${frMs[0].away.zh}` : '窗口内暂无场次')
+  // 亚洲杯 2027-01 开赛，45 天窗口到 2026-11-23 才会推到 → 现在多半是空的。
+  // 但一旦抓到，淘汰赛对阵是 "Group A Winner" 这类占位串，必须已汉化。
+  const acMs = dataMod.matches().filter((m) => m.comp === 'asiacup')
+  check('数据层：亚洲杯进窗口后队名无英文残留（含淘汰赛占位）',
+    acMs.length === 0
+    || acMs.every((m) => /[一-龥]/.test(m.home.zh || '') && /[一-龥]/.test(m.away.zh || '')),
+    acMs.length ? `${acMs.length} 场，例：${acMs[0].home.zh} vs ${acMs[0].away.zh}` : '尚未进抓取窗口（2027-01 开赛）')
+  check('中文名：淘汰赛占位对阵已汉化',
+    zhMod.placeholderZh('Group A Winner') === 'A 组第 1'
+    && zhMod.placeholderZh('Group F 2nd Place') === 'F 组第 2'
+    && zhMod.placeholderZh('3rd Place Group A/C/D') === 'A/C/D 组第 3'
+    && zhMod.placeholderZh('Round of 16 3 Winner') === '16 强第 3 场胜者'
+    && zhMod.placeholderZh('皇家马德里') === '',
+    `${zhMod.placeholderZh('Group A Winner')} / ${zhMod.placeholderZh('Round of 16 3 Winner')}`)
+  // 积分榜标了欧协联名额，赛事入口也得有；两处都对得上才算一致
+  check('积分榜：欧协联榜已接入（与分区色带的欧协联名额对得上）',
+    !!(dataMod.standingsOf('uecl') && dataMod.standingsOf('uecl').groups.length),
+    dataMod.standingsOf('uecl') ? `${dataMod.standingsOf('uecl').groups[0].rows.length} 队` : '无')
   ;['kpl', 'cba', 'csl'].forEach((k) => {
     const list = dataMod.matches().filter((m) => m.comp === k)
     const bad = list.filter((m) => !m.home.zh || !m.away.zh)
@@ -1134,6 +1179,10 @@ async function run() {
     md.needsFetch({ id: 'x', status: 'upcoming' }, cap(md.SCHEMA, t0 - 13 * 3600 * 1000)) === true)
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误
+  // 赛事从「抓详情」名单里去掉后，云端老行必须被清掉 —— 详情桶是打进包的，占体积
+  check('详情：不抓详情的赛事（国际友谊赛）判定正确',
+    md.detailCapable('uecl') === true && md.detailCapable('chn') === true
+    && md.detailCapable('friendly') === false && md.detailCapable('worlds') === false)
   check('详情：交锋只保留已打过的比赛（未开赛的 0-0 会被误当战绩）',
     md.isPlayed({ statusType: { state: 'post' } }) === true
     && md.isPlayed({ statusType: { state: 'pre' } }) === false

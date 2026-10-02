@@ -81,13 +81,21 @@ const COMPETITIONS = [
     teamPick: /^china/i,
   },
   { key: 'uel', source: 'espn', sport: 'soccer', cat: 'football', name: '欧联', full: '欧足联欧洲联赛', espn: 'uefa.europa', accent: '#E2630F' },
+  // 欧协联：欧战第三级别。积分榜里标了「欧协联」名额，赛事本身也得有入口才对得上
+  { key: 'uecl', source: 'espn', sport: 'soccer', cat: 'football', name: '欧协联', full: '欧足联欧洲协会联赛', espn: 'uefa.europa.conf', accent: '#1E7A5A' },
   { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
   // 亚冠精英：北京国安 / 上海海港等中超球队参加的洲际俱乐部赛事（东亚区 + 西亚区）
   { key: 'acl', source: 'espn', sport: 'soccer', cat: 'football', name: '亚冠精英', full: '亚足联冠军精英联赛', espn: 'afc.champions', accent: '#0B6E4F' },
+  // 亚洲杯：2027-01-07 开赛（沙特）。ESPN 已经放了 48 场小组赛，但要等抓取窗口
+  // 推到 2027-01 才会进快照（约 2026-12-17）——空赛事入口会自动隐藏，不用管
+  { key: 'asiacup', source: 'espn', sport: 'soccer', cat: 'football', name: '亚洲杯', full: '亚足联亚洲杯（沙特 2027）', espn: 'afc.asian.cup', accent: '#B8860B' },
   // ⚠️ 两个 U17 世界杯都是「赛会制 + 短期窗口」：开赛前 45 天才会进入抓取窗口，
   //    平时这两项是空的（空的赛事入口会自动隐藏，不会白屏）
   { key: 'u17', source: 'espn', sport: 'soccer', cat: 'football', name: 'U17世界杯', full: '国际足联 U-17 男足世界杯（卡塔尔 2026）', espn: 'fifa.world.u17', accent: '#8B1538' },
   { key: 'u17w', source: 'espn', sport: 'soccer', cat: 'football', name: 'U17女足世界杯', full: '国际足联 U-17 女足世界杯（摩洛哥 2026）', espn: 'fifa.wworld.u17', accent: '#B0347A' },
+  // 国际友谊赛：全球各国字号热身赛。中国队那部分另有一个「中国国字号」入口，
+  // 这里给的是全量（看别的国家队热身用）
+  { key: 'friendly', source: 'espn', sport: 'soccer', cat: 'football', name: '国际友谊赛', full: '国际足联国际友谊赛', espn: 'fifa.friendly', accent: '#4A6FA5' },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
   { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
   // 电竞顺序：全球总决赛 → 德玛西亚杯 → LPL → LCK → KPL → LEC → 季中冠军赛 → 亚运会
@@ -113,7 +121,7 @@ const COMPETITIONS = [
 const SPORT_CATS = {
   football: {
     name: '足球',
-    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'csl', 'acl', 'u17', 'u17w'],
+    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'uecl', 'csl', 'acl', 'asiacup', 'u17', 'u17w', 'friendly'],
   },
   basketball: { name: '篮球', competitions: ['nba', 'cba'] },
   esports: { name: '电竞', competitions: ['worlds', 'demacia', 'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames'] },
@@ -219,9 +227,10 @@ function normTeam(raw, fallbackName, fallbackColor) {
     id,
     name,
     // 中文名：小程序里优先展示，取不到就用英文名。
-    // 三级兜底：① ESPN 队 id（俱乐部/国家队主表）② 英文名（国青队 U17/U20 与
-    // 亚冠外国俱乐部没有单独 id 映射，只能按名字翻）③ 留空 → 展示英文名
-    zh: zhNames.espnZh(id) || zhNames.nameZh(name) || '',
+    // 四级兜底：① ESPN 队 id（俱乐部/国家队主表）② 淘汰赛占位对阵（"Group A Winner"
+    // 这类没有 team id）③ 英文名（国青队 U17/U20 与亚冠外国俱乐部没有单独 id 映射）
+    // ④ 留空 → 展示英文名
+    zh: zhNames.espnZh(id) || zhNames.placeholderZh(name) || zhNames.nameZh(name) || '',
     abbr: (raw.abbreviation || raw.shortDisplayName || name).slice(0, 6),
     color: raw.color ? `#${String(raw.color).replace('#', '')}` : fallbackColor || '#6B7280',
   }

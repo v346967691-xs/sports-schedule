@@ -34,8 +34,14 @@ const SLUG = {
   ligue1: 'fra.1',
   nations: 'uefa.nations',
   uel: 'uefa.europa',
+  uecl: 'uefa.europa.conf',
   csl: 'chn.1',
   acl: 'afc.champions',
+  asiacup: 'afc.asian.cup',
+  // ⚠️ 国际友谊赛**故意不抓详情**：友谊赛密集（未来 7 天就有 40 场），而且
+  //    它的「历史交锋 / 双方近况」本来就是最没参考价值的一类，
+  //    实测要占 38KB 包体积（详情桶是打进包的）。赛程 + 比分已经够用。
+  //    friendly: 'fifa.friendly',
   u17: 'fifa.world.u17',
   u17w: 'fifa.wworld.u17',
   nba: 'nba',
@@ -286,6 +292,18 @@ function resolveSlug(m) {
   return m.slug || SLUG[m.comp] || null
 }
 
+/**
+ * 这个赛事会不会抓详情（= 有没有可用的 summary 端点）。
+ * `chn` 是唯一的多来源赛事，它每场比赛自带 slug，所以特殊放行。
+ *
+ * ⚠️ 用途是**清理「以前抓过、现在不要了」的赛事**（比如国际友谊赛）：
+ *    详情桶是按天存的，历史行在接下来的推送里会一直被带上去，
+ *    光把 `SLUG` 里的键删掉，云端老数据不会消失（详情桶是打进包的，占体积）。
+ */
+function detailCapable(comp) {
+  return !!SLUG[comp] || comp === 'chn'
+}
+
 async function fetchDetail(m) {
   const slug = resolveSlug(m)
   if (!slug) return null
@@ -435,6 +453,11 @@ async function main() {
     const day = String(id).slice(2)
     if (day < cutoff) return // 过期桶整行丢掉，不再推送（云端的旧行由 cloud-sync 清理）
     const payload = buckets[id].payload || {}
+    // 清掉已经不再抓详情的赛事（比如后来决定不抓的国际友谊赛），
+    // 否则这些行会一直被推到云端、也一直占着包体积
+    Object.keys(payload).forEach((k) => {
+      if (!detailCapable(payload[k] && payload[k].comp)) delete payload[k]
+    })
     if (!Object.keys(payload).length) return
     touched.push({ id, day, payload })
   })
@@ -468,4 +491,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, needsFetch, isPlayed }
+module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, detailCapable, needsFetch, isPlayed }

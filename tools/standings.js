@@ -549,6 +549,7 @@ const TARGETS = [
   { key: 'ligue1', cat: 'football', sport: 'soccer', espn: 'fra.1' },
   { key: 'nations', cat: 'football', sport: 'soccer', espn: 'uefa.nations' },
   { key: 'uel', cat: 'football', sport: 'soccer', espn: 'uefa.europa' },
+  { key: 'uecl', cat: 'football', sport: 'soccer', espn: 'uefa.europa.conf' },
   { key: 'csl', cat: 'football', sport: 'soccer', espn: 'chn.1' },
   // 亚冠精英：东/西两个区各 16 队（不是联赛，是一张「小组积分表」）
   { key: 'acl', cat: 'football', sport: 'soccer', espn: 'afc.champions' },

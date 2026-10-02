@@ -139,12 +139,17 @@ Page({
         accent: c.accent,
         summary,
         hasNext: !!next,
+        hasLast: !!last,
         count: upcoming.filter((m) => m.comp === c.key).length,
         // 有积分榜的赛事才显示「积分榜」入口；杯赛和国字号本来就没有排名
         hasStandings: !!data.standingsOf(c.key),
         leader: leaderText(c.key),
       }
     })
+      // 还没进抓取窗口的赛事（比如 2027-01 才开赛的亚洲杯）不占入口位：
+      // 卡片上只能写「暂未公布未来赛程」，跟「没这个赛事」没区别，
+      // 等比赛进了窗口会自己冒出来，不用发版
+      .filter((e) => e.hasNext || e.hasLast)
 
     this.setData({
       dateStrip: strip,

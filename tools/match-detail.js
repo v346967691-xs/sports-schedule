@@ -39,7 +39,17 @@ const SLUG = {
 }
 const BASKETBALL = { nba: true }
 
+/**
+ * 抽取结果的 schema 版本。
+ * ⚠️ 改了任何 pick* 的抽取逻辑都要 +1：云端存的是「抽完的成品」，
+ *    已结束的比赛只抓一次、之后永不刷新，光改代码老数据不会变。
+ *    needsFetch 见到版本号不同会强制重抓一次，老数据自动淘汰。
+ */
+const SCHEMA = 3
+
 const FINISHED_MS = 48 * 3600 * 1000 // 已结束：只补最近 48 小时
+const UPCOMING_MS = 7 * 24 * 3600 * 1000 // 赛前预览：未来 7 天内开赛的也抓
+const UPCOMING_REFRESH_MS = 12 * 3600 * 1000 // 未开赛的近况变化慢，12 小时刷一次就够
 const KEEP_DAYS = 7 // 云端保留天数（与 RLS 的 DELETE 策略一致）
 
 /* ---------------------------- 事件：过滤与汉化 ---------------------------- */
@@ -217,13 +227,20 @@ function pickForm(j) {
   return out
 }
 
+/** 交锋记录只认已结束的：ESPN 会把「已排定未开赛」的比赛也算进 seasonseries（比分 0-0） */
+function isPlayed(e) {
+  return !!(e && e.statusType && e.statusType.state === 'post')
+}
+
 function pickH2H(j) {
   const ss = (Array.isArray(j.seasonseries) ? j.seasonseries : [])[0]
   if (!ss) return null
   return {
     // ESPN 的 summary 是英文整句（"AZE leads series 2-0-1"），直接用会中英混排。
     // 战绩改成自己从交手列表里数，标题也改成「近 N 次交手」——所见即所列，不会前后矛盾。
-    list: (ss.events || []).slice(0, 5).map((e) => {
+    // ⚠️ seasonseries 里混着「本赛程已排定但还没打」的未来比赛（比分 0-0），
+    //    赛季初尤其多，直接显示会被当成数据错误 —— 只保留 state==='post' 的。
+    list: (ss.events || []).filter(isPlayed).slice(0, 5).map((e) => {
       const cs = e.competitors || []
       const h = cs.find((c) => c.homeAway === 'home') || cs[0] || {}
       const a = cs.find((c) => c.homeAway === 'away') || cs[1] || {}
@@ -303,6 +320,8 @@ async function fetchDetail(m) {
     id: m.id,
     comp: m.comp,
     fin: m.status === 'finished',
+    v: SCHEMA, // 抽取逻辑版本，变了就重抓一次
+    ts: Date.now(), // 抓取时刻：未开赛的场次据此判断要不要刷新
     events: pickEvents(j, homeId),
     form: { home: form[String(homeId)] || [], away: form[String(awayId)] || [] },
     h2h,
@@ -329,7 +348,7 @@ async function loadCaptured() {
     ;(data || []).forEach((row) => {
       buckets[row.id] = { day: row.day, payload: row.payload || {} }
       Object.keys(row.payload || {}).forEach((k) => {
-        if (row.payload[k] && row.payload[k].fin) captured[k] = true
+        if (row.payload[k]) captured[k] = row.payload[k]
       })
     })
   } catch (err) {
@@ -349,6 +368,22 @@ function dayKey(iso) {
   return `${y}${m}${day}`
 }
 
+/**
+ * 判断这场要不要重新抓 —— 全量重抓的话一天 1~2GB 流量会被 ESPN 限流
+ *   进行中：每班重抓（比分在变）
+ *   已结束：抓一次就够（事件不会变）
+ *   未开赛：12 小时一次（近况/交锋变化慢，而且赛前 ESPN 也没更多东西可给）
+ */
+function needsFetch(m, captured) {
+  if (m.status === 'live' || m.status === 'inprogress') return true
+  const prev = captured[m.id]
+  if (!prev) return true
+  // 老版本抽出来的数据（比如早期没过滤未开赛交锋）强制重抓一次
+  if (prev.v !== SCHEMA) return true
+  if (m.status === 'finished') return false
+  return Date.now() - (prev.ts || 0) > UPCOMING_REFRESH_MS
+}
+
 async function main() {
   const matches = require('../data/matches.js')
   const list = Array.isArray(matches) ? matches : matches.matches || []
@@ -360,12 +395,15 @@ async function main() {
     const t = new Date(m.start).getTime()
     if (Number.isNaN(t)) return false
     if (m.status === 'finished') return now - t < FINISHED_MS + 6 * 3600 * 1000
-    return m.status === 'live' || m.status === 'inprogress'
+    if (m.status === 'live' || m.status === 'inprogress') return true
+    // 赛前预览：ESPN 对未开赛的比赛照样给 lastFiveGames / seasonseries，
+    // 只是没有事件和统计 —— 页面已有 hasTimeline / hasStats 判断会自动隐藏那两块
+    return m.status === 'upcoming' && t - now < UPCOMING_MS
   })
 
   buildTeamIndex(list)
   const { captured, buckets } = await loadCaptured()
-  const todo = targets.filter((m) => m.status !== 'finished' || !captured[m.id])
+  const todo = targets.filter((m) => needsFetch(m, captured))
   console.log(`[match-detail] 目标 ${targets.length} 场，其中待抓 ${todo.length} 场（进行中每班重抓）`)
 
   let ok = 0
@@ -427,4 +465,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug }
+module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, needsFetch, isPlayed }

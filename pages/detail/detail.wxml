@@ -54,6 +54,12 @@
     </view>
   </view>
 
+  <!-- 赛前说明：未开赛时下面只有近况与交锋两块，得说清楚，否则像是没加载出来 -->
+  <view class="pre-tip" wx:if="{{detail.isPre && detail.hasForm}}">
+    <view class="pre-tip-title">赛前预览</view>
+    <view class="pre-tip-desc">开赛后这里会换成实时事件与技术统计</view>
+  </view>
+
   <!-- ① 事件时间轴 -->
   <view class="section card" wx:if="{{detail.hasTimeline}}">
     <view class="sec-title">比赛事件</view>
@@ -92,7 +98,7 @@
   <!-- ③ 双方近况 -->
   <view class="section card" wx:if="{{detail.hasForm}}">
     <view class="sec-title">双方近况</view>
-    <view class="sec-sub">最近 5 场正式比赛</view>
+    <view class="sec-sub">最近参加的 5 场正式比赛，可能跨赛季</view>
     <view class="form-block" wx:for="{{detail.formRows}}" wx:key="idx">
       <view class="form-side">{{item.side}}</view>
       <view class="form-item" wx:for="{{item.list}}" wx:for-item="g" wx:key="i">

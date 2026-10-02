@@ -1088,6 +1088,29 @@ async function run() {
     md.briefOf('Kenny Kindle (Liechtenstein) is shown the yellow card', '黄牌') === 'Kenny Kindle',
     md.briefOf('Kenny Kindle (Liechtenstein) is shown the yellow card', '黄牌'))
 
+  /* 增量抓取策略：全量重抓一天 1~2GB 会被 ESPN 限流，所以每种状态各有一条规则 */
+  const t0 = Date.now()
+  const cap = (v, ts) => ({ x: { v, ts } })
+  check('详情：进行中的比赛每班都重抓（比分在变）',
+    md.needsFetch({ id: 'x', status: 'live' }, cap(md.SCHEMA, t0)) === true)
+  check('详情：已结束的比赛抓过一次就不再抓（事件不会变）',
+    md.needsFetch({ id: 'x', status: 'finished' }, cap(md.SCHEMA, 0)) === false)
+  check('详情：没抓过的比赛一律要抓',
+    md.needsFetch({ id: 'y', status: 'finished' }, cap(md.SCHEMA, t0)) === true)
+  // ⚠️ 云端存的是「抽完的成品」，改了抽取逻辑光推代码没用 —— 版本号不同强制重抓一次
+  check('详情：schema 升级后老数据会被重抓一次',
+    md.needsFetch({ id: 'x', status: 'finished' }, cap(md.SCHEMA - 1, t0)) === true)
+  check('详情：未开赛的比赛 12 小时内不重复抓',
+    md.needsFetch({ id: 'x', status: 'upcoming' }, cap(md.SCHEMA, t0)) === false)
+  check('详情：未开赛超过 12 小时会刷新（近况可能变了）',
+    md.needsFetch({ id: 'x', status: 'upcoming' }, cap(md.SCHEMA, t0 - 13 * 3600 * 1000)) === true)
+  // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
+  // 赛季初尤其多 —— 直接显示会被当成数据错误
+  check('详情：交锋只保留已打过的比赛（未开赛的 0-0 会被误当战绩）',
+    md.isPlayed({ statusType: { state: 'post' } }) === true
+    && md.isPlayed({ statusType: { state: 'pre' } }) === false
+    && md.isPlayed({}) === false && md.isPlayed(null) === false)
+
   const mdFile = path.join(ROOT, 'data', 'match-details.js')
   if (fsMod.existsSync(mdFile)) {
     const mdData = require(mdFile)
@@ -1123,7 +1146,49 @@ async function run() {
       `展示 ${decoed.shownEvents.length} / 共 ${decoed.events.length}`)
     check('详情：只有 ESPN 赛事才有详情（LoL 等不入桶）',
       all.every((d) => !/^man-/.test(d.id)), all.length ? all[0].id : '无')
+
+    /* ---------- 赛前预览：未开赛的比赛也要有「近况 + 交锋」 ---------- */
+    const mdToday = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+    const upIds = (matches() || []).filter((x) => x.status === 'upcoming').map((x) => x.id)
+    const pre = all.filter((d) => upIds.indexOf(d.id) > -1)
+    check('详情：未来 7 天内开赛的比赛都已抓到（赛前预览）',
+      upIds.length > 0 && pre.length > 0, `赛程里 ${upIds.length} 场未开赛，已抓 ${pre.length} 场`)
+    check('详情：赛前场次没有事件与统计（页面据此隐藏那两块）',
+      pre.every((d) => !(d.events || []).length && !(d.stats || []).length),
+      pre.filter((d) => (d.events || []).length || (d.stats || []).length).slice(0, 3).map((d) => d.id).join(',') || 'ok')
+    check('详情：赛前场次至少有一方的近况（不是空壳）',
+      pre.some((d) => ((d.form && d.form.home) || []).length > 0),
+      pre.length ? `${pre.filter((d) => ((d.form && d.form.home) || []).length).length}/${pre.length} 场有近况` : '无')
+    // 交锋里出现「未来日期 + 0-0」＝把没打的比赛当成了历史战绩
+    const ghostH2H = []
+    all.forEach((d) => ((d.h2h && d.h2h.list) || []).forEach((e) => {
+      if (e.hs === '0' && e.as === '0' && e.d > mdToday) ghostH2H.push(`${d.id}:${e.d}`)
+    }))
+    check('详情：交锋里没有未开赛的幽灵 0-0',
+      ghostH2H.length === 0, ghostH2H.slice(0, 4).join(' ') || `${mdToday} 之后无 0-0`)
+    // ts / v 是增量刷新的唯一依据，缺了就会退化成全量重抓
+    check('详情：每条都带抓取时刻与 schema 版本',
+      all.length > 0 && all.every((d) => typeof d.ts === 'number' && d.v === md.SCHEMA),
+      all.length ? `v=${all[0].v} / 期望 ${md.SCHEMA}` : '无')
   }
+
+  /* ---------- 赛前预览的页面表现 ---------- */
+  const decoPre = require(path.join(ROOT, 'pages/detail/detail.js')).decorateDetail
+  const preDeco = decoPre(
+    { events: [], stats: [], form: { home: [{ at: '主', opp: '阿森纳', sc: '2-1', r: 'W' }] }, h2h: null },
+    { status: 'upcoming', home: { zhName: '皇马' }, away: { zhName: '拜仁' } }
+  )
+  check('详情页：未开赛标记为赛前预览（展示「开赛后会换成…」的说明）', preDeco.isPre === true)
+  check('详情页：赛前不显示时间轴与技术统计',
+    preDeco.hasTimeline === false && preDeco.hasStats === false && preDeco.hasForm === true)
+  const doneDeco = decoPre(
+    { events: [{ m: "45'", t: '进球', s: 'A', side: 'home' }], stats: [], form: {}, h2h: null },
+    { status: 'finished', home: { zhName: '皇马' }, away: { zhName: '拜仁' } }
+  )
+  check('详情页：已结束的比赛不显示赛前说明', doneDeco.isPre === false && doneDeco.hasTimeline === true)
+  const dWxmlPre = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
+  check('详情页：赛前说明块已接线（pre-tip）',
+    dWxmlPre.indexOf('wx:if="{{detail.isPre') > -1 && dWxmlPre.indexOf('class="pre-tip"') > -1)
 
   /* ---------- 球队详情页 ---------- */
   require(path.join(ROOT, 'pages/team/team.js'))

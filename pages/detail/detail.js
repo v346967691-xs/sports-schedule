@@ -69,6 +69,9 @@ function decorateDetail(d, match) {
       })
     : null
   return {
+    // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
+    // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
+    isPre: match.status === 'upcoming',
     events,
     keyEvents,
     shownEvents: keyEvents,

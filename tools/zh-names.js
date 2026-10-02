@@ -176,14 +176,55 @@ const NAME_ZH = {
   'Sao Tome and Principe': '圣多美和普林西比', 'Cape Verde Islands': '佛得角',
 }
 
+/**
+ * 亚冠（及亚足联俱乐部赛事）对手 —— 为什么单独一张表：
+ * 中超球队打亚冠精英联赛，近况里的对手是韩/日/泰/马/澳的**俱乐部**，
+ * 上面那张国家队表覆盖不到，ESPN 也不给中文名。
+ * 只补东亚区（中超球队只在东亚区踢），西亚区等真碰上了再加。
+ */
+const CLUB_ZH = {
+  // 韩国 K 联赛
+  'Pohang Steelers': '浦项制铁', 'Ulsan HD': '蔚山HD', 'Ulsan Hyundai': '蔚山现代',
+  'FC Seoul': '首尔FC', 'Gwangju FC': '光州FC', 'Gangwon FC': '江原FC',
+  'Jeonbuk Hyundai Motors': '全北现代', 'Suwon FC': '水原FC', 'Daegu FC': '大邱FC',
+  'Daejeon Hana Citizen': '大田韩亚市民', 'Incheon United': '仁川联',
+  'Gimcheon Sangmu': '金泉尚武', 'Jeju SK': '济州SK', 'Gimpo FC': '金浦FC',
+  // 日本 J 联赛
+  'Sanfrecce Hiroshima': '广岛三箭', 'Vissel Kobe': '神户胜利船', 'Machida Zelvia': '町田泽维亚',
+  'Kashima Antlers': '鹿岛鹿角', 'Yokohama F. Marinos': '横滨水手', 'Kawasaki Frontale': '川崎前锋',
+  'Urawa Red Diamonds': '浦和红钻', 'Gamba Osaka': '大阪钢巴', 'FC Tokyo': '东京FC',
+  'Nagoya Grampus': '名古屋鲸鱼', 'Kashiwa Reysol': '柏太阳神', 'Cerezo Osaka': '大阪樱花',
+  'Avispa Fukuoka': '福冈黄蜂', 'Shonan Bellmare': '湘南丽海', 'Albirex Niigata': '新潟天鹅',
+  'Tokyo Verdy': '东京绿茵', 'Kyoto Sanga': '京都不死鸟', 'Shimizu S-Pulse': '清水心跳',
+  // 泰国
+  'Buriram United': '武里南联', 'Ratchaburi FC': '拉查武里', 'Ratchaburi': '拉查武里',
+  'Bangkok United': '曼谷联', 'Port FC': '狮子港', 'BG Pathum United': '巴吞联',
+  'Muangthong United': '蒙通联',
+  // 马来西亚 / 新加坡
+  'Johor Darul Ta\'zim': '柔佛DT', 'Selangor FC': '雪兰莪', 'Lion City Sailors': '狮城水手',
+  // 澳大利亚
+  'Melbourne City': '墨尔本城', 'Sydney FC': '悉尼FC', 'Central Coast Mariners': '中央海岸水手',
+  'Melbourne Victory': '墨尔本胜利', 'Adelaide United': '阿德莱德联', 'Brisbane Roar': '布里斯班狮吼',
+  'Perth Glory': '珀斯光荣', 'Newcastle Jets': '纽卡斯尔喷气机', 'Western United': '西部联',
+  'Wellington Phoenix': '惠灵顿凤凰', 'Macarthur FC': '麦克阿瑟',
+}
+
 /** 足球 / NBA 队名（按 ESPN team id） */
 function espnZh(id) {
   return ESPN_ZH[String(id)] || ''
 }
 
-/** 英文名兜底（国家队为主），查不到就返回空串让调用方回落到原文 */
+/**
+ * 英文名兜底（国家队 + 亚冠俱乐部），查不到就返回空串让调用方回落到原文。
+ * 大小写不敏感：ESPN 对同一支队在不同端点会给出 "Ulsan HD" / "Ulsan hd" 两种写法。
+ */
+const NAME_LC = {}
+Object.keys(NAME_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = NAME_ZH[k] })
+Object.keys(CLUB_ZH).forEach((k) => { NAME_LC[k.toLowerCase()] = CLUB_ZH[k] })
+
 function nameZh(name) {
-  return NAME_ZH[String(name || '').trim()] || ''
+  const s = String(name || '').trim()
+  return NAME_ZH[s] || CLUB_ZH[s] || NAME_LC[s.toLowerCase()] || ''
 }
 
 /** 英雄联盟队名（按官方简码） */
@@ -191,4 +232,4 @@ function lolZh(code) {
   return LOL_ZH[code] || ''
 }
 
-module.exports = { ESPN_ZH, NAME_ZH, LOL_ZH, espnZh, nameZh, lolZh }
+module.exports = { ESPN_ZH, NAME_ZH, CLUB_ZH, LOL_ZH, espnZh, nameZh, lolZh }

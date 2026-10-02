@@ -588,3 +588,23 @@
   margin: 0 14rpx;
   color: var(--muted);
 }
+
+/* 赛前预览提示 */
+.pre-tip {
+  margin: 0 24rpx 20rpx;
+  padding: 20rpx 24rpx;
+  background: var(--brand-soft);
+  border-radius: 16rpx;
+}
+
+.pre-tip-title {
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.pre-tip-desc {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--muted);
+}

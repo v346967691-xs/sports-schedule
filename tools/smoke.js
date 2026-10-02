@@ -40,14 +40,15 @@ global.wx = {
   removeStorageSync: () => {},
 }
 
-global.getApp = function () {
-  return {
-    globalData: { favIds: [], authState: 'signed-out', cloudReady: false, pendingComp: '' },
-    refreshAuth: async function () { return 'signed-out' },
-    refreshFavorites: async function () { return [] },
-    isFav: function (id) { return this.globalData.favIds.indexOf(id) > -1 },
-  }
+/* ⚠️ 必须是**稳定单例**：utils/nav.js 的 tabBar 跳转靠 globalData.pendingComp 交接参数，
+   每次 getApp() 都返回新对象的话，页面 onShow 永远读不到刚写进去的值，断言就变成假绿。 */
+const mockApp = {
+  globalData: { favIds: [], authState: 'signed-out', cloudReady: false, pendingComp: '', pendingTeam: null },
+  refreshAuth: async function () { return 'signed-out' },
+  refreshFavorites: async function () { return [] },
+  isFav: function (id) { return this.globalData.favIds.indexOf(id) > -1 },
 }
+global.getApp = function () { return mockApp }
 
 global.Page = function (obj) { global.__page = obj }
 global.Component = function (obj) { global.__component = obj }
@@ -1375,8 +1376,12 @@ async function run() {
     withRank.slice(0, 3).map((e) => e.name + ':' + e.leader).join(' / '))
   check('首页：杯赛不显示积分榜入口',
     ctxIdxRank.data.entries.filter((e) => e.key === 'worlds' || e.key === 'msi').every((e) => !e.hasStandings))
+  // ⚠️ 积分榜是 tabBar 页面：只能 switchTab + pendingComp 交接，navigateTo 会静默失败
+  collected.switchTab = ''
+  mockApp.globalData.pendingComp = ''
   indexOpts.onRankTap.call(ctxIdxRank, { currentTarget: { dataset: { key: 'csl' } } })
-  check('首页：积分榜入口跳该赛事榜单', collected.navigateTo === '/pages/rank/rank?comp=csl', collected.navigateTo)
+  check('首页：积分榜入口切到积分榜 tab', collected.switchTab === '/pages/rank/rank', collected.switchTab)
+  check('首页：积分榜入口带上该赛事', mockApp.globalData.pendingComp === 'csl', mockApp.globalData.pendingComp)
 
   // 详情页：队名可点、有积分榜时显示入口
   const detRank = makeCtx(detOpts)
@@ -1384,9 +1389,12 @@ async function run() {
   detOpts.onLoad.call(detRank, { id: detMatchForRank ? detMatchForRank.id : '' })
   await waitUntil(() => detRank.data.match || detRank.data.loadError)
   check('详情页：有积分榜的赛事显示榜单入口', detRank.data.hasStandings === true, detMatchForRank ? detMatchForRank.comp : '无')
+  collected.switchTab = ''
+  mockApp.globalData.pendingComp = ''
   detOpts.onStandingsTap.call(detRank)
-  check('详情页：点积分榜入口跳对应赛事',
-    detMatchForRank ? collected.navigateTo === `/pages/rank/rank?comp=${detMatchForRank.comp}` : false, collected.navigateTo)
+  check('详情页：点积分榜入口切到积分榜 tab', collected.switchTab === '/pages/rank/rank', collected.switchTab)
+  check('详情页：积分榜入口带上该赛事',
+    detMatchForRank ? mockApp.globalData.pendingComp === detMatchForRank.comp : false, mockApp.globalData.pendingComp)
   detOpts.onTeamTap.call(detRank, { currentTarget: { dataset: { side: 'home' } } })
   check('详情页：点队名跳球队详情', /\/pages\/team\/team\?comp=/.test(collected.navigateTo || ''), collected.navigateTo)
 
@@ -1396,8 +1404,37 @@ async function run() {
   schOpts.doReload.call(ctxSchRank)
   check('赛程页：选中中超时出现积分榜入口', ctxSchRank.data.hasStandings === true && ctxSchRank.data.compName === '中超',
     `${ctxSchRank.data.compName}/${ctxSchRank.data.hasStandings}`)
+  collected.switchTab = ''
+  mockApp.globalData.pendingComp = ''
   schOpts.onRankTap.call(ctxSchRank)
-  check('赛程页：积分榜入口跳对应赛事', collected.navigateTo === '/pages/rank/rank?comp=csl', collected.navigateTo)
+  check('赛程页：积分榜入口切到积分榜 tab', collected.switchTab === '/pages/rank/rank', collected.switchTab)
+  check('赛程页：积分榜入口带上该赛事', mockApp.globalData.pendingComp === 'csl', mockApp.globalData.pendingComp)
+
+  // 球队详情页的「看排名」同样只能 switchTab（teamOpts / rankOpts 见上文 1273 / 1310 行）
+  collected.switchTab = ''
+  mockApp.globalData.pendingComp = ''
+  const ctxTeamRank = makeCtx(teamOpts)
+  ctxTeamRank.setData({ comp: 'csl', id: '21355', hasStandings: true })
+  teamOpts.goRank.call(ctxTeamRank)
+  check('球队页：看排名切到积分榜 tab', collected.switchTab === '/pages/rank/rank', collected.switchTab)
+  check('球队页：看排名带上该赛事', mockApp.globalData.pendingComp === 'csl', mockApp.globalData.pendingComp)
+
+  // rank 页 onShow 必须无条件清空 pendingComp，否则会串台给赛程页
+  mockApp.globalData.pendingComp = 'epl'
+  const ctxRankShow = makeCtx(rankOpts)
+  rankOpts.onLoad.call(ctxRankShow, {})
+  rankOpts.onShow.call(ctxRankShow)
+  check('积分榜页：onShow 取走 pendingComp 后清空（不留给赛程页）',
+    mockApp.globalData.pendingComp === '', mockApp.globalData.pendingComp)
+  check('积分榜页：onShow 生效选中 pendingComp 指定的赛事',
+    ctxRankShow.data.activeComp === 'epl', ctxRankShow.data.activeComp)
+
+  // 点「当前已选中的赛事」时也要清空，否则残留值会串到赛程页
+  mockApp.globalData.pendingComp = 'epl'
+  rankOpts.onShow.call(ctxRankShow)
+  check('积分榜页：pendingComp 与当前赛事相同时也要清空',
+    mockApp.globalData.pendingComp === '' && ctxRankShow.data.activeComp === 'epl',
+    `${mockApp.globalData.pendingComp}/${ctxRankShow.data.activeComp}`)
 
   const ctxSchNoRank = makeCtx(schOpts)
   ctxSchNoRank.setData({ activeCat: 'esports', activeComp: 'worlds', mode: 'upcoming', shownGroups: 3, teamFilter: null })
@@ -1416,6 +1453,48 @@ async function run() {
   check('积分榜页已注册且指向 pages/rank/rank',
     appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
   const rWxml = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')
+
+  /* ---------- tabBar 跳转守卫 ----------
+     ⚠️ 2026-10-03 用户报「点查看积分榜没反应」：积分榜被提升为 tabBar 页面后，
+        原来的 wx.navigateTo 全部**静默失败**（fail: can not navigateTo a tabbar page），
+        不报错、不弹 toast，只有真机上点一下才知道。
+        这里扫全部页面源码，任何人再往 tabBar 页面上写 navigateTo 都会被拦下。
+        正确姿势：utils/nav.js 的 toRank / toScheduleComp / goTab（switchTab + globalData 交接）。 */
+  const tabPaths = (appJson.tabBar.list || []).map((t) => '/' + String(t.pagePath).replace(/^\//, ''))
+  check('tabBar 页面清单非空（守卫本身要有效）', tabPaths.length >= 2, tabPaths.join(' '))
+  const badJumps = []
+  let navSeen = 0
+  const scanPages = (dir) => {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) return scanPages(p)
+      if (!/\.(js|wxml)$/.test(e.name)) return
+      const src = fs.readFileSync(p, 'utf8')
+      // 只取 navigateTo **自己**的 url 值 —— 不能按固定字符窗口扫，
+      // 否则会把后面另一个 switchTab 的目标页面也算进来（一开始就是这么误报的）
+      const re = /wx\.navigateTo[\s\S]{0,160}?url\s*:\s*(['"`])([^'"`]*)\1/g
+      let m
+      while ((m = re.exec(src))) {
+        navSeen += 1
+        const url = m[2]
+        tabPaths.forEach((tp) => {
+          if (url.indexOf(tp) === 0) badJumps.push(`${path.relative(ROOT, p)} → ${url}`)
+        })
+      }
+    })
+  }
+  scanPages(path.join(ROOT, 'pages'))
+  check('跳转守卫扫到了 navigateTo 调用（守卫本身有效）', navSeen >= 8, `扫到 ${navSeen} 处`)
+  check('没有任何 navigateTo 指向 tabBar 页面（否则点了没反应）',
+    badJumps.length === 0, badJumps.join(' ; '))
+
+  /* nav.js 的三个入口都要真的用 switchTab 而不是 navigateTo */
+  const navSrc = fs.readFileSync(path.join(ROOT, 'utils/nav.js'), 'utf8')
+  check('utils/nav.js 用 switchTab 跳 tabBar 页面',
+    /wx\.switchTab\s*\(/.test(navSrc) && !/wx\.navigateTo\s*\(/.test(navSrc))
+  const rankEntryPages = ['pages/schedule/schedule.js', 'pages/detail/detail.js', 'pages/index/index.js', 'pages/team/team.js']
+  const missingNav = rankEntryPages.filter((f) => fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('nav.toRank(') === -1)
+  check('积分榜入口全部改走 nav.toRank（4 处）', missingNav.length === 0, missingNav.join(' ') || '四处齐备')
   check('积分榜页：赛事胶囊条随选中项自动滚动',
     rWxml.indexOf('scroll-into-view="chip-{{activeComp}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1)
   check('积分榜页：内容区是可横滑的 swiper 且绑定切换事件',

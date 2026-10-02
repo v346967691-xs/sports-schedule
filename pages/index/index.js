@@ -4,7 +4,7 @@ const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
 const briefApi = require('../../utils/brief')
-const { appInstance } = require('../../utils/app-instance')
+const nav = require('../../utils/nav')
 
 /** 关注球队的「未来赛程」最多往前看几天 */
 const TEAM_FUTURE_DAYS = 7
@@ -255,18 +255,18 @@ Page({
   onCompTap(e) {
     const key = e.currentTarget.dataset.key
     // tabBar 页面不支持 navigateTo 传参，用全局状态把选中的赛事带过去
-    appInstance().globalData.pendingComp = key
-    wx.switchTab({ url: '/pages/schedule/schedule' })
+    nav.toScheduleComp(key)
   },
 
   /** 首页赛事卡里的「积分榜 ›」：直接跳到该赛事的积分榜 */
   onRankTap(e) {
     const key = e.currentTarget.dataset.key
-    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(key)}` })
+    // ⚠️ 积分榜是 tabBar 页面，navigateTo 会静默失败，必须走 nav.toRank
+    nav.toRank(key)
   },
 
   goSchedule() {
-    wx.switchTab({ url: '/pages/schedule/schedule' })
+    nav.goTab('/pages/schedule/schedule')
   },
 
   goDetail(e) {

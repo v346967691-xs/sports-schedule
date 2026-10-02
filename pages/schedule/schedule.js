@@ -2,6 +2,7 @@ const share = require('../../utils/share')
 const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
+const nav = require('../../utils/nav')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -143,7 +144,8 @@ Page({
   onRankTap() {
     const comp = this.data.activeComp
     if (!comp) return
-    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(comp)}` })
+    // ⚠️ 积分榜是 tabBar 页面，navigateTo 会静默失败，必须走 nav.toRank
+    nav.toRank(comp)
   },
 
   /**

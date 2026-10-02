@@ -18,7 +18,7 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
-const { appInstance } = require('../../utils/app-instance')
+const nav = require('../../utils/nav')
 
 const FORM_N = 5
 const UPCOMING_N = 8
@@ -183,20 +183,18 @@ Page({
 
   /** 去看这支球队所有比赛（跳到赛程页并带上筛选） */
   goSchedule() {
-    const app = appInstance()
-    app.globalData.pendingComp = this.data.comp
-    app.globalData.pendingTeam = {
+    nav.toScheduleTeam({
       comp: this.data.comp,
       id: this.data.id,
       display: this.data.name,
       color: this.data.accent,
-    }
-    wx.switchTab({ url: '/pages/schedule/schedule' })
+    })
   },
 
   goRank() {
     if (!this.data.hasStandings) return
-    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(this.data.comp)}` })
+    // ⚠️ 积分榜是 tabBar 页面，navigateTo 会静默失败，必须走 nav.toRank
+    nav.toRank(this.data.comp)
   },
 
   onShareAppMessage() {

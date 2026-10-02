@@ -89,6 +89,9 @@ Page({
   onLoad(query) {
     // 只渲染当前 ±1 屏，滑过的留着，避免 10 张榜全量铺开拖慢首屏
     this._rendered = {}
+    // ⚠️ query.comp 只在「分享卡片冷启动」这条路上有值。
+    //    站内跳转**走不到这里** —— 积分榜是 tabBar 页面，只能 wx.switchTab，
+    //    而 switchTab 不支持带 query，参数靠 globalData.pendingComp 交接（见 onShow）。
     const keys = data.standingsKeys()
     const wanted = query && query.comp ? decodeURIComponent(query.comp) : ''
     const activeComp = keys.indexOf(wanted) > -1 ? wanted : (keys[0] || '')
@@ -103,12 +106,18 @@ Page({
   },
 
   onShow() {
-    // 从别的页面点了某个赛事进来（关注页 / 详情页 → pendingComp）
+    // 从别的页面点了某个赛事进来（首页 / 赛程页 / 详情页 / 球队页 → pendingComp）
+    //
+    // ⚠️ 必须**无条件清空**这个槽位：它和赛程页共用同一个 globalData.pendingComp。
+    //    以前只在「确实要切赛事」时才清，于是「点当前赛事」这种情况会把值留在槽里，
+    //    等用户切回赛程 tab 时被赛程页的 onShow 误当成新指令，赛程莫名其妙跳到别处。
     const app = appInstance()
     const pending = app.globalData.pendingComp
-    if (pending && data.standingsOf(pending) && pending !== this.data.activeComp) {
+    if (pending) {
       app.globalData.pendingComp = ''
-      this.setData({ activeComp: pending, slideTop: this.topAt(pending) })
+      if (data.standingsOf(pending) && pending !== this.data.activeComp) {
+        this.setData({ activeComp: pending, slideTop: this.topAt(pending) })
+      }
     }
     this.render()
     data.refresh().then((r) => { if (r.updated) this.render() })

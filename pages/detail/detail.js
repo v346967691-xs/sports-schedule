@@ -4,6 +4,7 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
+const nav = require('../../utils/nav')
 const { appInstance } = require('../../utils/app-instance')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
@@ -302,7 +303,8 @@ Page({
   onStandingsTap() {
     const m = this.data.match
     if (!m) return
-    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(m.comp)}` })
+    // ⚠️ 积分榜是 tabBar 页面，navigateTo 会静默失败，必须走 nav.toRank
+    nav.toRank(m.comp)
   },
 
   onShareAppMessage() {

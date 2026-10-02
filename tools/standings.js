@@ -134,6 +134,7 @@ const COLUMNS = {
  */
 const ZONE_STYLE = {
   ucl: { kind: 'euro', label: '欧冠区', color: '#D03A3A', bg: '#FCECEB' },
+  uclq: { kind: 'euro', label: '欧冠资格赛', color: '#B0604F', bg: '#F8EFEC' },
   uel: { kind: 'euro', label: '欧联区', color: '#2C6BC9', bg: '#E9F0FC' },
   uecl: { kind: 'euro', label: '欧协联区', color: '#12977E', bg: '#E6F4F0' },
   rel: { kind: 'bottom', label: '降级区', color: '#5C6470', bg: '#F0F1F4' },
@@ -150,6 +151,46 @@ const ZONE_STYLE = {
   promo_po: { kind: 'euro', label: '升级附加赛', color: '#C77E1F', bg: '#FBF2E3' },
 }
 
+/**
+ * 五大联赛「纯联赛途径」的欧战席位（2026-10-02 核定，只标联赛名次能确定的席位）
+ *
+ * 口径：**不含**国内杯赛冠军名额、**不含** EPS（欧战表现名额）、**不含**欧冠/欧联
+ * 卫冕冠军通道。也就是「第几名一定能拿到什么」，而不是「最后实际会怎么分」。
+ *
+ * 为什么弃用 ESPN 的 note（踩过的坑，别改回去）：
+ *  ① note 标的是**杯赛冠军顺延之后**的结果。德甲/意甲的欧联是 2 席（联赛第 5 +
+ *     杯赛冠军），杯赛冠军一旦落在欧冠区，名额就顺延给第 6 —— ESPN 直接把顺延后
+ *     的结果画成了「5、6 欧联、7 欧协联」。赛季进行中杯赛冠军是谁还没定，这么标
+ *     等于把杯赛名额耦合进了名次带，正是用户 2026-10-02 定的红线。
+ *  ② ESPN 的 note **自相矛盾**：2026-27 赛季英超和西甲都有 5 个欧冠席位（欧足联
+ *     官方：英格兰、西班牙拿下 2025/26 系数前二，各得 1 个 EPS），但 ESPN 给英超
+ *     只标了 1-4、给西甲却标了 1-5。同一口径两种结果，不能全信。
+ *  ③ 主流 App（虎扑等）与规则站（cupbracket / predictover / 维基各联赛条目）都用
+ *     基础席位的联赛途径口径：欧冠前 4、欧联第 5、欧协联第 6。
+ *
+ * 数值含义：从榜首往下依次占用的行数（uecl: 0 = 该联赛的欧协联席位不按名次）。
+ */
+const LEAGUE_SLOTS = {
+  // 英格兰的欧协联席位是**联赛杯冠军**的，与联赛名次无关 → 不标（用户 2026-10-02 拍板）
+  epl: { ucl: 4, uel: 1, uecl: 0 },
+  liga: { ucl: 4, uel: 1, uecl: 1 },
+  bundesliga: { ucl: 4, uel: 1, uecl: 1 },
+  seriea: { ucl: 4, uel: 1, uecl: 1 },
+  // 法甲只有 3 席直接进欧冠联赛阶段，第 4 名打欧冠资格赛（联赛路径）
+  ligue1: { ucl: 3, uclq: 1, uel: 1, uecl: 1 },
+}
+
+/** 按名次把「纯联赛途径」席位切成色带 */
+function zoneBySlots(s, pos) {
+  let from = 1
+  const take = (n) => { const ok = n && pos >= from && pos < from + n; from += n || 0; return ok }
+  if (take(s.ucl)) return ZONE_STYLE.ucl
+  if (take(s.uclq)) return ZONE_STYLE.uclq
+  if (take(s.uel)) return ZONE_STYLE.uel
+  if (take(s.uecl)) return ZONE_STYLE.uecl
+  return null
+}
+
 /** ESPN 的英文 note → 我们的分区。用前缀匹配，qualifying 归并到同一分区（标签保持简短） */
 function zoneFromNote(note) {
   const n = String(note || '')
@@ -157,7 +198,8 @@ function zoneFromNote(note) {
   if (/^europa league/i.test(n)) return ZONE_STYLE.uel
   if (/^conference league/i.test(n)) return ZONE_STYLE.uecl
   if (/relegation playoff/i.test(n)) return ZONE_STYLE.relpo
-  if (/relegation/i.test(n)) return ZONE_STYLE.rel
+  // ⚠️ 用 /relegat/ 而不是 /relegation/：意甲挂的是 "Relegated"，会被漏掉导致整个降级区不显示
+  if (/relegat/i.test(n)) return ZONE_STYLE.rel
   // 欧冠/欧联的 36 队联赛阶段：直接晋级 / 附加赛 / 淘汰
   if (/qualifies for round of 16/i.test(n)) return ZONE_STYLE.r16
   // 欧国联：A 组前二 "Qualifies for QFs"（必须排在 promotion 之前，
@@ -238,8 +280,9 @@ function espnRow(entry, cat, index) {
     winPct: cat === 'football' ? null : Number((pick(stats, 'winPercent') || 0).toFixed(3)),
     streak: cat === 'basketball' ? pickText(stats, 'streak') : '',
   }
-  // 分区直接采信 ESPN 的官方标注（note），它连「西甲 1-5 欧冠、10 也是欧联」
-  // 这种不规则区间都能表达；没有 note 的（自算榜 / NBA）走固定区间兜底
+  // 分区先采信 ESPN 的官方标注（note），没有 note 的（自算榜 / NBA）走固定区间兜底。
+  // ⚠️ 五大联赛的欧战区会在 applyZones 里被「纯联赛途径名额表」覆盖 —— note 标的是
+  //    杯赛冠军顺延后的结果，不能直接用（详见 LEAGUE_SLOTS 的注释）。
   const notes = Array.isArray(entry.note)
     ? entry.note.map((n) => n.description).filter(Boolean)
     : (entry.note && entry.note.description ? [entry.note.description] : [])
@@ -255,9 +298,18 @@ function espnRow(entry, cat, index) {
 
 /** 给整张表补分区：官方 note 优先（espnRow 里已标），剩余按固定区间兜底 */
 function applyZones(table, compKey, cat) {
+  const slots = LEAGUE_SLOTS[compKey]
   ;(table.groups || []).forEach((g) => {
     const count = (g.rows || []).length
     ;(g.rows || []).forEach((r) => {
+      if (slots) {
+        // 五大联赛：欧战区一律按「纯联赛途径名额表」重画，抹掉 ESPN note 带来的
+        // 杯赛顺延结果；降级/降级附加赛是纯名次规则，保留 ESPN 的标注。
+        if (r.zone && r.zone.kind !== 'bottom') r.zone = null
+        const z = zoneBySlots(slots, r.pos)
+        if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg, kind: z.kind }
+        return
+      }
       if (r.zone) return
       const z = zoneFallback(compKey, cat, r.pos, count, g.name)
       if (z && z.bg) r.zone = { label: z.label, color: z.color, bg: z.bg, kind: z.kind }

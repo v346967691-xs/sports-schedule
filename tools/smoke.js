@@ -1001,14 +1001,35 @@ async function run() {
   check('积分榜：分组型赛事不再把组名当赛季名',
     nations && nations.season === '' && !/Group/.test(nations.season || ''), nations ? nations.season : '无')
 
+  /* ---------- 五大联赛「纯联赛途径」席位（2026-10-02 与虎扑/主流口径核对后定） ----------
+   * ESPN 的 note 标的是「杯赛冠军顺延之后」的结果（德甲/意甲会变成 5、6 欧联、7 欧协联），
+   * 而且英超标 4 席、西甲标 5 席自相矛盾。我们只标联赛名次能确定的席位：
+   * 欧冠前 4、欧联第 5、欧协联第 6；英格兰的欧协联席位是联赛杯冠军的，不按名次 → 不标。
+   */
+  const zonesOf = (key) => ((stData[key] && stData[key].groups[0] && stData[key].groups[0].rows) || [])
+    .map((r) => (r.zone && r.zone.label) || '')
+  const topZones = (key, n) => zonesOf(key).slice(0, n).join('/')
+  check('积分榜：西甲 = 1-4 欧冠 / 5 欧联 / 6 欧协联（不含杯赛名额）',
+    topZones('liga', 7) === '欧冠区/欧冠区/欧冠区/欧冠区/欧联区/欧协联区/', topZones('liga', 7))
+  check('积分榜：德甲 = 1-4 欧冠 / 5 欧联 / 6 欧协联',
+    topZones('bundesliga', 7) === '欧冠区/欧冠区/欧冠区/欧冠区/欧联区/欧协联区/', topZones('bundesliga', 7))
+  check('积分榜：意甲 = 1-4 欧冠 / 5 欧联 / 6 欧协联',
+    topZones('seriea', 7) === '欧冠区/欧冠区/欧冠区/欧冠区/欧联区/欧协联区/', topZones('seriea', 7))
+  check('积分榜：英超 = 1-4 欧冠 / 5 欧联，第 6 名不标（欧协联归联赛杯冠军）',
+    topZones('epl', 7) === '欧冠区/欧冠区/欧冠区/欧冠区/欧联区//', topZones('epl', 7))
+  check('积分榜：法甲 = 1-3 欧冠 / 4 欧冠资格赛 / 5 欧联 / 6 欧协联',
+    topZones('ligue1', 7) === '欧冠区/欧冠区/欧冠区/欧冠资格赛/欧联区/欧协联区/', topZones('ligue1', 7))
+  // 意甲 ESPN 挂的是 "Relegated"（不是 Relegation），正则要能兜住，否则整个降级区消失
+  const serieaZ = zonesOf('seriea')
+  check('积分榜：意甲末三位在降级区（Relegated 也要识别）',
+    serieaZ.slice(17).join('/') === '降级区/降级区/降级区', serieaZ.slice(17).join('/') || '无')
+
   /* ---------- 分区成带校验（2026-10-02 用户定） ---------- */
   const ligaRows = stData.liga ? stData.liga.groups[0].rows : []
   const zoneAt = (i) => (ligaRows[i] && ligaRows[i].zone && ligaRows[i].zone.label) || ''
   // ESPN 给西甲第 10 毕尔巴鄂误挂了 Europa League（对不上任何规则：上赛季第 12 无欧战，
-  // 国王杯冠军是皇家社会）→ 成带校验必须把它丢掉，第 6 名那段保留
+  // 国王杯冠军是皇家社会）→ 现在整张榜都按名额表重画，这种单点脏数据根本进不来
   check('积分榜：西甲孤立的欧联区脏数据已被清掉', zoneAt(9) === '', zoneAt(9) || '无')
-  check('积分榜：西甲正常的欧战区仍在（6 欧联 / 7 欧协联）',
-    zoneAt(5) === '欧联区' && zoneAt(6) === '欧协联区', `${zoneAt(5)}/${zoneAt(6)}`)
   // 同一种分区必须连成一段，不许出现断开的重复段
   const dupCheck = (function () {
     const seen = {}

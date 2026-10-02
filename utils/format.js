@@ -61,17 +61,16 @@ function countdownText(start) {
   return `${Math.floor(days / 7)} 周后`
 }
 
-/** 已开赛多久（用于「已结束」卡片副标题） */
-function sinceText(start) {
-  const diff = Date.now() - new Date(start).getTime()
-  if (diff < 0) return ''
-  const hours = Math.floor(diff / 3600000)
-  if (hours < 1) return '刚刚结束'
-  if (hours < 24) return `${hours} 小时前结束`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days} 天前结束`
-  return '已结束'
-}
+/*
+ * 🔴 这里曾经有个 `sinceText(start)`，算的是「距开赛多久」（now - start），
+ *    却被拿去当「X 小时前结束」显示 —— 用开赛时间冒充结束时间。
+ *    00:00 开球的比赛 02:00 打完，卡片上写「2 小时前结束」，是错的。
+ *
+ *    已删除，别再写回来：ESPN 的 status 里**没有墙钟结束时间**
+ *   （只有比赛时钟 clock / displayClock），真实结束时刻凭空算不出来。
+ *    需要展示状态就直接用 `match.statusText`（已延期 / 点球大战 / 加时赛 / 已结束），
+ *    它来自上游，是确定的。smoke 有一条断言守着这个函数不再出现。
+ */
 
 /** 把服务端北京时间 ISO 串转成本地可读的开赛时间 */
 function startTimeLabel(start, date, time) {
@@ -88,6 +87,5 @@ module.exports = {
   shortDayLabel,
   weekdayLabel,
   countdownText,
-  sinceText,
   startTimeLabel,
 }

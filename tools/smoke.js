@@ -110,6 +110,30 @@ async function run() {
   check('首页：默认选中一个有比赛的日期', allData.query({ date: d.activeDate, status: '' }).length > 0, d.activeDate)
   check('首页：今日比赛已构建', Array.isArray(d.dayMatches))
   check('首页：卡片视图字段齐全', !d.dayMatches.length || !!d.dayMatches[0]._compName && !!d.dayMatches[0]._statusLabel)
+
+  /* ---------- 已结束卡片的状态文案 ----------
+     🔴 2026-10-03 用户报：00:00 开球、02:00 打完的比赛显示「2 小时前结束」。
+        根因是 utils/format.js 的 sinceText(start) 算的是「距开赛多久」，
+        却被当成「结束多久」显示 —— 用开赛时间冒充结束时间。
+        上游 status 里没有墙钟结束时间，算不出真实结束时刻，
+        所以改成直接用确定的上游文案。这里守住两点：不能用相对时间、不能为空。 */
+  const viewModEarly = require(path.join(ROOT, 'utils/view'))
+  const finDeco = allData.matches().filter((m) => m.status === 'finished').map((m) => viewModEarly.decorate.call({ compOf: allData.compOf }, m))
+  // 失败时只报「多少场 + 前 3 个样例」，别把 600 个文案全刷出来
+  const labelSample = (rows) => `${rows.length} 场，例如 ${rows.slice(0, 3).map((m) => m._statusLabel).join(' / ')}`
+  const finRelative = finDeco.filter((m) => /前结束|刚刚结束|小时前|天前/.test(m._statusLabel))
+  check('卡片：已结束的状态文案不是相对时间（不再拿开赛时间冒充结束时间）',
+    finDeco.length > 0 && finRelative.length === 0,
+    finRelative.length ? labelSample(finRelative) : `${finDeco.length} 场全通过`)
+  const finBlank = finDeco.filter((m) => !String(m._statusLabel).trim())
+  check('卡片：已结束的状态文案非空', finBlank.length === 0, `空文案 ${finBlank.length} 场`)
+  const finLabels = Array.from(new Set(finDeco.map((m) => m._statusLabel)))
+  const finOffEnum = finLabels.filter((s) => ['已结束', '已延期', '点球大战', '加时赛'].indexOf(s) === -1)
+  check('卡片：已结束的状态文案沿用上游口径（已结束 / 已延期 / 点球大战 / 加时赛）',
+    finOffEnum.length === 0,
+    finOffEnum.length ? `枚举外文案 ${finOffEnum.slice(0, 3).join(' / ')}` : finLabels.join(' / '))
+  check('fmt.sinceText 已删除（它算的是开赛时长，天然无法表达「结束时刻」）',
+    typeof require(path.join(ROOT, 'utils/format')).sinceText === 'undefined')
   // 官方队名本身就是拉丁字母的（S 赛的 G2/Fnatic、KPL 的 KSG）不算缺中文名
   const latinOnly = (s) => /^[\x20-\x7F]+$/.test(String(s || ''))
   check('首页：卡片显示中文队名', d.dayMatches.every((m) => /[一-龥]/.test(m.home.zhName) || m.comp === 'worlds' || latinOnly(m.home.zhName)) || !d.dayMatches.length,

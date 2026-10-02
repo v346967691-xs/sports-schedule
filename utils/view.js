@@ -54,7 +54,14 @@ function decorate(m) {
     statusLabel = m.statusText || '进行中'
     statusHint = ''
   } else {
-    statusLabel = hasScore ? fmt.sinceText(m.start) : (m.statusText || '已结束')
+    // 🔴 这里曾经写的是 `hasScore ? fmt.sinceText(m.start) : ...`，把「距开赛多久」
+    //    显示成了「X 小时前结束」—— 00:00 开球的比赛，02:00 打完就写成「2 小时前结束」，
+    //    等于用开赛时间冒充结束时间（2026-10-03 用户报的正是这个）。
+    //
+    //    ESPN 的 status 里**没有墙钟结束时间**（只有比赛时钟 clock / displayClock），
+    //    真实结束时刻无从得知 → 按用户要求，不猜，直接给确定的信息。
+    //    而且 statusText 本身信息更丰富：已延期 / 点球大战 / 加时赛 / 已结束。
+    statusLabel = m.statusText || '已结束'
   }
 
   // 中文名优先，取不到再回落英文名

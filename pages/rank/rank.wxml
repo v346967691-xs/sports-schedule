@@ -1,0 +1,85 @@
+<view class="page rank">
+  <scroll-view class="chip-bar" scroll-x enable-flex>
+    <view class="chip-row">
+      <view
+        wx:for="{{comps}}"
+        wx:key="key"
+        class="chip {{item.key === activeComp ? 'active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onCompTap"
+      >{{item.name}}</view>
+    </view>
+  </scroll-view>
+
+  <view class="meta" wx:if="{{totalTeams}}">
+    <text class="meta-main">{{compName}} · {{totalTeams}} 支球队</text>
+    <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+  </view>
+  <view class="season-note" wx:if="{{season}}">{{season}}</view>
+
+  <view class="empty" wx:if="{{emptyReason}}">
+    <view class="empty-title">没有可展示的积分榜</view>
+    <view class="empty-desc">
+      {{emptyReason}}
+      <block wx:if="{{comps.length}}">
+        换一个有积分榜的赛事看看，杯赛和中国国字号本来就没有排名。
+      </block>
+    </view>
+    <view class="empty-btn" bindtap="goSchedule">去看赛程</view>
+  </view>
+
+  <block wx:for="{{groups}}" wx:key="name">
+    <view class="group-head" wx:if="{{item.name}}">
+      <view class="group-line"></view>
+      <view class="group-name">{{item.name}}</view>
+      <view class="group-line"></view>
+    </view>
+
+    <view class="table card">
+      <view class="tr th">
+        <view class="th-pos">#</view>
+        <view class="th-team">球队</view>
+        <view
+          wx:for="{{columns}}"
+          wx:for-item="col"
+          wx:for-index="ci"
+          wx:key="key"
+          class="td {{col.strong ? 'strong' : ''}}"
+        >{{col.label}}</view>
+      </view>
+
+      <view
+        wx:for="{{item.rows}}"
+        wx:for-item="row"
+        wx:key="id"
+        class="tr {{index % 2 === 1 ? 'odd' : ''}}"
+        data-id="{{row.id}}"
+        bindtap="onRowTap"
+        hover-class="tr-hover"
+      >
+        <view class="td-pos">
+          <view class="zone-bar" wx:if="{{row.zoneLabel}}" style="background: {{row.zoneColor}}"></view>
+          <text class="pos-num">{{row.pos}}</text>
+        </view>
+        <view class="td-team">
+          <view class="team-name">{{row.name}}</view>
+          <view class="team-note" wx:if="{{row.zoneLabel || row.note}}">{{row.zoneLabel || row.note}}</view>
+        </view>
+        <!-- 单元格是纯字符串数组，值会重复（一堆 0），不能用 *this 当 key，直接省略 -->
+        <view
+          wx:for="{{row.cells}}"
+          wx:for-item="cell"
+          wx:for-index="ci"
+          class="td {{columns[ci].strong ? 'strong' : ''}}"
+        >{{cell}}</view>
+      </view>
+    </view>
+  </block>
+
+  <view class="foot-note">
+    足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
+    电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
+  </view>
+
+  <view class="safe-bottom"></view>
+</view>

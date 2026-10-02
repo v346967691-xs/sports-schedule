@@ -51,6 +51,17 @@ Page({
     data.refresh().then((r) => { if (r.updated) this.build() })
   },
 
+  /** 有积分榜的赛事，在球队卡上补一行「第 N 位 · X 分」，让用户一眼看到强弱 */
+  rankText(compKey, teamId) {
+    const row = data.teamStanding(compKey, teamId)
+    if (!row) return ''
+    const bits = [`第 ${row.pos} 位`]
+    if (typeof row.played === 'number' && row.played) bits.push(`${row.played} 场`)
+    if (typeof row.pts === 'number') bits.push(`${row.pts} 分`)
+    else if (typeof row.winPct === 'number') bits.push(`${(row.winPct * 100).toFixed(0)}% 胜率`)
+    return bits.join(' · ')
+  },
+
   build() {
     const followedList = follows.all()
     const followedSet = {}
@@ -74,6 +85,7 @@ Page({
       .map((t) => Object.assign({}, t, {
         k: follows.key(t.comp, t.id),
         followed: !!followedSet[follows.key(t.comp, t.id)],
+        rankText: this.rankText(t.comp, t.id),
       }))
 
     this.setData({ cats, teams, followedCount: followedList.length })
@@ -91,9 +103,27 @@ Page({
     this.setData({ keyword: '' }, () => this.build())
   },
 
+  /** 点名字区 → 进球队详情页 */
   onTeamTap(e) {
     const item = this.data.teams[e.currentTarget.dataset.index]
     if (!item) return
+    wx.navigateTo({
+      url: `/pages/team/team?comp=${encodeURIComponent(item.comp)}&id=${encodeURIComponent(String(item.id))}`,
+      fail() {
+        wx.showToast({ title: '暂时打不开球队页', icon: 'none' })
+      },
+    })
+  },
+
+  /** 点「+ 关注 / 已关注」→ 只切换关注状态，不跳转 */
+  onFollowTap(e) {
+    const item = this.data.teams[e.currentTarget.dataset.index]
+    if (!item) return
+    if (item.followed) {
+      follows.remove(item.comp, item.id)
+      this.build()
+      return
+    }
     const res = follows.toggle(item)
     this.build()
     if (res.followed) wx.showToast({ title: `已关注 ${item.display}`, icon: 'none', duration: 1200 })

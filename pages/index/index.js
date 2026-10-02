@@ -10,6 +10,21 @@ const { appInstance } = require('../../utils/app-instance')
 /** 关注球队的「未来赛程」最多往前看几天 */
 const TEAM_FUTURE_DAYS = 7
 
+/**
+ * 某个赛事积分榜的领头羊：「成都蓉城 52分」/「曼城 15分」。
+ * 给首页赛事入口一个额外的点击理由 —— 光看「3 场待开赛」太平了。
+ */
+function leaderText(compKey) {
+  const table = data.standingsOf(compKey)
+  if (!table || !(table.groups || []).length) return ''
+  const first = (table.groups[0].rows || [])[0]
+  if (!first) return ''
+  const name = first.zh || first.name
+  if (typeof first.pts === 'number') return `${name} ${first.pts}分`
+  if (typeof first.winPct === 'number') return `${name} ${(first.winPct * 100).toFixed(0)}% 胜率`
+  return name
+}
+
 const CATS = [
   { key: 'all', name: '全部' },
   { key: 'football', name: '足球' },
@@ -127,6 +142,9 @@ Page({
         summary,
         hasNext: !!next,
         count: upcoming.filter((m) => m.comp === c.key).length,
+        // 有积分榜的赛事才显示「积分榜」入口；杯赛和国字号本来就没有排名
+        hasStandings: !!data.standingsOf(c.key),
+        leader: leaderText(c.key),
       }
     })
 
@@ -262,6 +280,12 @@ Page({
     // tabBar 页面不支持 navigateTo 传参，用全局状态把选中的赛事带过去
     appInstance().globalData.pendingComp = key
     wx.switchTab({ url: '/pages/schedule/schedule' })
+  },
+
+  /** 首页赛事卡里的「积分榜 ›」：直接跳到该赛事的积分榜 */
+  onRankTap(e) {
+    const key = e.currentTarget.dataset.key
+    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(key)}` })
   },
 
   goSchedule() {

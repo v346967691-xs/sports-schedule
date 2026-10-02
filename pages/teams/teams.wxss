@@ -163,6 +163,16 @@
   letter-spacing: 1rpx;
 }
 
+/* 积分榜摘要：有排名的队伍多出一行，卡片高度会变，用 min-height 兜住对齐 */
+.tf-rank {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  color: #8A93A6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tf-check {
   flex-shrink: 0;
   margin-left: 10rpx;

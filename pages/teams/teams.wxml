@@ -37,16 +37,16 @@
       wx:for="{{teams}}"
       wx:key="k"
       class="tf-team {{item.followed ? 'on' : ''}}"
-      data-index="{{index}}"
-      bindtap="onTeamTap"
       hover-class="tf-team-hover"
     >
       <view class="tf-bar" style="background: {{item.color}}"></view>
-      <view class="tf-body">
+      <!-- 主体点击进球队详情，右下角按钮才关注：两个动作分开，避免误触取消关注 -->
+      <view class="tf-body" data-index="{{index}}" bindtap="onTeamTap">
         <view class="tf-name">{{item.display}}</view>
         <view class="tf-abbr">{{item.abbr}}</view>
+        <view class="tf-rank" wx:if="{{item.rankText}}">{{item.rankText}}</view>
       </view>
-      <view class="tf-check">{{item.followed ? '已关注' : '+ 关注'}}</view>
+      <view class="tf-check" data-index="{{index}}" bindtap="onFollowTap">{{item.followed ? '已关注' : '+ 关注'}}</view>
     </view>
   </view>
 

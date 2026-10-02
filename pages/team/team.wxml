@@ -1,0 +1,123 @@
+<view class="page team">
+  <view class="empty" wx:if="{{loadError}}">
+    <view class="empty-title">打不开这支球队</view>
+    <view class="empty-desc">{{loadError}}</view>
+  </view>
+
+  <block wx:if="{{!loadError}}">
+    <view class="hero" style="background: linear-gradient(135deg, {{accent}} 0%, #14235c 100%);">
+      <view class="hero-top">
+        <view class="avatar" style="background: rgba(255,255,255,0.18);">{{abbr}}</view>
+        <view class="hero-id">
+          <view class="hero-name">{{name}}</view>
+          <view class="hero-comp">{{compName}}</view>
+        </view>
+      </view>
+
+      <view class="follow-btn {{followed ? 'on' : ''}}" bindtap="onFollowTap">
+        {{followed ? '已关注' : '+ 关注'}}
+      </view>
+    </view>
+
+    <view class="stat-row">
+      <view class="stat {{hasStandings ? '' : 'disabled'}}" bindtap="goRank">
+        <view class="stat-num">{{standing ? standing.pos : '—'}}</view>
+        <view class="stat-label">联赛排名</view>
+        <view class="stat-go" wx:if="{{hasStandings}}">看积分榜 ›</view>
+        <view class="stat-go muted" wx:else>该赛事无积分榜</view>
+      </view>
+      <view class="stat" bindtap="goSchedule">
+        <view class="stat-num">{{matches.length}}</view>
+        <view class="stat-label">待战 / 进行中</view>
+        <view class="stat-go">全部赛程 ›</view>
+      </view>
+    </view>
+
+    <view class="line-card card" wx:if="{{standingLine}}">
+      <view class="line-title">战绩概览</view>
+      <view class="line-body">{{standingLine}}</view>
+      <view class="line-foot" wx:if="{{standing.note}}">{{standing.note}}</view>
+    </view>
+
+    <view class="section" wx:if="{{form.length}}">
+      <view class="section-head">
+        <view class="section-title">近期战绩</view>
+        <view class="section-more">{{formSummary}} · 点击看详情</view>
+      </view>
+      <view class="card">
+        <view
+          wx:for="{{form}}"
+          wx:key="id"
+          class="form-row {{index ? 'br' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onFormTap"
+          hover-class="row-hover"
+        >
+          <view class="badge r-{{item.result}}">{{item.resultZh}}</view>
+          <view class="form-main">
+            <view class="form-op">{{item.vs}} vs {{item.opponent}}</view>
+            <view class="form-sub">{{item.dateLabel}}</view>
+          </view>
+          <view class="form-score">{{item.scoreText}}</view>
+        </view>
+      </view>
+      <view class="form-note">统计范围是本地快照内的已结束比赛，代表近期状态，非官方赛季轮次。</view>
+    </view>
+
+    <view class="section">
+      <view class="section-head">
+        <view class="section-title">{{matches.length ? '未来赛程' : '近期比赛'}}</view>
+        <view class="section-more">共 {{matches.length}} 场</view>
+      </view>
+
+      <view class="empty small" wx:if="{{!matches.length}}">
+        <view class="empty-desc">
+          快照里暂时没有这支球队的未来比赛。赛季间歇期可以先看上面的近期战绩。
+        </view>
+      </view>
+
+      <view
+        wx:for="{{matches}}"
+        wx:key="id"
+        class="mc"
+        data-id="{{item.id}}"
+        bindtap="onMatchTap"
+        hover-class="mc-hover"
+      >
+        <view class="mc-head">
+          <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+          <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+          <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+        </view>
+
+        <view class="mc-body">
+          <view class="mc-time">
+            <view class="mc-time-main">{{item.time}}</view>
+            <view class="mc-time-sub">{{item._dayLabel}}</view>
+          </view>
+          <view class="mc-line"></view>
+          <view class="mc-teams">
+            <view class="mc-row">
+              <view class="mc-dot" style="background: {{item.home.color}}"></view>
+              <view class="mc-name {{item.home.id === id ? 'win' : ''}}">{{item.home.zhName}}</view>
+              <view class="mc-abbr">{{item.home.abbr}}</view>
+              <view class="mc-score" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+            </view>
+            <view class="mc-row">
+              <view class="mc-dot" style="background: {{item.away.color}}"></view>
+              <view class="mc-name {{item.away.id === id ? 'win' : ''}}">{{item.away.zhName}}</view>
+              <view class="mc-abbr">{{item.away.abbr}}</view>
+              <view class="mc-score" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="mc-foot" wx:if="{{item._statusHint}}">
+          <text class="mc-hint">{{item._statusHint}}</text>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view class="safe-bottom"></view>
+</view>

@@ -96,6 +96,11 @@
   min-height: 68rpx;
 }
 
+/* 点队名可进球队详情页，给一个明确的按压反馈 */
+.team-hover {
+  opacity: 0.65;
+}
+
 .team-dot {
   flex: none;
   width: 12rpx;

@@ -1,0 +1,169 @@
+.chip-bar {
+  white-space: nowrap;
+  padding: 20rpx 0 18rpx;
+  background: #fff;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.chip-bar .chip {
+  background: var(--bg);
+}
+
+.chip-bar .chip:first-child {
+  margin-left: 24rpx;
+}
+
+.chip-bar .chip:last-child {
+  margin-right: 24rpx;
+}
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 24rpx 28rpx 0;
+}
+
+.meta-main {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.meta-sub {
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.season-note {
+  margin: 6rpx 28rpx 0;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  margin: 28rpx 28rpx 12rpx;
+}
+
+.group-line {
+  flex: 1;
+  height: 2rpx;
+  background: var(--line);
+}
+
+.group-name {
+  flex: none;
+  margin: 0 20rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+/* ------------------------------------------------------------------ 表格 */
+
+.table {
+  margin: 12rpx 24rpx 0;
+  padding: 0 4rpx;
+}
+
+.tr {
+  display: flex;
+  align-items: center;
+  padding: 0 20rpx;
+  height: 76rpx;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.tr:last-child {
+  border-bottom: none;
+}
+
+.tr.odd {
+  background: #fafbfd;
+}
+
+.tr-hover {
+  background: var(--brand-soft);
+}
+
+.th {
+  height: 64rpx;
+  background: #f6f7fa;
+  font-size: 22rpx;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.th-pos,
+.td-pos {
+  flex: none;
+  width: 62rpx;
+  display: flex;
+  align-items: center;
+}
+
+.th-team,
+.td-team {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.td {
+  flex: none;
+  width: 62rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--sub);
+}
+
+.td.strong {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* 分区色条：贴在名次数字左边，一眼看出欧战区 / 降级区 */
+.zone-bar {
+  flex: none;
+  width: 6rpx;
+  height: 28rpx;
+  margin-right: 8rpx;
+  border-radius: 3rpx;
+}
+
+.pos-num {
+  font-size: 24rpx;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.team-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.team-note {
+  margin-top: 2rpx;
+  font-size: 18rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.empty-btn {
+  display: inline-block;
+  margin-top: 28rpx;
+  padding: 14rpx 44rpx;
+  border-radius: 999rpx;
+  background: var(--brand);
+  color: #fff;
+  font-size: 26rpx;
+}

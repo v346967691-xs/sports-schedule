@@ -10,8 +10,11 @@
  * 流程：
  *   1) 复用 tools/sync.js 抓取数据源、刷新本地 data/matches.js、data/meta.js
  *      （本地数据同时作为联网失败时的兜底）
- *   2) 读取刚生成的快照
- *   3) 用 Node 云 SDK（以 publishableKey 的 anon 身份）upsert 进 schedule_cache(id='latest')
+ *   2) 复用 tools/standings.js 抓取积分榜、刷新本地 data/standings.js
+ *      附加数据：失败只告警，不让主链路跟着失败（与 daily_brief 一个约定）
+ *   3) 读取刚生成的快照
+ *   4) 用 Node 云 SDK（以 publishableKey 的 anon 身份）upsert 进
+ *      schedule_cache(id='latest') 与 standings_cache(id='latest')
  *
  * 退出码：任何一步失败都以非零退出，便于自动化捕获告警。
  */
@@ -61,12 +64,12 @@ async function withRetry(label, fn) {
  * 推送快照到云端，带有限重试。
  * 网络异常 / 云端返回 error 都重试；「返回 0 行」是 RLS 策略问题，重试也没用，直接判失败。
  */
-async function pushSnapshot(cloud, snapshot) {
+async function pushRow(cloud, table, row) {
   let problem = ''
   for (let i = 1; i <= RETRY_ATTEMPTS; i += 1) {
     let result = null
     try {
-      result = await cloud.database.from('schedule_cache').upsert(snapshot).select('id, generated_at')
+      result = await cloud.database.from(table).upsert(row).select('id, generated_at')
     } catch (err) {
       problem = `请求异常：${(err && err.message) || err}`
     }
@@ -74,15 +77,15 @@ async function pushSnapshot(cloud, snapshot) {
       if (result.error) {
         problem = `云端返回错误：${JSON.stringify(result.error)}`
       } else if (!Array.isArray(result.data) || result.data.length === 0) {
-        // RLS 拦截：schedule_cache 的写入策略只允许 id='latest'
-        return { ok: false, code: 4, problem: '云端写入被拦截（返回 0 行），请检查 schedule_cache 的写入策略' }
+        // RLS 拦截：这两张表的写入策略都只允许 id='latest'
+        return { ok: false, code: 4, problem: `云端写入被拦截（返回 0 行），请检查 ${table} 的写入策略` }
       } else {
         return { ok: true, code: 0, row: result.data[0] }
       }
     }
     if (i < RETRY_ATTEMPTS) {
       const wait = RETRY_BASE_MS * i
-      log(`推送云端第 ${i} 次未成功（${problem}），${wait}ms 后重试…`)
+      log(`推送 ${table} 第 ${i} 次未成功（${problem}），${wait}ms 后重试…`)
       await sleep(wait)
     }
   }
@@ -100,7 +103,17 @@ async function main() {
     )
   })
 
-  // 2) 读取刚生成的快照（注意：本进程尚未 require 过，拿到的是新文件）
+  // 2) 抓取积分榜（附加数据：失败只告警，不让赛程主链路跟着失败）
+  let standings = null
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, 'standings.js')], { stdio: 'inherit' })
+    delete require.cache[require.resolve('../data/standings.js')]
+    standings = require('../data/standings.js')
+  } catch (err) {
+    console.warn('[cloud-sync] ⚠ 积分榜抓取失败，本次跳过推送：', (err && err.message) || err)
+  }
+
+  // 3) 读取刚生成的快照（注意：本进程尚未 require 过，拿到的是新文件）
   //    用新进程跑 sync，避免 sync.js 底部的 main() 在 require 时被执行两次
   delete require.cache[require.resolve('../data/matches.js')]
   delete require.cache[require.resolve('../data/meta.js')]
@@ -113,26 +126,41 @@ async function main() {
     process.exit(2)
   }
 
-  // 3) 推送到云端
+  // 4) 推送到云端
   const cloud = createWorkBuddyCloud({
     endpoint: publicConfig.endpoint,
     publishableKey: publicConfig.publishableKey,
   })
 
-  const snapshot = {
+  log('推送云端 schedule_cache(id=latest) …')
+  const pushed = await pushRow(cloud, 'schedule_cache', {
     id: 'latest',
     data: matches,
     meta,
     generated_at: new Date().toISOString(),
-  }
-
-  log('推送云端 schedule_cache(id=latest) …')
-  const pushed = await pushSnapshot(cloud, snapshot)
+  })
   if (!pushed.ok) {
     console.error('[cloud-sync] 推送云端失败：', pushed.problem)
     process.exit(pushed.code)
   }
   log(`已写入云端：id=${pushed.row.id}，generated_at=${pushed.row.generated_at}，共 ${matches.length} 场`)
+
+  if (standings && standings.tables && Object.keys(standings.tables).length) {
+    log('推送云端 standings_cache(id=latest) …')
+    const ps = await pushRow(cloud, 'standings_cache', {
+      id: 'latest',
+      data: standings,
+      generated_at: new Date().toISOString(),
+    })
+    if (!ps.ok) {
+      // 积分榜是增强数据，写不进去不该让整个同步任务失败
+      console.warn('[cloud-sync] ⚠ 积分榜推送云端失败：', ps.problem)
+    } else {
+      log(`已写入云端 standings_cache：${Object.keys(standings.tables).length} 个赛事`)
+    }
+  } else {
+    console.warn('[cloud-sync] ⚠ 本次没有可用的积分榜数据，跳过推送')
+  }
 }
 
 main().catch((err) => {

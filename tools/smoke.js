@@ -294,8 +294,10 @@ async function run() {
   teamsOpts.onCatTap.call(ctxTeams, { currentTarget: { dataset: { key: 'epl' } } })
   teamsOpts.onSearch.call(ctxTeams, { detail: { value: '' } })
   const arsenalIdx = ctxTeams.data.teams.findIndex((t) => t.id === '359')
-  teamsOpts.onTeamTap.call(ctxTeams, { currentTarget: { dataset: { index: arsenalIdx } } })
-  check('关注页：点击后关注数 +1', ctxTeams.data.followedCount === 1, `followedCount=${ctxTeams.data.followedCount}`)
+  // ⚠️ 2026-10-02 起关注页行内两个动作分开：点名字进球队详情、点「+ 关注」才切关注。
+  //    断言必须用 onFollowTap；用 onTeamTap 这里会变成导航而不是关注。
+  teamsOpts.onFollowTap.call(ctxTeams, { currentTarget: { dataset: { index: arsenalIdx } } })
+  check('关注页：点关注按钮后关注数 +1', ctxTeams.data.followedCount === 1, `followedCount=${ctxTeams.data.followedCount}`)
   check('关注页：被关注球队标记 on', ctxTeams.data.teams.find((t) => t.id === '359').followed === true)
   check('关注存储：has 命中', tfMod.has('epl', '359') === true)
 
@@ -662,7 +664,7 @@ async function run() {
   check('赛程页：按球队筛选只保留该队比赛', ctxSchTeam.data.totalMatches > 0 && matchRows(ctxSchTeam.data.rows).every((r) => String(r.match.home.id) === '359' || String(r.match.away.id) === '359'), `total=${ctxSchTeam.data.totalMatches}`)
 
   // 取消关注
-  teamsOpts.onTeamTap.call(ctxTeams, { currentTarget: { dataset: { index: arsenalIdx } } })
+  teamsOpts.onFollowTap.call(ctxTeams, { currentTarget: { dataset: { index: arsenalIdx } } })
   check('关注页：再点取消关注', ctxTeams.data.followedCount === 0)
   check('关注存储：取消后 has 不命中', tfMod.has('epl', '359') === false)
 
@@ -943,6 +945,161 @@ async function run() {
   await settle()
   check('首页：日报取不到时不显示入口条', !ctxIdxDown.data.brief)
   briefApi.fetchBriefs = realFetchBriefs
+
+  /* ---------- 积分榜（2026-10-02 新增） ---------- */
+  const stFile = path.join(ROOT, 'data/standings.js')
+  check('积分榜：数据文件存在', fs.existsSync(stFile))
+  const stData = allData.standingsTables()
+  const stKeys = allData.standingsKeys()
+  check('积分榜：至少 10 个赛事有排名', Object.keys(stData).length >= 10, `${Object.keys(stData).length} 个`)
+  check('积分榜：keys 顺序与大类一致', stKeys.join(',').indexOf('ucl') === 0 && stKeys.indexOf('epl') < stKeys.indexOf('csl'), stKeys.join(','))
+
+  // 五大联赛 + 中超是主线，缺一个都说明上游变了
+  const mustHave = ['epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'csl', 'nba']
+  const missing = mustHave.filter((k) => !stData[k])
+  check('积分榜：关键赛事都在', missing.length === 0, missing.length ? `缺 ${missing.join('/')}` : stKeys.join(','))
+
+  // 杯赛与中国国字号本来就没有积分榜，不能有（有的话说明抓取逻辑串了）
+  check('积分榜：杯赛与国字号没有排名', !stData.worlds && !stData.msi && !stData.chn && !stData.agames)
+
+  const eplTable = stData.epl
+  const eplRows = eplTable && eplTable.groups[0].rows
+  check('积分榜：英超 20 队', !!eplRows && eplRows.length === 20, eplRows ? `${eplRows.length} 队` : '无')
+  check('积分榜：足球列含「分」', !!eplTable && eplTable.columns.some((c) => c.label === '分'),
+    eplTable ? eplTable.columns.map((c) => c.label).join('/') : '')
+
+  // ⚠️ 排序红线：足球必须按积分降序。曾踩过把 entry 原序当成排名的情况
+  const ptsDesc = eplRows ? eplRows.every((r, i) => i === 0 || eplRows[i - 1].pts >= r.pts) : false
+  check('积分榜：足球按积分降序', ptsDesc, eplRows ? `${eplRows[0].zh || eplRows[0].name} ${eplRows[0].pts}分` : '')
+
+  // 中文名必须生效（team.id 与 scoreboard 同源是这里能零成本汉化的前提）
+  const zhOk = eplRows ? eplRows.every((r) => !!r.zh) : false
+  check('积分榜：英超队名全为中文', zhOk, eplRows ? eplRows.slice(0, 3).map((r) => r.zh).join('/') : '')
+
+  // NBA 要拆东/西两区，且分区名已汉化
+  const nbaTable = stData.nba
+  const nbaGroups = (nbaTable && nbaTable.groups) || []
+  check('积分榜：NBA 拆东西两区', nbaGroups.length === 2 && nbaGroups.every((g) => g.rows.length === 15),
+    nbaGroups.map((g) => g.name + ':' + g.rows.length).join(' / '))
+  check('积分榜：NBA 分区名已汉化', nbaGroups.every((g) => /联盟$/.test(g.name)), nbaGroups.map((g) => g.name).join('/'))
+
+  // 欧战/降级分区只在单组表上画，且不能越界
+  const zones = (eplTable && eplTable.zones) || []
+  check('积分榜：英超有欧战区与降级区', zones.length === 2 && zones[0].to <= eplRows.length,
+    zones.map((z) => z.label).join('/'))
+
+  /* ---------- 球队详情页 ---------- */
+  require(path.join(ROOT, 'pages/team/team.js'))
+  const teamOpts = global.__page
+  const cslTop = (stData.csl && stData.csl.groups[0].rows || [])[0]
+
+  const ctxTeam = makeCtx(teamOpts)
+  teamOpts.onLoad.call(ctxTeam, { comp: 'csl', id: String(cslTop ? cslTop.id : '') })
+  check('球队页：榜首球队读出排名', cslTop ? ctxTeam.data.standing && ctxTeam.data.standing.pos === 1 : false,
+    cslTop ? `${ctxTeam.data.name} · ${ctxTeam.data.standingLine}` : '无数据')
+  check('球队页：队名取到中文', !!ctxTeam.data.name && /[一-龥]/.test(ctxTeam.data.name), ctxTeam.data.name)
+  check('球队页：战绩概览非空', !!ctxTeam.data.standingLine, ctxTeam.data.standingLine)
+  check('球队页：比赛卡片已装饰（有 _accent）',
+    !ctxTeam.data.matches.length || ctxTeam.data.matches.every((m) => !!m._accent),
+    `${ctxTeam.data.matches.length} 场`)
+
+  // 缺参数不能白屏
+  const ctxTeamNoArg = makeCtx(teamOpts)
+  teamOpts.onLoad.call(ctxTeamNoArg, {})
+  check('球队页：缺参数给出提示而非白屏', !!ctxTeamNoArg.data.loadError, ctxTeamNoArg.data.loadError)
+
+  // 关注 / 取关
+  const tfKey = (cslTop && cslTop.id) ? ['csl', String(cslTop.id)] : ['csl', 'x']
+  tfMod.resetCache()
+  teamOpts.onFollowTap.call(ctxTeam)
+  check('球队页：关注后状态为已关注', ctxTeam.data.followed === true && tfMod.has(tfKey[0], tfKey[1]) === true)
+  teamOpts.onFollowTap.call(ctxTeam)
+  check('球队页：再点取消关注', ctxTeam.data.followed === false && tfMod.has(tfKey[0], tfKey[1]) === false)
+  tfMod.resetCache()
+
+  // 近期战绩只能来自已结束的比赛
+  const eplTop = eplRows ? eplRows[0] : null
+  const ctxTeam2 = makeCtx(teamOpts)
+  teamOpts.onLoad.call(ctxTeam2, { comp: 'epl', id: String(eplTop ? eplTop.id : '382') })
+  check('球队页：近期战绩只含已结束比赛',
+    ctxTeam2.data.form.every((f) => f.result === 'W' || f.result === 'L' || f.result === 'D' || f.result === 'U'),
+    ctxTeam2.data.form.map((f) => f.resultZh).join(''))
+
+  /* ---------- 积分榜页 ---------- */
+  require(path.join(ROOT, 'pages/rank/rank.js'))
+  const rankOpts = global.__page
+  const ctxRank = makeCtx(rankOpts)
+  rankOpts.onLoad.call(ctxRank, {})
+  check('积分榜页：默认列出第一个有排名的赛事', !!ctxRank.data.activeComp && !!ctxRank.data.groups.length,
+    `${ctxRank.data.compName} / ${ctxRank.data.totalTeams} 队`)
+  check('积分榜页：列数与数据一致',
+    ctxRank.data.columns.length > 0
+    && ctxRank.data.groups.every((g) => g.rows.every((r) => r.cells.length === ctxRank.data.columns.length)),
+    `${ctxRank.data.columns.length} 列`)
+  check('积分榜页：切换赛事生效', (function () {
+    rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'csl' } } })
+    return ctxRank.data.activeComp === 'csl' && ctxRank.data.groups[0].rows.length === 16
+  })(), `active=${ctxRank.data.activeComp}`)
+
+  // 点行 → 球队详情页
+  rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: String(cslTop ? cslTop.id : '') } } })
+  check('积分榜页：点球队跳球队详情',
+    /\/pages\/team\/team\?comp=csl&id=/.test(collected.navigateTo || ''), collected.navigateTo)
+
+  // 待定不是真球队，不能跳
+  rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: 'TBD' } } })
+  check('积分榜页：待定队名不可点', !/\/pages\/team\/team\?comp=csl&id=TBD/.test(collected.navigateTo || ''))
+
+  /* ---------- 入口打通 ---------- */
+  // 首页赛事卡：有积分榜的才显示「积分榜 ›」
+  const ctxIdxRank = makeCtx(indexOpts)
+  ctxIdxRank.setData({ entries: [] })
+  indexOpts.onLoad.call(ctxIdxRank)
+  await settle()
+  const withRank = ctxIdxRank.data.entries.filter((e) => e.hasStandings)
+  check('首页：有积分榜的赛事带榜首入口', withRank.length >= 8 && withRank.every((e) => !!e.leader),
+    withRank.slice(0, 3).map((e) => e.name + ':' + e.leader).join(' / '))
+  check('首页：杯赛不显示积分榜入口',
+    ctxIdxRank.data.entries.filter((e) => e.key === 'worlds' || e.key === 'msi').every((e) => !e.hasStandings))
+  indexOpts.onRankTap.call(ctxIdxRank, { currentTarget: { dataset: { key: 'csl' } } })
+  check('首页：积分榜入口跳该赛事榜单', collected.navigateTo === '/pages/rank/rank?comp=csl', collected.navigateTo)
+
+  // 详情页：队名可点、有积分榜时显示入口
+  const detRank = makeCtx(detOpts)
+  const detMatchForRank = allData.matches().find((m) => allData.standingsOf(m.comp))
+  detOpts.onLoad.call(detRank, { id: detMatchForRank ? detMatchForRank.id : '' })
+  check('详情页：有积分榜的赛事显示榜单入口', detRank.data.hasStandings === true, detMatchForRank ? detMatchForRank.comp : '无')
+  detOpts.onStandingsTap.call(detRank)
+  check('详情页：点积分榜入口跳对应赛事',
+    detMatchForRank ? collected.navigateTo === `/pages/rank/rank?comp=${detMatchForRank.comp}` : false, collected.navigateTo)
+  detOpts.onTeamTap.call(detRank, { currentTarget: { dataset: { side: 'home' } } })
+  check('详情页：点队名跳球队详情', /\/pages\/team\/team\?comp=/.test(collected.navigateTo || ''), collected.navigateTo)
+
+  // 赛程页：选中具体赛事且该赛事有积分榜时，才出现入口条
+  const ctxSchRank = makeCtx(schOpts)
+  ctxSchRank.setData({ activeCat: 'football', activeComp: 'csl', mode: 'upcoming', shownGroups: 3, teamFilter: null })
+  schOpts.doReload.call(ctxSchRank)
+  check('赛程页：选中中超时出现积分榜入口', ctxSchRank.data.hasStandings === true && ctxSchRank.data.compName === '中超',
+    `${ctxSchRank.data.compName}/${ctxSchRank.data.hasStandings}`)
+  schOpts.onRankTap.call(ctxSchRank)
+  check('赛程页：积分榜入口跳对应赛事', collected.navigateTo === '/pages/rank/rank?comp=csl', collected.navigateTo)
+
+  const ctxSchNoRank = makeCtx(schOpts)
+  ctxSchNoRank.setData({ activeCat: 'esports', activeComp: 'worlds', mode: 'upcoming', shownGroups: 3, teamFilter: null })
+  schOpts.doReload.call(ctxSchNoRank)
+  check('赛程页：杯赛不显示积分榜入口', ctxSchNoRank.data.hasStandings === false)
+
+  // 新页面必须挂分享（右上角转发默认全灰）
+  check('积分榜页挂了转发与朋友圈', typeof rankOpts.onShareAppMessage === 'function' && typeof rankOpts.onShareTimeline === 'function')
+  check('球队页挂了转发与朋友圈', typeof teamOpts.onShareAppMessage === 'function' && typeof teamOpts.onShareTimeline === 'function')
+
+  // tabBar 新增了第 4 项「积分榜」
+  const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8').replace(/^\s*\/\/.*$/gm, ''))
+  check('tabBar 有 4 项且含积分榜',
+    appJson.tabBar.list.length === 4 && appJson.tabBar.list.some((t) => t.text === '积分榜'),
+    appJson.tabBar.list.map((t) => t.text).join('/'))
+  check('积分榜页已注册且指向 pages/rank/rank',
+    appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
 
   /* ---------- 输出 ---------- */
   let failed = 0

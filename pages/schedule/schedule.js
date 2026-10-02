@@ -29,6 +29,8 @@ Page({
     stale: false,
     staleLabel: '',
     loadError: '',
+    hasStandings: false,
+    compName: '',
   },
 
   onLoad(query) {
@@ -131,7 +133,17 @@ Page({
       stale: data.staleInfo().stale,
       staleLabel: this.staleLabel(),
       source: data.source(),
+      // 只在选中了具体赛事、且该赛事真有积分榜时才给入口（杯赛 / 国字号没有）
+      hasStandings: !!activeComp && !!data.standingsOf(activeComp),
+      compName: activeComp ? data.compOf(activeComp).name : '',
     })
+  },
+
+  /** 看赛程时顺手查排名：跳到该赛事的积分榜 */
+  onRankTap() {
+    const comp = this.data.activeComp
+    if (!comp) return
+    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(comp)}` })
   },
 
   /**

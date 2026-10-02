@@ -131,6 +131,34 @@
   background: var(--bg);
 }
 
+/* 选了具体赛事且该赛事有积分榜时才出现的入口条 */
+.rank-entry {
+  display: flex;
+  align-items: center;
+  margin: 16rpx 24rpx 0;
+  padding: 18rpx 24rpx;
+  border-radius: 16rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.rank-entry-hover {
+  opacity: 0.7;
+}
+
+.rank-entry-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
+.rank-entry-go {
+  flex: none;
+  margin-left: 10rpx;
+  font-size: 28rpx;
+}
+
 .mode {
   flex: 1;
   padding: 12rpx 0;

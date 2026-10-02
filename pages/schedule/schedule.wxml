@@ -31,6 +31,12 @@
     </view>
   </view>
 
+  <!-- 有积分榜的赛事才出现：看赛程的时候顺手能查排名 -->
+  <view class="rank-entry" wx:if="{{hasStandings}}" bindtap="onRankTap" hover-class="rank-entry-hover">
+    <text class="rank-entry-text">查看 {{compName}} 积分榜</text>
+    <text class="rank-entry-go">›</text>
+  </view>
+
   <view class="stale-tip" wx:if="{{stale}}">
     数据{{staleLabel}}，比分可能不是最新结果
   </view>

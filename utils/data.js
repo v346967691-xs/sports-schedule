@@ -12,6 +12,19 @@
 
 const META_FALLBACK = { generatedAt: '', range: { from: '', to: '' }, categories: [], competitions: [] }
 
+/* 积分榜：同样是「本地包兜底 + 打开即读云端」。
+   文件缺失时整个数值就是一个空表，页面会显示「暂无积分榜」，不会白屏。 */
+const STANDINGS_FALLBACK = { generatedAt: '', tables: {} }
+
+let standingsData = (() => {
+  try {
+    return require('../data/standings.js')
+  } catch (err) {
+    console.error('[赛程助手] 积分榜数据加载失败', err)
+    return STANDINGS_FALLBACK
+  }
+})()
+
 let meta = (() => {
   try {
     return require('../data/meta.js')
@@ -213,6 +226,88 @@ function lastMatchByComp() {
   return out
 }
 
+/* ------------------------------------------------------------------ 积分榜 */
+
+/** 全部积分榜：{ [compKey]: table } */
+function standingsTables() {
+  return (standingsData && standingsData.tables) || {}
+}
+
+/** 某个赛事的积分榜；没有则返回 null（杯赛、国字号本来就没有排名） */
+function standingsOf(compKey) {
+  return standingsTables()[compKey] || null
+}
+
+/** 哪些赛事有积分榜（按 SPORT_CATS 的展示顺序输出，用于页面切换） */
+function standingsKeys() {
+  const has = standingsTables()
+  const order = []
+  categories().forEach((cat) => {
+    cat.competitions.forEach((key) => { if (has[key]) order.push(key) })
+  })
+  return order
+}
+
+/**
+ * 当前生效的积分榜生成时间（云端优先，回落本地包）。
+ * 与赛程的生成时间是两个独立的值，不要混用。
+ */
+function standingsGeneratedAt() {
+  return (standingsData && standingsData.generatedAt) || ''
+}
+
+/** 某支球队在积分榜里的那一行 */
+function teamStanding(compKey, teamId) {
+  const table = standingsOf(compKey)
+  if (!table) return null
+  const id = String(teamId)
+  for (const g of table.groups || []) {
+    const hit = (g.rows || []).find((r) => String(r.id) === id)
+    if (hit) return Object.assign({ group: g.name || '' }, hit)
+  }
+  return null
+}
+
+/**
+ * 某支球队的近期战绩（W/D/L），按时间倒序。
+ *
+ * ⚠️ 只在本地快照（含云端刷新后的那一份）里算 —— 快照是 ±窗口内的比赛，
+ * 所以它表示的是「近期状态」而不是赛季总战绩，页面文案也按这个口径写。
+ * 赛季总战绩请以积分榜为准（那份来自官方 / 整赛季自算）。
+ */
+function teamForm(compKey, teamId, n) {
+  const take = Number(n) || 5
+  const list = query({ comps: [compKey], status: 'finished', team: { comp: compKey, id: teamId } })
+    .slice()
+    .reverse()
+  return list.slice(0, take).map((m) => {
+    const isHome = String(m.home.id) === String(teamId)
+    const mine = isHome ? m.home.score : m.away.score
+    const theirs = isHome ? m.away.score : m.home.score
+    let result = 'U'
+    if (typeof mine === 'number' && typeof theirs === 'number') {
+      result = mine > theirs ? 'W' : mine < theirs ? 'L' : 'D'
+    }
+    return {
+      result,
+      scoreText: typeof mine === 'number' && typeof theirs === 'number' ? `${mine}-${theirs}` : '',
+      opponent: isHome ? (m.away.zh || m.away.name) : (m.home.zh || m.home.name),
+      isHome,
+      date: m.date,
+      match: m,
+    }
+  })
+}
+
+/** 某支球队的即将 / 进行中比赛（球队详情页用） */
+function teamUpcoming(compKey, teamId, n) {
+  const today = require('./format').todayStr()
+  const take = Number(n) || 10
+  return query({ comps: [compKey], status: ['upcoming', 'live'], team: { comp: compKey, id: teamId } })
+    .filter((m) => !today || m.date >= today)
+    .slice(0, take)
+}
+
 /* ------------------------------------------------------------------ 云端刷新 */
 
 /** 当前数据来源 */
@@ -269,26 +364,62 @@ async function refresh() {
   return inflight
 }
 
-async function doRefresh() {
+/**
+ * 积分榜同样打开即读云端。失败 / 云端更旧都沿用本地包，绝不抛错。
+ * 与赛程共用一次 refresh 的节流窗口，不额外增加请求压力。
+ */
+async function refreshStandings() {
+  if (!cloudClient.isReady()) return false
   try {
     const { data, error } = await cloudClient.cloud.database
-      .from('schedule_cache')
-      .select('data, meta, generated_at')
+      .from('standings_cache')
+      .select('data, generated_at')
       .eq('id', 'latest')
       .maybeSingle()
-    if (error || !data || !Array.isArray(data.data) || !data.meta) {
+    if (error || !data || !data.data || !data.data.tables) return false
+    const cloudTime = data.data.generatedAt ? Date.parse(data.data.generatedAt) : 0
+    const bundleTime = standingsData.generatedAt ? Date.parse(standingsData.generatedAt) : 0
+    if (cloudTime <= bundleTime) return false
+    standingsData = data.data
+    return true
+  } catch (err) {
+    console.warn('[赛程助手] 云端积分榜读取失败，沿用本地数据', err)
+    return false
+  }
+}
+
+async function doRefresh() {
+  try {
+    // 并行拉两张表：它们互不依赖，串行只会白白多等一个 RTT
+    const [main] = await Promise.all([refreshSchedule(), refreshStandings()])
+
+    if (main.error || !main.data || !Array.isArray(main.data.data) || !main.data.meta) {
       return { updated: false, reason: 'invalid', source: dataSource }
     }
-    const cloudTime = data.meta.generatedAt ? Date.parse(data.meta.generatedAt) : 0
+    const cloudTime = main.data.meta.generatedAt ? Date.parse(main.data.meta.generatedAt) : 0
     const bundleTime = meta.generatedAt ? Date.parse(meta.generatedAt) : 0
     if (cloudTime <= bundleTime) {
       return { updated: false, reason: 'not-newer', source: dataSource }
     }
-    applyCloudSnapshot(data.data, data.meta)
-    return { updated: true, source: 'cloud', generatedAt: data.meta.generatedAt }
+    applyCloudSnapshot(main.data.data, main.data.meta)
+    return { updated: true, source: 'cloud', generatedAt: main.data.meta.generatedAt }
   } catch (err) {
     console.warn('[赛程助手] 云端赛程读取失败，沿用本地数据', err)
     return { updated: false, reason: 'error', source: dataSource }
+  }
+}
+
+/** 拉取云端赛程表；任何异常都在内部兜住（返回 error 而不是抛） */
+async function refreshSchedule() {
+  try {
+    return await cloudClient.cloud.database
+      .from('schedule_cache')
+      .select('data, meta, generated_at')
+      .eq('id', 'latest')
+      .maybeSingle()
+  } catch (err) {
+    console.warn('[赛程助手] 云端赛程请求异常', err)
+    return { error: err, data: null }
   }
 }
 
@@ -310,6 +441,14 @@ module.exports = {
   datesOf,
   nextMatchByComp,
   lastMatchByComp,
+  // 积分榜
+  standingsTables,
+  standingsOf,
+  standingsKeys,
+  standingsGeneratedAt,
+  teamStanding,
+  teamForm,
+  teamUpcoming,
   refresh,
   source,
   generatedAt,

@@ -16,6 +16,7 @@ Page({
     favBusy: false,
     isRemind: false,
     authState: 'unknown',
+    hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
   },
 
@@ -46,6 +47,7 @@ Page({
       isFav: app.isFav(match.id),
       isRemind: reminders.has(match.id),
       authState: app.globalData.authState,
+      hasStandings: !!data.standingsOf(match.comp),
     }, () => this.buildShareImage())
   },
 
@@ -161,6 +163,28 @@ Page({
     app.globalData.pendingComp = comp.key
     wx.switchTab({ url: '/pages/schedule/schedule' })
   },
+  /** 点队名 → 球队详情页（排名 / 近期战绩 / 未来赛程） */
+  onTeamTap(e) {
+    const m = this.data.match
+    if (!m) return
+    const side = (e.currentTarget.dataset || {}).side
+    const team = side === 'home' ? m.home : m.away
+    // 未确定的对阵（待定 / TBD）不是一支球队，点了也没东西可看
+    if (!team || !team.id || String(team.id) === 'TBD' || team.name === '待定') return
+    wx.navigateTo({
+      url: `/pages/team/team?comp=${encodeURIComponent(m.comp)}&id=${encodeURIComponent(String(team.id))}`,
+      fail() {
+        wx.showToast({ title: '暂时打不开球队页', icon: 'none' })
+      },
+    })
+  },
+
+  onStandingsTap() {
+    const m = this.data.match
+    if (!m) return
+    wx.navigateTo({ url: `/pages/rank/rank?comp=${encodeURIComponent(m.comp)}` })
+  },
+
   onShareAppMessage() {
     const m = this.data.match
     if (!m) return share.message()

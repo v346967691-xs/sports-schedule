@@ -1,0 +1,234 @@
+.hero {
+  position: relative;
+  padding: 40rpx 32rpx 48rpx;
+  color: #fff;
+  border-bottom-left-radius: 40rpx;
+  border-bottom-right-radius: 40rpx;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  right: -90rpx;
+  top: -80rpx;
+  width: 300rpx;
+  height: 300rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hero-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.avatar {
+  flex: none;
+  width: 96rpx;
+  height: 96rpx;
+  margin-right: 24rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+}
+
+.hero-id {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-name {
+  font-size: 44rpx;
+  font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hero-comp {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.follow-btn {
+  position: absolute;
+  right: 32rpx;
+  bottom: 44rpx;
+  padding: 12rpx 34rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.85);
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.follow-btn.on {
+  background: #fff;
+  color: var(--brand);
+  border-color: #fff;
+}
+
+/* ------------------------------------------------------------------ 概览 */
+
+.stat-row {
+  display: flex;
+  margin: -26rpx 24rpx 0;
+  position: relative;
+  z-index: 2;
+}
+
+.stat {
+  flex: 1;
+  margin-right: 20rpx;
+  padding: 26rpx 24rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(16, 24, 40, 0.08);
+}
+
+.stat:last-child {
+  margin-right: 0;
+}
+
+.stat-num {
+  font-size: 48rpx;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--brand);
+}
+
+.stat-label {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--sub);
+}
+
+.stat-go {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--brand);
+}
+
+.stat-go.muted {
+  color: var(--muted);
+}
+
+.line-card {
+  margin: 24rpx 24rpx 0;
+  padding: 24rpx 28rpx;
+}
+
+.line-title {
+  font-size: 24rpx;
+  color: var(--muted);
+}
+
+.line-body {
+  margin-top: 8rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.line-foot {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ 战绩 */
+
+.form-row {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 28rpx;
+}
+
+.form-row.br {
+  border-top: 2rpx solid var(--line);
+}
+
+.row-hover {
+  background: #f7f8fb;
+}
+
+.badge {
+  flex: none;
+  width: 52rpx;
+  height: 52rpx;
+  margin-right: 22rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  font-weight: 800;
+  color: #fff;
+  background: var(--muted);
+}
+
+.badge.r-W {
+  background: #2f7a52;
+}
+
+.badge.r-D {
+  background: #8a8f9c;
+}
+
+.badge.r-L {
+  background: #b2473f;
+}
+
+.form-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-op {
+  font-size: 28rpx;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.form-sub {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.form-score {
+  flex: none;
+  margin-left: 18rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.form-note {
+  margin: 12rpx 8rpx 0;
+  font-size: 20rpx;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.empty.small {
+  padding: 40rpx 24rpx;
+}
+
+/* 未来赛程卡片从 app.wxss 的 .mc 体系继承，这里只做间距修正 */
+.mc {
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 20rpx;
+}

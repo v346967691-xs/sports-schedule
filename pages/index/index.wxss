@@ -140,6 +140,32 @@
   color: var(--muted);
 }
 
+.entry-rank {
+  display: flex;
+  align-items: center;
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 2rpx solid var(--line);
+}
+
+.entry-rank-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 21rpx;
+  color: var(--sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.entry-rank-go {
+  flex: none;
+  margin-left: 12rpx;
+  font-size: 21rpx;
+  font-weight: 600;
+  color: var(--brand);
+}
+
 .entry-bar {
   position: absolute;
   left: 0;

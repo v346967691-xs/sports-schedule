@@ -2,8 +2,10 @@
   "pages": [
     "pages/index/index",
     "pages/schedule/schedule",
+    "pages/rank/rank",
     "pages/mine/mine",
     "pages/detail/detail",
+    "pages/team/team",
     "pages/teams/teams",
     "pages/reminders/reminders",
     "pages/brief/brief"
@@ -30,6 +32,10 @@
       {
         "pagePath": "pages/schedule/schedule",
         "text": "赛程"
+      },
+      {
+        "pagePath": "pages/rank/rank",
+        "text": "积分榜"
       },
       {
         "pagePath": "pages/mine/mine",

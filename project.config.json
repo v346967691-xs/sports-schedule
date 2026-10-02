@@ -28,6 +28,10 @@
         "value": ".github"
       },
       {
+        "type": "folder",
+        "value": ".workbuddy"
+      },
+      {
         "type": "file",
         "value": "package-lock.json"
       },

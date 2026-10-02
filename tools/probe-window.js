@@ -1,4 +1,4 @@
-const M = require('D:/work/wbzone/sports-schedule/data/matches.js');
+const M = require('../utils/snapshot').decodeSnapshot(require('D:/work/wbzone/sports-schedule/data/matches.js'));
 
 console.log('=== NBA 全部比赛的北京时间分布（不论状态）===');
 const nbah = {};

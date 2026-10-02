@@ -1,5 +1,5 @@
 // 列出数据中出现过的队伍中文名，用于建立强队名单
-const M = require('../data/matches.js');
+const M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'));
 
 const groups = {};
 M.forEach(m => {

@@ -14,7 +14,7 @@
 // 保险条款：早报额外收「昨日 06:00–18:00 开赛、但昨日 21:00 仍未结束」的比赛。
 // 正常情况下这个集合是空集，只为防 BO5 拖到 4 小时这类异常长局，避免比赛彻底消失。
 
-const M = require('../data/matches.js');
+const M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'));
 const { pick } = require('./brief-score.js');
 
 const BJ = '+08:00';

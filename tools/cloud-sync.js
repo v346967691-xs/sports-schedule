@@ -23,6 +23,7 @@ const { execFileSync } = require('child_process')
 const path = require('path')
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
+const { decodeSnapshot } = require('../utils/snapshot')
 
 const DAYS_BACK = Number(process.argv[2] || 14)
 const DAYS_FORWARD = Number(process.argv[3] || 45)
@@ -126,9 +127,15 @@ async function main() {
 
   // 3) 读取刚生成的快照（注意：本进程尚未 require 过，拿到的是新文件）
   //    用新进程跑 sync，避免 sync.js 底部的 main() 在 require 时被执行两次
+  //
+  //    ⚠️ 这里推的是 **解码后的扁平数组**，不是紧凑格式 —— 这是有意为之：
+  //       线上已发布的老版本小程序直接读 `main.data.data` 当数组用，
+  //       推紧凑对象会让老版本拿到 undefined.length 而整块读取失败。
+  //       紧凑格式只用于**代码包**（包体积才是稀缺资源），云端不差这几百 KB。
+  //       等新版本铺开（老版本自然淘汰）后再考虑换，届时 utils/data.js 无需改动。
   delete require.cache[require.resolve('../data/matches.js')]
   delete require.cache[require.resolve('../data/meta.js')]
-  const matches = require('../data/matches.js')
+  const matches = decodeSnapshot(require('../data/matches.js'))
   const meta = require('../data/meta.js')
   log(`本地快照：${matches.length} 场，bundle 生成时间 ${meta.generatedAt || '(空)'}`)
 

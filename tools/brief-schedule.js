@@ -4,7 +4,7 @@
 //
 // 用法：node tools/brief-schedule.js
 
-const M = require('../data/matches.js');
+const M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'));
 
 const BJ = 8 * 3600000;
 

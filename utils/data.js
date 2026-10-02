@@ -10,6 +10,8 @@
  * 不会再把整个小程序拖白。
  */
 
+const snapshot = require('./snapshot')
+
 const META_FALLBACK = { generatedAt: '', range: { from: '', to: '' }, categories: [], competitions: [] }
 
 /* 积分榜：同样是「本地包兜底 + 打开即读云端」。
@@ -43,10 +45,17 @@ let lastRefreshAt = 0
 let inflight = null // 并发刷新共享同一个请求，避免 onLaunch 与 onShow 重复打接口
 let dataSource = 'bundle' // 'bundle' 本地兜底包 | 'cloud' 云端快照
 
+/**
+ * ⚠️ data/matches.js 存的是**紧凑格式**（球队共享字典 + 短键名），
+ *    直接读会拿到 `{v, teams, matches}` 而不是比赛数组 —— 必须过 decodeSnapshot。
+ *    解码结果缓存在 cache 里，只在第一次读的时候解一次。
+ *    （云端 schedule_cache 里还是老格式的扁平数组，decodeSnapshot 会原样返回。）
+ */
 function matches() {
   if (!cache) {
     try {
-      cache = require('../data/matches.js')
+      // eslint-disable-next-line
+      cache = snapshot.decodeSnapshot(require('../data/matches.js'))
     } catch (err) {
       console.error('[赛程助手] 赛程数据加载失败', err)
       cache = []
@@ -340,9 +349,13 @@ function staleInfo() {
   return { stale: diff > STALE_MS, minutes: Math.round(diff / 60000) }
 }
 
-/** 把云端快照替换进内存（仅在云端比本地包更新时调用） */
-function applyCloudSnapshot(snapData, snapMeta) {
-  cache = snapData
+/**
+ * 把云端快照替换进内存（仅在云端比本地包更新时调用）。
+ * ⚠️ 传进来的 `snapData` 必须先过 decodeSnapshot —— 云端推的是老格式的扁平数组，
+ *    但以后若改推紧凑格式，这里不该再改一次。
+ */
+function applyCloudSnapshot(snapList, snapMeta) {
+  cache = snapList
   meta = snapMeta
   dataSource = 'cloud'
 }
@@ -425,7 +438,9 @@ async function doRefresh() {
     // 并行拉两张表：它们互不依赖，串行只会白白多等一个 RTT
     const [main] = await Promise.all([refreshSchedule(), refreshStandings()])
 
-    if (main.error || !main.data || !Array.isArray(main.data.data) || !main.data.meta) {
+    // decodeSnapshot 同时吃「扁平数组」和「紧凑对象」，云端换格式时这里不用改
+    const list = snapshot.decodeSnapshot(main.data && main.data.data)
+    if (main.error || !main.data || !list.length || !main.data.meta) {
       return { updated: false, reason: 'invalid', source: dataSource }
     }
     const cloudTime = main.data.meta.generatedAt ? Date.parse(main.data.meta.generatedAt) : 0
@@ -433,7 +448,7 @@ async function doRefresh() {
     if (cloudTime <= bundleTime) {
       return { updated: false, reason: 'not-newer', source: dataSource }
     }
-    applyCloudSnapshot(main.data.data, main.data.meta)
+    applyCloudSnapshot(list, main.data.meta)
     return { updated: true, source: 'cloud', generatedAt: main.data.meta.generatedAt }
   } catch (err) {
     console.warn('[赛程助手] 云端赛程读取失败，沿用本地数据', err)

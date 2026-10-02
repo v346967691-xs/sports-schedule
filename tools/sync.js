@@ -17,6 +17,7 @@ const path = require('path')
 
 const zhNames = require('./zh-names')
 const { lolStatus } = require('./lol-status')
+const { encodeSnapshot, decodeSnapshot } = require('../utils/snapshot')
 
 const ROOT = path.join(__dirname, '..')
 const OUT_DIR = path.join(ROOT, 'data')
@@ -696,7 +697,7 @@ function loadExisting(jsPath) {
     try {
       if (p.endsWith('.json')) return JSON.parse(fs.readFileSync(p, 'utf8'))
       // eslint-disable-next-line
-      return require(p)
+      return decodeSnapshot(require(p))
     } catch (err) {
       console.warn(`  读取 ${path.basename(p)} 失败，按空数据处理：${err.message}`)
     }
@@ -802,7 +803,13 @@ async function main() {
   }))
 
   fs.writeFileSync(metaPath, toModule(meta))
-  fs.writeFileSync(existingPath, toModule(all))
+  // ⚠️ 快照用**紧凑格式**写（utils/snapshot.js 的 encodeSnapshot）：
+  //    球队抽成共享字典、date/time 由 start 推、空值不写，实测 790KB → 230KB。
+  //    读回来一律走 utils/snapshot.js 的 decodeSnapshot，运行时拿到的还是原来那个扁平数组。
+  fs.writeFileSync(existingPath, toModule(encodeSnapshot(all, {
+    generatedAt: meta.generatedAt,
+    range: metaRange,
+  })))
   dropLegacyJson()
 
   const sizeKB = Math.round(fs.statSync(existingPath).size / 1024)

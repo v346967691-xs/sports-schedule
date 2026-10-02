@@ -22,6 +22,7 @@ const https = require('https')
 
 const zhNames = require('./zh-names')
 const publicConfig = require('../utils/cloud-config')
+const { decodeSnapshot } = require('../utils/snapshot')
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 /** 只有 ESPN 源的赛事有 summary 端点；LoL / CBA / KPL 没有 */
@@ -406,7 +407,7 @@ function needsFetch(m, captured) {
 }
 
 async function main() {
-  const matches = require('../data/matches.js')
+  const matches = decodeSnapshot(require('../data/matches.js'))
   const list = Array.isArray(matches) ? matches : matches.matches || []
   const now = Date.now()
 

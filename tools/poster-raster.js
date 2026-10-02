@@ -151,7 +151,7 @@ module.exports = { render, encodePNG, makeCanvas, hex2rgb };
 
 // CLI
 if (require.main === module) {
-  const M = require('../data/matches.js');
+  const M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'));
   const DSL = require('./poster-dsl.js');
   const Wr = require('./brief-write.js');
   const [id, nar, v, w, h, out] = process.argv.slice(2);

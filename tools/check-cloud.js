@@ -39,6 +39,9 @@ async function main() {
     process.exit(1)
   }
 
+  // 积分榜是附加数据，只报告、不改变退出码 —— 它写失败不该让定时同步判红
+  await reportStandings(cloud)
+
   const gen = new Date(row.generated_at)
   const minutes = Math.round((Date.now() - gen.getTime()) / 60000)
   const localTime = new Intl.DateTimeFormat('zh-CN', {
@@ -57,6 +60,30 @@ async function main() {
   )
 
   process.exit(minutes <= STALE_MINUTES ? 0 : 2)
+}
+
+/**
+ * 积分榜新鲜度：只打印，不参与退出码。
+ * 需要一行可见的状态，否则 standings_cache 写失败会一直静默（cloud-sync 那边只告警）。
+ */
+async function reportStandings(cloud) {
+  try {
+    const { data, error } = await cloud.database
+      .from('standings_cache')
+      .select('data, generated_at')
+      .eq('id', 'latest')
+      .maybeSingle()
+    if (error || !data || !data.data || !data.data.tables) {
+      console.log('[check-cloud] ⚠ 云端没有积分榜数据（附加功能，不影响比分）')
+      return
+    }
+    const tables = data.data.tables || {}
+    const mins = Math.round((Date.now() - new Date(data.generated_at).getTime()) / 60000)
+    const flag = mins <= STALE_MINUTES ? '✅' : '⚠️'
+    console.log(`[check-cloud] ${flag} 积分榜 ${Object.keys(tables).length} 个赛事，距今 ${mins} 分钟`)
+  } catch (err) {
+    console.log('[check-cloud] ⚠ 积分榜校验异常（不影响主链路）：', (err && err.message) || err)
+  }
 }
 
 main().catch((err) => {

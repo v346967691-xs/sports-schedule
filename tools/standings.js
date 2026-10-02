@@ -7,12 +7,14 @@
  *   sync.js 一 require 就会执行底部的 main()，没法被别处复用；
  *   积分榜又是独立于赛程的另一份数据流，混在一起会让两边都难改。
  *
- * 数据来源分三类（2026-10-02 实测）：
- *   ① ESPN 官方积分榜 —— 10 个赛事全通，team.id 与 scoreboard 同源，
+ * 数据来源只有**官方积分榜**（2026-10-02 用户定：只拉官方榜，不自己算）：
+ *   ① ESPN —— 10 个赛事全通，team.id 与 scoreboard 同源，
  *      所以 tools/zh-names.js 里现成的中文映射可以直接复用，零汉化成本。
- *   ② CBA / KPL —— 官方接口**没有**排名端点（候选路径全 404），
- *      改为把整赛季赛果拉下来自己算胜负（两者一次请求就返回整赛季）。
- *   ③ 杯赛（全球总决赛 / 季中赛 / 德玛西亚杯 / 亚运会）与国字号 —— 本来就没有积分榜，不做。
+ *   ② 英雄联盟 —— 官方 getStandings（LPL / LCK / LEC 都有当前赛季榜），
+ *      队名简码与 zh-names.js 的 LOL_ZH 同键，同样零汉化成本。
+ *   ❌ CBA / KPL —— 官方**没有**排名端点（2026-10-02 实测：CBA 8 个候选、
+ *      KPL 6 个候选全 404），按「没有官方榜就不拉」的原则**不做**，等官方出接口再说。
+ *   ❌ 杯赛（全球总决赛 / 季中赛 / 德玛西亚杯 / 亚运会）与国字号 —— 本来就没有积分榜。
  *
  * ⚠️ 任何失败都返回空表，绝不抛错：积分榜是增强功能，不能拖垮赛程主链路。
  */
@@ -24,8 +26,9 @@ const ROOT = path.join(__dirname, '..')
 const OUT_FILE = path.join(ROOT, 'data', 'standings.js')
 
 const ESPN_V2 = 'https://site.api.espn.com/apis/v2/sports'
-const CBA = 'https://portal-server.cbaleague.com'
-const KPL = 'https://kplshop-op.timi-esports.qq.com/kplow'
+// 英雄联盟官方（与 sync.js 抓赛程同一域名同一 key，不用新加白名单）
+const LOL = 'https://esports-api.lolesports.com/persisted/gw'
+const LOL_KEY = '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'
 
 const zhNames = require('./zh-names')
 
@@ -42,28 +45,6 @@ async function getJSON(url, headers) {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 30000)
       const res = await fetch(url, Object.assign({ signal: controller.signal }, opts))
-      clearTimeout(timer)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return await res.json()
-    } catch (err) {
-      if (attempt === 2) return null
-      await new Promise((r) => setTimeout(r, 700 * (attempt + 1)))
-    }
-  }
-  return null
-}
-
-async function postJSON(url, body) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 30000)
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}),
-        signal: controller.signal,
-      })
       clearTimeout(timer)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json()
@@ -300,131 +281,85 @@ async function fetchEspnTable(comp) {
   }, comp.key, comp.cat)
 }
 
-/* ------------------------------------------------------------------ ② CBA / KPL：没有官方排名，自己算 */
+/* ------------------------------------------------------------------ ② 英雄联盟：官方 getStandings */
 
 /**
- * 按已结束场次的比分算胜负表。
+ * 英雄联盟官方积分榜（2026-10-02 实测可用）
  *
- * ⚠️ 只能用「整赛季」的原始数据，不能用 data/matches.js —— 那份快照只有 ±窗口内的比赛，
- * 拿它算积分榜会严重失真（赛季才开始两周时会显示成 2 支球队并列第一）。
+ * 两步：① getTournamentsForLeague 拿该赛区所有赛季，取 startDate 最新的那个；
+ *       ② getStandings 拿这个赛季的榜。
+ *
+ * ⚠️ 只取 stages[0]（小组赛 / 常规赛）：后面的「骑士之路」「淘汰赛」「赛区资格赛」
+ *    不是循环赛排名，混进来会让同一支队在两张表里各出现一次。
+ * ⚠️ sections[] = 分组（LPL 涅槃组 + 登峰组、LCK 传奇组 + 突破组、LEC 就一组）。
+ * ⚠️ rankings[] 的每一项是**一个名次**（ordinal），teams[] 是并列这个名次的队 ——
+ *    所以 pos 取 ordinal，不是数组下标，否则并列时名次会错。
+ * ⭐ teams[].code（BLG / T1 / G2…）就是 zh-names.js 里 LOL_ZH 的键，中文名直接复用。
  */
-function computeTable(rows, opt) {
-  const teams = {}
-  const ensure = (id, name) => {
-    if (!teams[id]) {
-      teams[id] = {
-        id, name, zh: name, abbr: name.slice(0, 6),
-        pos: 0, played: 0, wins: 0, losses: 0, draws: opt.draws ? 0 : null,
-        scored: 0, conceded: 0, diff: 0, pts: opt.usePoints ? 0 : null,
-        winPct: null, streak: '',
-      }
-    }
-    return teams[id]
-  }
+async function fetchLolTable(comp) {
+  const headers = { 'x-api-key': LOL_KEY }
 
-  rows.forEach((r) => {
-    if (!r.homeId || !r.awayId) return
-    // 待定 / TBD 不是真球队
-    if (String(r.homeId) === 'TBD' || String(r.awayId) === 'TBD') return
-    if (r.homeScore == null || r.awayScore == null) return
-    const h = ensure(String(r.homeId), r.homeName)
-    const a = ensure(String(r.awayId), r.awayName)
-    h.played += 1
-    a.played += 1
-    h.scored += r.homeScore
-    h.conceded += r.awayScore
-    a.scored += r.awayScore
-    a.conceded += r.homeScore
-    if (r.homeScore > r.awayScore) {
-      h.wins += 1; a.losses += 1
-      if (opt.usePoints) h.pts += 3
-    } else if (r.homeScore < r.awayScore) {
-      a.wins += 1; h.losses += 1
-      if (opt.usePoints) a.pts += 3
-    } else if (opt.draws) {
-      h.draws += 1; a.draws += 1
-      if (opt.usePoints) { h.pts += 1; a.pts += 1 }
-    }
-  })
+  const tr = await getJSON(`${LOL}/getTournamentsForLeague?hl=zh-CN&leagueId=${comp.lol}`, headers)
+  const tournaments = (tr && tr.data && tr.data.leagues && tr.data.leagues[0]
+    && tr.data.leagues[0].tournaments) || []
+  if (!tournaments.length) return null
+  const season = tournaments.slice()
+    .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)))[0]
 
-  const list = Object.values(teams).map((t) => {
-    t.diff = t.scored - t.conceded
-    t.winPct = t.played ? Number((t.wins / t.played).toFixed(3)) : 0
-    return t
-  })
-  const sorted = sortRows(list, opt.cat)
-  sorted.forEach((t, i) => { t.pos = i + 1 })
-  return sorted
-}
+  const st = await getJSON(`${LOL}/getStandings?hl=zh-CN&tournamentId=${season.id}`, headers)
+  const stages = (st && st.data && st.data.standings && st.data.standings[0]
+    && st.data.standings[0].stages) || []
+  if (!stages.length) return null
 
-/** CBA：一次返回整赛季 490 场，按已结束的场次算 */
-async function fetchCbaTable(comp) {
-  const json = await getJSON(`${CBA}/home/home_schedules`)
-  const list = (json && Array.isArray(json.data) && json.data) || null
-  if (!list) return null
-  const rows = list.map((ev) => ({
-    homeId: String(ev.HomeTeamID || ev.HomeTeamName || ''),
-    homeName: ev.HomeTeamName || '',
-    awayId: String(ev.VisitingTeamID || ev.VisitingTeamName || ''),
-    awayName: ev.VisitingTeamName || '',
-    homeScore: ev.HomeTeamScore != null ? Number(ev.HomeTeamScore) : null,
-    awayScore: ev.VisitingTeamScore != null ? Number(ev.VisitingTeamScore) : null,
-  }))
-  const table = computeTable(rows, { cat: 'basketball', draws: false, usePoints: false })
-  // ⚠️ 赛季还没开打时所有比分都是 null，此时算出来的「全队 0 胜」会误导，
-  //    不如直接返回 null，让页面显示「赛季尚未开始」。
-  if (table.length < 4 || !table.some((t) => t.played > 0)) return null
-  return applyZones({
-    comp: comp.key,
-    season: '本赛季',
-    columns: COLUMNS.basketball,
-    groups: [{ name: '', rows: table }],
-  }, comp.key, 'basketball')
-}
-
-/** KPL：POST getScheduleList 返回当前赛季赛程，按已结束的场次算 */
-async function fetchKplTable(comp) {
-  const json = await postJSON(`${KPL}/getScheduleList`, { seasonid: '' })
-  const list = (json && json.data && Array.isArray(json.data.list) && json.data.list) || null
-  if (!list) return null
-
-  const rows = []
-  list.forEach((ev) => {
-    // ⚠️ 未开赛的接口也返回 0-0，必须先用 schedule_status 判出「真打完了」，
-    //    否则会把整份未来赛程当成 0:0 平局算进去，积分榜当场失真。
-    // 官方语义取自官网前端（kpl.qq.com/static/Schedule-*.js）：
-    //   1=未开始 2=已取消 3=进行中 4=已结束
-    const state = Number(ev.schedule_status)
-    const played = Number(ev.team_a_score || 0) + Number(ev.team_b_score || 0)
-    // 只认 4（已结束）；上游滞后时靠比分兜底，但要排除 2（已取消）和 3（进行中——
-    // BO5 打完第一局的 1:0 是中间局比分，算进去会让积分榜提前失真）
-    const finished = state === 4 || (state !== 2 && state !== 3 && played > 0)
-    if (!finished) return
-    rows.push({
-      homeId: String(ev.team_a_id || ev.team_a_name || ''),
-      homeName: ev.team_a_name || '',
-      awayId: String(ev.team_b_id || ev.team_b_name || ''),
-      awayName: ev.team_b_name || '',
-      homeScore: Number(ev.team_a_score || 0),
-      awayScore: Number(ev.team_b_score || 0),
+  const stage = stages[0]
+  const groups = (stage.sections || []).map((sec) => {
+    const rows = []
+    ;(sec.rankings || []).forEach((rk, i) => {
+      const ordinal = Number(rk.ordinal || 0) || (i + 1)
+      ;(rk.teams || []).forEach((tm) => {
+        const code = tm.code || ''
+        const wins = (tm.record && Number(tm.record.wins)) || 0
+        const losses = (tm.record && Number(tm.record.losses)) || 0
+        const played = wins + losses
+        rows.push({
+          id: String(tm.id || code),
+          name: tm.name || code,
+          zh: zhNames.lolZh(code) || '',
+          abbr: code || String(tm.name || '').slice(0, 6),
+          pos: ordinal,
+          played,
+          wins,
+          losses,
+          draws: null,
+          scored: null,
+          conceded: null,
+          pts: null,
+          winPct: played ? Number((wins / played).toFixed(3)) : 0,
+          streak: '',
+        })
+      })
     })
-  })
-  if (rows.length < 4) return null
-  const table = computeTable(rows, { cat: 'esports', draws: false, usePoints: false })
-  if (table.length < 4) return null
+    return { name: sec.name || '', rows }
+  }).filter((g) => g.rows.length)
+
+  if (!groups.length) return null
+  // 只有一个分组时不再重复画组名（赛程名已经写在上面了）
+  if (groups.length === 1) groups[0].name = ''
+
   return {
     comp: comp.key,
-    season: '本赛季',
+    season: stage.name || '',
     columns: COLUMNS.esports,
-    groups: [{ name: '', rows: table }],
+    groups,
   }
 }
 
 /* ------------------------------------------------------------------ 主流程 */
 
 /**
- * 有积分榜的赛事。
+ * 有**官方**积分榜的赛事。
  * 杯赛（worlds / msi / demacia / agames）和中国国字号（chn）天然没有积分榜，不列。
+ * CBA / KPL 官方没有排名端点，按「没有官方榜就不拉」的原则也不列（2026-10-02 用户定）。
  */
 const TARGETS = [
   { key: 'ucl', cat: 'football', sport: 'soccer', espn: 'uefa.champions' },
@@ -437,8 +372,10 @@ const TARGETS = [
   { key: 'uel', cat: 'football', sport: 'soccer', espn: 'uefa.europa' },
   { key: 'csl', cat: 'football', sport: 'soccer', espn: 'chn.1' },
   { key: 'nba', cat: 'basketball', sport: 'basketball', espn: 'nba' },
-  { key: 'cba', cat: 'basketball', from: 'cba' },
-  { key: 'kpl', cat: 'esports', from: 'kpl' },
+  // 英雄联盟：官方榜，leagueId 与 sync.js 的 COMPETITIONS 保持一致
+  { key: 'lpl', cat: 'esports', from: 'lol', lol: '98767991314006698' },
+  { key: 'lck', cat: 'esports', from: 'lol', lol: '98767991310872058' },
+  { key: 'lec', cat: 'esports', from: 'lol', lol: '98767991302996019' },
 ]
 
 async function main() {
@@ -450,8 +387,7 @@ async function main() {
     process.stdout.write(`积分榜 ${comp.key.padEnd(11)} …`)
     let table = null
     try {
-      if (comp.from === 'cba') table = await fetchCbaTable(comp)
-      else if (comp.from === 'kpl') table = await fetchKplTable(comp)
+      if (comp.from === 'lol') table = await fetchLolTable(comp)
       else table = await fetchEspnTable(comp)
     } catch (err) {
       log(`${comp.key} 异常：${err.message}`)

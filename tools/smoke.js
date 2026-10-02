@@ -915,6 +915,31 @@ async function run() {
   // 杯赛与中国国字号本来就没有积分榜，不能有（有的话说明抓取逻辑串了）
   check('积分榜：杯赛与国字号没有排名', !stData.worlds && !stData.msi && !stData.chn && !stData.agames)
 
+  // ⚠️ 只拉官方榜（2026-10-02 用户定）：CBA / KPL 官方没有排名端点，
+  //    之前是靠赛果自算的，现在一律不拉 —— 出现就说明又有人把自算逻辑加回来了
+  check('积分榜：不出现 CBA / KPL 的自算榜', !stData.cba && !stData.kpl,
+    [stData.cba ? 'cba' : '', stData.kpl ? 'kpl' : ''].filter(Boolean).join('/') || 'ok')
+  const stSrc = fs.readFileSync(path.join(ROOT, 'tools/standings.js'), 'utf8')
+  check('积分榜：抓取脚本里没有自算逻辑（computeTable 已移除）',
+    stSrc.indexOf('computeTable') === -1 && stSrc.indexOf('esports-api.lolesports.com') > -1)
+
+  // 英雄联盟官方榜：LPL 分两组、LCK 两组、LEC 一组
+  const lpl = stData.lpl
+  const lplGroups = (lpl && lpl.groups) || []
+  check('积分榜：英雄联盟三个赛区都有官方榜', !!stData.lpl && !!stData.lck && !!stData.lec,
+    ['lpl', 'lck', 'lec'].filter((k) => !stData[k]).join('/') || 'lpl/lck/lec')
+  check('积分榜：LPL 分涅槃组 + 登峰组',
+    lplGroups.length === 2 && lplGroups.every((g) => g.rows.length > 0),
+    lplGroups.map((g) => g.name + ':' + g.rows.length).join(' / '))
+  check('积分榜：电竞榜用胜率而不是积分', !!lpl && lpl.columns.some((c) => c.label === '胜率')
+    && !lpl.columns.some((c) => c.label === '积分'), (lpl ? lpl.columns.map((c) => c.label).join('/') : ''))
+  check('积分榜：英雄联盟队名已汉化',
+    lplGroups.every((g) => g.rows.every((r) => !!r.zh)),
+    lplGroups[0] ? lplGroups[0].rows.slice(0, 3).map((r) => r.zh).join('/') : '无')
+  check('积分榜：电竞名次从 1 开始且各组独立编号',
+    lplGroups.every((g) => g.rows.every((r, i) => r.pos === i + 1)),
+    lplGroups.map((g) => g.rows.map((r) => r.pos).join(',')).join(' | '))
+
   const eplTable = stData.epl
   const eplRows = eplTable && eplTable.groups[0].rows
   check('积分榜：英超 20 队', !!eplRows && eplRows.length === 20, eplRows ? `${eplRows.length} 队` : '无')

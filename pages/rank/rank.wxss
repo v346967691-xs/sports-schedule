@@ -74,7 +74,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 0 20rpx;
+  padding: 0 16rpx;
   height: 72rpx;
   border-bottom: 2rpx solid var(--line);
 }
@@ -90,16 +90,19 @@
 .th {
   height: 60rpx;
   background: #f6f7fa;
-  font-size: 22rpx;
+  font-size: 21rpx;
   color: var(--muted);
   font-weight: 600;
 }
 
-/* 数字列固定宽、右对齐（tabular 数字），队名列占满剩余空间 */
+/* 数字列固定宽、右对齐（tabular 数字），队名列占满剩余空间。
+   ⚠️ 宽度是算出来的：750 - 名次52 - 4列×104 - 左右padding32 = 250rpx。
+  250rpx / 27rpx 字号 ≈ 9 个汉字的宽度，够放下「布伦特福德」「诺丁汉森林」这类长名。
+  再往宽调数字列，队名就会被折叠成两个字（2026-10-02 用户反馈过两次）。 */
 .th-pos,
 .td-pos {
   flex: none;
-  width: 56rpx;
+  width: 52rpx;
   display: flex;
   align-items: center;
 }
@@ -112,7 +115,7 @@
 
 .td {
   flex: none;
-  width: 118rpx;
+  width: 104rpx;
   text-align: right;
   font-size: 25rpx;
   color: var(--sub);
@@ -137,7 +140,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  padding-right: 12rpx;
+  padding-right: 8rpx;
 }
 
 /* 分区标签：悬在色带第一行的上缘（参考图的样式） */

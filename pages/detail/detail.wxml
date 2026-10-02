@@ -1,6 +1,11 @@
 <!-- 离屏 canvas：只在转发前画分享卡用，移出屏幕而非 display:none（隐藏后取不到节点） -->
 <canvas type="2d" id="share-canvas" class="share-canvas"></canvas>
 
+<view class="empty" wx:if="{{loadError}}">
+  <view class="empty-title">打不开这场比赛</view>
+  <view class="empty-desc">{{loadError}}</view>
+</view>
+
 <view class="page detail" wx:if="{{match}}">
   <view class="hero" style="background: linear-gradient(135deg, {{comp.accent}} 0%, {{comp.accent}}cc 100%)">
     <view class="hero-tag">{{comp.name}}</view>

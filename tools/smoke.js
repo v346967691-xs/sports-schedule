@@ -12,7 +12,12 @@ const path = require('path')
 const collected = {}
 
 function makeCtx(obj) {
-  const ctx = Object.assign({ data: Object.assign({}, obj.data) }, obj, { __isCtx: true })
+  // ⚠️ 不能直接 Object.assign(ctx, obj)：obj 自己也带 data 属性，会把上面这份拷贝
+  //    覆盖回去，于是所有 ctx 共享同一份 data，测试用例之间互相串状态
+  //    （2026-10-02 修：详情页「找不到比赛」的用例被上一个用例的 match 污染过）。
+  const ctx = { __isCtx: true }
+  Object.keys(obj).forEach((k) => { if (k !== 'data') ctx[k] = obj[k] })
+  ctx.data = Object.assign({}, obj.data)
   ctx.setData = function (patch, cb) {
     Object.assign(ctx.data, patch)
     if (typeof cb === 'function') cb()
@@ -183,7 +188,9 @@ async function run() {
   require(path.join(ROOT, 'pages/detail/detail.js'))
   const detOpts = global.__page
   const ctxDet = makeCtx(detOpts)
+  // onLoad 是 async：本地找不到或没比分时会先拉一次云端再渲染，要等一个微任务
   detOpts.onLoad.call(ctxDet, { id: encodeURIComponent(target.id) })
+  await waitUntil(() => ctxDet.data.match || ctxDet.data.loadError)
   const dt = ctxDet.data
   check('详情页：按 id 找到比赛', !!dt.match && dt.match.id === target.id)
   check('详情页：赛事元信息正确', dt.comp && dt.comp.name.length > 0)
@@ -728,6 +735,7 @@ async function run() {
   // 详情页提醒按钮
   const ctxDet2 = makeCtx(detOpts)
   detOpts.onLoad.call(ctxDet2, { id: encodeURIComponent(target.id) })
+  await waitUntil(() => ctxDet2.data.match || ctxDet2.data.loadError)
   check('详情页：初始未设提醒', ctxDet2.data.isRemind === false)
   detOpts.onRemindTap.call(ctxDet2)
   check('详情页：点提醒后状态变为已设', ctxDet2.data.isRemind === true)
@@ -861,7 +869,22 @@ async function run() {
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸
   briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })
-  const settle = () => new Promise((r) => setTimeout(r, 0))
+  // 用函数声明而不是 const：页面 onLoad 有的是 async（详情页会先拉云端再渲染），
+  // 上方就要用 settle 等一个微任务，const 会撞 TDZ。
+  function settle() {
+    return new Promise((r) => setTimeout(r, 0))
+  }
+
+  /** 等到条件成立（或轮询耗尽）。详情页 onLoad 是 async 且可能真的发网络请求，
+      单次 setTimeout(0) 不一定够，这里最多等 ~200ms。 */
+  async function waitUntil(fn, tries) {
+    const max = tries || 20
+    for (let i = 0; i < max; i += 1) {
+      if (fn()) return true
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    return false
+  }
 
   require(path.join(ROOT, 'pages/brief/brief.js'))
   const bfOpts = global.__page
@@ -1078,6 +1101,7 @@ async function run() {
   const detRank = makeCtx(detOpts)
   const detMatchForRank = allData.matches().find((m) => allData.standingsOf(m.comp))
   detOpts.onLoad.call(detRank, { id: detMatchForRank ? detMatchForRank.id : '' })
+  await waitUntil(() => detRank.data.match || detRank.data.loadError)
   check('详情页：有积分榜的赛事显示榜单入口', detRank.data.hasStandings === true, detMatchForRank ? detMatchForRank.comp : '无')
   detOpts.onStandingsTap.call(detRank)
   check('详情页：点积分榜入口跳对应赛事',
@@ -1110,6 +1134,35 @@ async function run() {
     appJson.tabBar.list.map((t) => t.text).join('/'))
   check('积分榜页已注册且指向 pages/rank/rank',
     appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
+
+  /* ---------- 分享进来的详情页（2026-10-02 用户反馈：好友看不到比分） ---------- */
+  // 本地包是发版那一刻的快照，比分一定落后云端；详情页必须先渲染本地、再拿云端补。
+  // 把 refresh 打桩成「立刻失败」，避免这条用例真的去等云端请求
+  const realRefresh = allData.refresh
+  allData.refresh = async () => ({ updated: false, reason: 'stub' })
+  const ctxDetMiss = makeCtx(detOpts)
+  // onLoad 返回 promise，直接 await 比轮询更确定
+  await detOpts.onLoad.call(ctxDetMiss, { id: '不存在的比赛id' })
+  check('详情页：比赛不存在时给出提示而非白屏', !!ctxDetMiss.data.loadError, ctxDetMiss.data.loadError)
+  allData.refresh = realRefresh
+
+  const ctxDetShare = makeCtx(detOpts)
+  const shareMatch = allData.matches().find((m) => m.status === 'finished')
+  detOpts.onLoad.call(ctxDetShare, { id: shareMatch ? shareMatch.id : '' })
+  await waitUntil(() => ctxDetShare.data.match)
+  check('详情页：本地有数据时立即渲染（不等网络）', !!ctxDetShare.data.match,
+    shareMatch ? `${ctxDetShare.data.match.home.zhName} ${ctxDetShare.data.match.home.score}-${ctxDetShare.data.match.away.score}` : '')
+
+  /* ---------- 队名宽度红线（用户两次反馈被折叠） ---------- */
+  const rankCss = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxss'), 'utf8')
+  const grab = (re) => { const m = rankCss.match(re); return m ? Number(m[1]) : 0 }
+  const tdW = grab(/\.td\s*\{[^}]*width:\s*(\d+)rpx/)
+  const posW = grab(/\.th-pos,\s*\n?\.td-pos\s*\{[^}]*width:\s*(\d+)rpx/) || grab(/\.td-pos\s*\{[^}]*width:\s*(\d+)rpx/)
+  const nameFont = grab(/\.team-name\s*\{[^}]*font-size:\s*(\d+)rpx/)
+  const padX = grab(/\.tr\s*\{[^}]*padding:\s*0\s*(\d+)rpx/)
+  const nameW = 750 - posW - 4 * tdW - padX * 2
+  check('积分榜：队名列够放 6 个汉字', nameW >= 6 * nameFont,
+    `队名列 ${nameW}rpx，6 字需 ${6 * nameFont}rpx（数字列 ${tdW}rpx × 4）`)
 
   /* ---------- 输出 ---------- */
   let failed = 0

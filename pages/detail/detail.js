@@ -18,16 +18,49 @@ Page({
     authState: 'unknown',
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
+    loading: false,
+    loadError: '',
   },
 
-  onLoad(query) {
-    const app = appInstance()
+  /**
+   * ⚠️ 从分享卡片进来时，本地包里的比分几乎一定是过期的 —— 比分每 15 分钟由
+   *   同步任务写进云端，而 data/matches.js 是发版那一刻的快照。
+   *   以前这里只读本地包，结果别人点开分享看到的是「还没比分」的比赛。
+   *   现在改成：本地先落地渲染（秒开），再拉一次云端并重新渲染。
+   */
+  async onLoad(query) {
     const id = query && query.id ? decodeURIComponent(query.id) : ''
+    this.matchId = id
+
+    // 1) 本地有的先渲染 —— 不等网络，点开分享立刻能看到内容
     const raw = data.findMatch(id)
-    if (!raw) {
-      wx.showToast({ title: '找不到这场比赛', icon: 'none' })
-      return
+    if (raw) {
+      this.applyMatch(raw)
+    } else {
+      this.setData({ loading: true })
     }
+
+    // 2) 再拉云端补最新比分（本地包是发版那一刻的快照，比分一定落后）。
+    //    加超时兜底：网络差的时侯不能让页面一直停在加载态，本地数据已经渲染出来了，够了。
+    const r = await Promise.race([
+      data.refresh(),
+      new Promise((resolve) => setTimeout(() => resolve({ updated: false, reason: 'timeout' }), 6000)),
+    ])
+    if (r && r.updated) {
+      const fresh = data.findMatch(id)
+      if (fresh) this.applyMatch(fresh)
+    }
+    if (!this.data.match) {
+      this.setData({
+        loading: false,
+        loadError: '找不到这场比赛，它可能已经从赛程里下架了。',
+      })
+    }
+  },
+
+  /** 用一场比赛对象刷新整页（onLoad 与云端回补共用同一套逻辑） */
+  applyMatch(raw) {
+    const app = appInstance()
     const match = view.decorate.call({ compOf: data.compOf }, raw)
     const comp = data.compOf(match.comp)
     const rows = [
@@ -44,6 +77,8 @@ Page({
       match,
       comp,
       rows,
+      loading: false,
+      loadError: '',
       isFav: app.isFav(match.id),
       isRemind: reminders.has(match.id),
       authState: app.globalData.authState,
@@ -76,6 +111,14 @@ Page({
 
   onShow() {
     const app = appInstance()
+    // 从后台切回来时同步一次：进行中的比分可能已经变了
+    if (this.matchId) {
+      data.refresh().then((r) => {
+        if (!r || !r.updated) return
+        const m2 = data.findMatch(this.matchId)
+        if (m2 && m2 !== this.data.match) this.applyMatch(m2)
+      })
+    }
     if (!this.data.match) return
     this.setData({
       isFav: app.isFav(this.data.match.id),

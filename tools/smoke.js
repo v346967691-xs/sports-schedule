@@ -776,30 +776,43 @@ async function run() {
   check('关注页：再点取消关注', ctxTeams.data.followedCount === 0)
   check('关注存储：取消后 has 不命中', tfMod.has('epl', '359') === false)
 
-  /* ---------- 赛程日报 ---------- */
+  /* ---------- 赛程日报 ----------
+     ⚠️ `data/brief/` 是 .gitignore 的（日报产物由 CI / brief-push.js 重新生成，里面有 AI 出图，
+        提交进 git 只会让仓库膨胀）。所以在 `git archive` 出来的干净检出里它是**不存在**的 ——
+        这时下面那些依赖产物的断言必然为红，而那是"环境里没有产物"，不是"代码坏了"。
+        踩过：干净副本里 smoke 直接崩在 briefRows[0].pub_at 上，一屏红字盖住了真正的问题。
+        现在显式识别这种情况并跳过，让 smoke 在干净副本 / CI 里也能跑完整轮。 */
   const briefApi = require(path.join(ROOT, 'utils/brief'))
   const briefDir = path.join(ROOT, 'data/brief')
   const briefFiles = fs.existsSync(briefDir)
     ? fs.readdirSync(briefDir).filter((f) => f.endsWith('.json')).sort()
     : []
-  check('日报：本地已生成期次文件', briefFiles.length > 0, `${briefFiles.length} 期`)
-
   // 按云表真实行结构构造（列名是 snake_case，这是云端返回的原样）
   const briefRows = briefFiles.map((f) => {
     const p = JSON.parse(fs.readFileSync(path.join(briefDir, f), 'utf8'))
     return { id: p.id, kind: p.kind, date: p.date, pub_at: p.pubAt, mode: p.mode, payload: p, generated_at: p.generatedAt }
   }).sort((a, b) => Date.parse(b.pub_at) - Date.parse(a.pub_at))
 
-  check('日报：id 符合云端写入约束', briefRows.every((r) => /^[0-9]{4}-[0-9]{2}-[0-9]{2}-(morning|evening)$/.test(r.id)),
-    briefRows.length ? briefRows[0].id : '')
+  const noBriefArtifacts = briefRows.length === 0
+  if (noBriefArtifacts) {
+    check('日报：干净检出下没有 data/brief/ 产物（按预期跳过依赖产物的日报断言）', true,
+      'data/brief/ 不存在或为空 —— 本地跑请先执行日报生成任务；CI 下由同步任务生成')
+  } else {
+    check('日报：本地已生成期次文件', briefFiles.length > 0, `${briefFiles.length} 期`)
+  }
+
+  check('日报：id 符合云端写入约束', noBriefArtifacts
+    || briefRows.every((r) => /^[0-9]{4}-[0-9]{2}-[0-9]{2}-(morning|evening)$/.test(r.id)),
+  briefRows.length ? briefRows[0].id : '')
   check('日报：每期都带 AI 生成标识（合规强制）',
     briefRows.every((r) => r.payload.aigc && r.payload.aigc.explicit === 'AI 生成'))
   check('日报：出报时刻只落在 06:00 / 21:00', briefRows.every((r) => /T(06|21):00/.test(r.pub_at)),
     briefRows.length ? briefRows[0].pub_at : '')
 
   // 云端返回 timestamptz 常用 +00:00 输出，显示层必须自己换算到北京时间
-  check('日报：北京时间显示', /^\d{1,2}月\d{1,2}日 (06|21):00$/.test(briefApi.fmtPubAt(briefRows[0].pub_at)),
-    briefApi.fmtPubAt(briefRows[0].pub_at))
+  check('日报：北京时间显示',
+    noBriefArtifacts || /^\d{1,2}月\d{1,2}日 (06|21):00$/.test(briefApi.fmtPubAt(briefRows[0].pub_at)),
+    briefRows.length ? briefApi.fmtPubAt(briefRows[0].pub_at) : '（无产物，已跳过）')
   check('日报：+00:00 输出也能换算成北京时间',
     briefApi.fmtPubAt('2026-09-28T22:00:00+00:00') === '9月29日 06:00',
     briefApi.fmtPubAt('2026-09-28T22:00:00+00:00'))
@@ -921,25 +934,26 @@ async function run() {
   const ctxBf = makeCtx(bfOpts)
   bfOpts.onLoad.call(ctxBf)
   await settle()
-  check('日报页：拉到期次列表', ctxBf.data.list.length > 0, `${ctxBf.data.list.length} 期`)
+  check('日报页：拉到期次列表', noBriefArtifacts || ctxBf.data.list.length > 0, `${ctxBf.data.list.length} 期`)
   check('日报页：最多只取 10 期', ctxBf.data.list.length <= 10, `${ctxBf.data.list.length} 期`)
-  check('日报页：默认停在最新一期', ctxBf.data.idx === 0 && !!ctxBf.data.cur)
-  check('日报页：出报时间已格式化', /月/.test(ctxBf.data.pubText), ctxBf.data.pubText)
+  check('日报页：默认停在最新一期', noBriefArtifacts || (ctxBf.data.idx === 0 && !!ctxBf.data.cur))
+  check('日报页：出报时间已格式化', noBriefArtifacts || /月/.test(ctxBf.data.pubText), ctxBf.data.pubText)
 
   // 内容断言看全部期次，不受「页面只加载最近 10 期」影响
   const reportIssue = allIssues.find((x) => x.mode === 'report')
   const previewIssue = allIssues.find((x) => x.mode === 'preview')
   const reportCount = allIssues.filter((x) => x.mode === 'report').length
-  check('日报：存在战报期', !!reportIssue, `${reportCount} 期战报 / ${allIssues.length} 期`)
-  check('日报：战报期含标题/导语/正文', !!reportIssue && !!reportIssue.headline.title
-    && !!reportIssue.headline.lead && reportIssue.headline.body.length > 0,
-    reportIssue ? reportIssue.headline.title : '无')
-  check('日报：战报头条带 matchId 可跳详情', !!reportIssue && !!reportIssue.headline.matchId)
-  check('日报：战报头条含数据栏', !!reportIssue && !!reportIssue.headline.factbox)
-  check('日报：前瞻期含分组对阵', !!previewIssue && previewIssue.preview.items.length > 0,
+  // 没有产物时这几条一律按"跳过"处理（`noBriefArtifacts` 已在上面判定并说明）
+  check('日报：存在战报期', noBriefArtifacts || !!reportIssue, `${reportCount} 期战报 / ${allIssues.length} 期`)
+  check('日报：战报期含标题/导语/正文', noBriefArtifacts || (!!reportIssue && !!reportIssue.headline.title
+    && !!reportIssue.headline.lead && reportIssue.headline.body.length > 0),
+  reportIssue ? reportIssue.headline.title : '无')
+  check('日报：战报头条带 matchId 可跳详情', noBriefArtifacts || (!!reportIssue && !!reportIssue.headline.matchId))
+  check('日报：战报头条含数据栏', noBriefArtifacts || (!!reportIssue && !!reportIssue.headline.factbox))
+  check('日报：前瞻期含分组对阵', noBriefArtifacts || (!!previewIssue && previewIssue.preview.items.length > 0),
     previewIssue ? `${previewIssue.preview.items.length} 场` : '无')
   check('日报：前瞻按项目分组（足球/篮球/电竞）',
-    !!previewIssue && previewIssue.preview.items.every((it) => !!it.groupZh))
+    noBriefArtifacts || (!!previewIssue && previewIssue.preview.items.every((it) => !!it.groupZh)))
   check('日报：入口摘要不为空', allIssues.every((x) => !!briefApi.teaser(x)),
     reportIssue ? briefApi.teaser(reportIssue) : '')
 
@@ -971,7 +985,7 @@ async function run() {
   const ctxIdxBrief = makeCtx(indexOpts)
   indexOpts.onLoad.call(ctxIdxBrief)
   await settle()
-  check('首页：日报入口条有摘要', !!(ctxIdxBrief.data.brief && ctxIdxBrief.data.brief.tip),
+  check('首页：日报入口条有摘要', noBriefArtifacts || !!(ctxIdxBrief.data.brief && ctxIdxBrief.data.brief.tip),
     ctxIdxBrief.data.brief ? ctxIdxBrief.data.brief.tip : '未取到')
   indexOpts.goBrief.call(ctxIdxBrief)
   check('首页：点日报入口跳日报页', collected.navigateTo === '/pages/brief/brief', collected.navigateTo)
@@ -979,7 +993,7 @@ async function run() {
   const ctxMineBrief = makeCtx(mineOpts)
   mineOpts.onLoad.call(ctxMineBrief)
   await settle()
-  check('我的页：日报入口有摘要', !!(ctxMineBrief.data.brief && ctxMineBrief.data.brief.tip),
+  check('我的页：日报入口有摘要', noBriefArtifacts || !!(ctxMineBrief.data.brief && ctxMineBrief.data.brief.tip),
     ctxMineBrief.data.brief ? ctxMineBrief.data.brief.tip : '未取到')
   mineOpts.goBrief.call(ctxMineBrief)
   check('我的页：点日报入口跳日报页', collected.navigateTo === '/pages/brief/brief', collected.navigateTo)

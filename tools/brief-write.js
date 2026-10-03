@@ -345,7 +345,7 @@ function body(m) {
     const need = bw.need;
     const wname = pad(hs > as ? hz : az, 'r');   // 「上海EDG.M以…」要留一个空格
     if (bo >= 5 && best === need && worst === need - 1) {
-      p2 = '系列赛打满 ' + bw.boZh + '，' + wname + '以 ' + best + '-' + worst + ' 拿下，决胜局分出高下。';
+      p2 = '系列赛打满' + bw.boZh + '，' + wname + '以 ' + best + '-' + worst + ' 拿下，决胜局分出高下。';
     } else if (bo >= 5 && best === need && worst === 0) {
       p2 = '连下' + zhNum(need) + '城，' + wname + ' ' + best + '-0 横扫对手，未丢一局。';
     } else if (bo >= 5) {
@@ -384,17 +384,19 @@ function body(m) {
   if (hT1 && aT1) bits.push('这是两支顶级球队之间的对话');
   else if (T.isStrong(hz) && T.isStrong(az)) bits.push('两队都属本赛事的强队之列');
   if (T.isCn(hz) || T.isCn(az)) bits.push('中国队伍出战，对国内球迷而言分量不同');
-  // ⚠️ 这里**只**写「赛区」——`chn` 是国家队，说「中国赛区的比赛」是错的
-  //    （2026-10-03 抽查 09-30 亚运半决赛时发现：那场是中国U23，本该走上面那句）
-  else if (m.comp === 'lpl' || m.comp === 'kpl') bits.push('中国赛区的比赛');
+  // ⚠️ **不要**为 `lpl`/`kpl` 另加一句「中国赛区的比赛」：这两个赛区**整建制都是中国队伍**，
+  //    对一场内战的读者来说等于废话（正是用户 2026-10-03 说的"空洞"的一部分）。
+  //    `chn`（国家队）走上面那句；`lpl`/`kpl` 没别的料就交给末尾的「无料不写段」。
   if (st.label === '决赛') bits.push('这一场直接关系到冠军归属');
   else if (st.label === '半决赛') bits.push('胜者距离决赛只差一步');
   else if (st.label === '四分之一决赛') bits.push('八强战，输球即止步');
   else if (st.label === '淘汰赛阶段') bits.push('淘汰赛阶段，输一场即出局');
   else if (st.label === '小组赛' || st.label === '瑞士轮') bits.push('赛制下每一场都影响出线形势');
   if (nar.key === 'upset') bits.push('结果并不在多数人的预期之内');
-  // ⚠️ 兜底句也必须是真的：原来的「将计入本阶段的后续走势」是空话，改成陈述事实
-  paras.push(bits.length ? bits.join('，') + '。' : '这场比赛的赛果已记入当日赛程。');
+  // 🔴 **没料就不写这一段**。曾经的兜底句「将计入本阶段的后续走势」「这场比赛的赛果
+  //    已记入当日赛程」都是填充物 —— 用户 2026-10-03 反馈的"措辞空洞"正是冲着这类句子。
+  //    宁可正文少一段，也不要凑一句没有信息量的话（smoke 只要求 body 非空）。
+  if (bits.length) paras.push(bits.join('，') + '。');
 
   return paras.map(tidy);
 }

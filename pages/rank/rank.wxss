@@ -40,6 +40,124 @@
   margin-right: 24rpx;
 }
 
+/* ------------------------------------------------------------ 档位分段控件
+   积分榜 / 射手榜 / 助攻榜。不可用的档位置灰且点了不响应。
+   ⚠️ 选中态必须写成 `.tier-bar .tier.active`（0-3-0），
+      只写 `.tier.active`（0-2-0）压不住上面的 `.tier-bar .tier` —— 与 chip 同一个权重坑。 */
+.tier-bar {
+  flex: none;
+  display: flex;
+  padding: 4rpx 24rpx 16rpx;
+  background: #fff;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.tier-bar .tier {
+  flex: 1;
+  margin: 0 6rpx;
+  padding: 12rpx 0;
+  text-align: center;
+  font-size: 25rpx;
+  color: var(--sub);
+  background: var(--bg);
+  border-radius: 10rpx;
+  transition: all 0.15s;
+}
+
+.tier-bar .tier.active {
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+.tier-bar .tier.disabled {
+  color: var(--muted);
+  opacity: 0.4;
+}
+
+/* ------------------------------------------------------------ 球员榜表格
+   列：# + 球员（队名折行在第二行）+ 数字 + 场次。
+   球员列占满剩余宽度：750 - 48(外边距) - 32(内边距) - 52 - 96 - 88 = 434rpx，
+   够放「埃尔林·哈兰德」这类六字名再加一条英文原名。 */
+.table.scorer .tr {
+  height: 88rpx;
+}
+
+.th-player,
+.td-player {
+  flex: 1;
+  min-width: 0;
+  padding-right: 10rpx;
+}
+
+.th-val,
+.td-val {
+  flex: none;
+  width: 96rpx;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.th-played,
+.td-played {
+  flex: none;
+  width: 88rpx;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.td-val {
+  font-size: 27rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.td-played {
+  font-size: 24rpx;
+  color: var(--sub);
+}
+
+.th-player,
+.th-val,
+.th-played {
+  font-size: 21rpx;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.player-name {
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.player-name > text:first-child {
+  flex: none;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-en {
+  flex: none;
+  margin-left: 10rpx;
+  font-size: 20rpx;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.player-team {
+  margin-top: 2rpx;
+  font-size: 20rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .meta {
   display: flex;
   align-items: baseline;

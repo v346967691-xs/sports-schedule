@@ -19,6 +19,21 @@
     </view>
   </scroll-view>
 
+  <!--
+    档位分段控件：积分榜 / 射手榜 / 助攻榜。
+    ⚠️ 三档的赛事覆盖面不一样（欧协联只有积分榜，上游不给射手榜），
+       拿不到内容的档位置灰且点了不响应 —— 与「空赛事入口隐藏」同一约定。
+  -->
+  <view class="tier-bar" wx:if="{{tiers.length}}">
+    <view
+      wx:for="{{tiers}}"
+      wx:key="key"
+      class="tier {{item.key === tier ? 'active' : ''}} {{item.enabled ? '' : 'disabled'}}"
+      data-key="{{item.key}}"
+      bindtap="onTierTap"
+    >{{item.label}}</view>
+  </view>
+
   <!-- 内容区：左右横滑立刻换赛事，同时把顶部标签锚定过去 -->
   <swiper
     wx:if="{{slides.length}}"
@@ -30,82 +45,138 @@
     <swiper-item wx:for="{{slides}}" wx:key="key">
       <scroll-view class="slide-scroll" scroll-y scroll-top="{{item.scrollTop}}">
         <block wx:if="{{item.visible}}">
-          <view class="meta" wx:if="{{item.totalTeams}}">
-            <text class="meta-main">{{item.name}} · {{item.totalTeams}} 支球队</text>
-            <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
-          </view>
-          <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
+          <!-- 积分榜档 -->
+          <block wx:if="{{tier === 'standings'}}">
+            <view class="meta" wx:if="{{item.totalTeams}}">
+              <text class="meta-main">{{item.name}} · {{item.totalTeams}} 支球队</text>
+              <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+            </view>
+            <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
 
-          <view class="empty" wx:if="{{item.empty}}">
-            <view class="empty-title">该赛事暂无积分榜</view>
-            <view class="empty-desc">杯赛和中国国字号本来就没有排名，换一个赛事看看。</view>
-          </view>
-
-          <block wx:for="{{item.groups}}" wx:key="name" wx:for-item="group">
-            <view class="group-head" wx:if="{{group.name}}">
-              <view class="group-line"></view>
-              <view class="group-name">{{group.name}}</view>
-              <view class="group-line"></view>
+            <view class="empty" wx:if="{{item.empty}}">
+              <view class="empty-title">该赛事暂无积分榜</view>
+              <view class="empty-desc">杯赛和中国国字号本来就没有排名，换一个赛事看看。</view>
             </view>
 
-            <view class="table card">
+            <block wx:for="{{item.groups}}" wx:key="name" wx:for-item="group">
+              <view class="group-head" wx:if="{{group.name}}">
+                <view class="group-line"></view>
+                <view class="group-name">{{group.name}}</view>
+                <view class="group-line"></view>
+              </view>
+
+              <view class="table card">
+                <view class="tr th">
+                  <view class="th-pos">#</view>
+                  <view class="th-team">球队</view>
+                  <view
+                    wx:for="{{item.columns}}"
+                    wx:for-item="col"
+                    wx:for-index="ci"
+                    wx:key="key"
+                    class="td num {{col.strong ? 'strong' : ''}}"
+                  >{{col.label}}</view>
+                </view>
+
+                <view
+                  wx:for="{{group.rows}}"
+                  wx:for-item="row"
+                  wx:key="id"
+                  class="tr {{row.zoneBg ? 'zoned' : ''}}"
+                  style="background: {{row.zoneBg}};"
+                  data-id="{{row.id}}"
+                  bindtap="onRowTap"
+                  hover-class="tr-hover"
+                >
+                  <view class="td-pos">
+                    <text class="pos-num">{{row.pos}}</text>
+                  </view>
+                  <view class="td-team">
+                    <view class="team-name">{{row.name}}</view>
+                  </view>
+                  <view
+                    wx:for="{{row.cells}}"
+                    wx:for-item="cell"
+                    wx:for-index="ci"
+                    class="td num {{item.columns[ci].strong ? 'strong' : ''}}"
+                  >{{cell}}</view>
+
+                  <!-- 区块标签：只画在色带第一行，悬在行顶部与上一行的交界处 -->
+                  <view wx:if="{{row.zoneFirst}}" class="zone-chip" style="background: {{row.zoneColor}};">
+                    {{row.zoneLabel}}
+                  </view>
+                </view>
+              </view>
+            </block>
+
+            <view class="legend" wx:if="{{item.legend.length}}">
+              <block wx:for="{{item.legend}}" wx:key="label">
+                <view class="legend-item" wx:if="{{item.label}}">
+                  <view class="legend-dot" style="background: {{item.color}}"></view>
+                  <text>{{item.label}}</text>
+                </view>
+              </block>
+            </view>
+
+            <view class="foot-note">
+              分区色带只标联赛名次能确定的欧战席位，不含杯赛冠军名额与欧战表现名额；降级与欧国联升降级按官方赛制标注。
+              足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
+              电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
+            </view>
+          </block>
+
+          <!-- 射手榜 / 助攻榜档 -->
+          <block wx:else>
+            <view class="meta" wx:if="{{item.rankRows.length}}">
+              <text class="meta-main">{{item.name}} · {{tier === 'goals' ? '射手榜' : '助攻榜'}} 前 {{item.rankRows.length}} 名</text>
+              <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+            </view>
+            <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
+
+            <view class="empty" wx:if="{{!item.rankRows.length}}">
+              <view class="empty-title">该赛事暂无{{tier === 'goals' ? '射手榜' : '助攻榜'}}</view>
+              <view class="empty-desc">上游只提供部分赛事的球员榜，杯赛和国字号通常没有。</view>
+            </view>
+
+            <view class="table card scorer" wx:if="{{item.rankRows.length}}">
               <view class="tr th">
                 <view class="th-pos">#</view>
-                <view class="th-team">球队</view>
-                <view
-                  wx:for="{{item.columns}}"
-                  wx:for-item="col"
-                  wx:for-index="ci"
-                  wx:key="key"
-                  class="td num {{col.strong ? 'strong' : ''}}"
-                >{{col.label}}</view>
+                <view class="th-player">球员</view>
+                <view class="th-val">{{tier === 'goals' ? '进球' : '助攻'}}</view>
+                <view class="th-played">场次</view>
               </view>
 
               <view
-                wx:for="{{group.rows}}"
+                wx:for="{{item.rankRows}}"
                 wx:for-item="row"
                 wx:key="id"
-                class="tr {{row.zoneBg ? 'zoned' : ''}}"
-                style="background: {{row.zoneBg}};"
-                data-id="{{row.id}}"
+                class="tr"
+                data-id="{{row.teamId}}"
                 bindtap="onRowTap"
                 hover-class="tr-hover"
               >
                 <view class="td-pos">
                   <text class="pos-num">{{row.pos}}</text>
                 </view>
-                <view class="td-team">
-                  <view class="team-name">{{row.name}}</view>
+                <view class="td-player">
+                  <!-- 中文名优先，未收录回落英文短名 —— 中英混排是预期内的正常状态 -->
+                  <view class="player-name">
+                    <text>{{row.name}}</text>
+                    <text class="player-en" wx:if="{{row.hasZh}}">{{row.en}}</text>
+                  </view>
+                  <view class="player-team" wx:if="{{row.team}}">{{row.team}}</view>
                 </view>
-                <view
-                  wx:for="{{row.cells}}"
-                  wx:for-item="cell"
-                  wx:for-index="ci"
-                  class="td num {{item.columns[ci].strong ? 'strong' : ''}}"
-                >{{cell}}</view>
-
-                <!-- 区块标签：只画在色带第一行，悬在行顶部与上一行的交界处 -->
-                <view wx:if="{{row.zoneFirst}}" class="zone-chip" style="background: {{row.zoneColor}};">
-                  {{row.zoneLabel}}
-                </view>
+                <view class="td-val">{{row.value}}</view>
+                <view class="td-played">{{row.played || '—'}}</view>
               </view>
             </view>
+
+            <view class="foot-note">
+              榜单由上游官方统计实时同步，只列各赛事前 {{item.rankRows.length}} 名。
+              球员中文名来自自建词典，尚未收录的球员显示英文原名 —— 中英混排是正常现象。
+              点一行可查看该球员所属球队的详情。
+            </view>
           </block>
-
-          <view class="legend" wx:if="{{item.legend.length}}">
-            <block wx:for="{{item.legend}}" wx:key="label">
-              <view class="legend-item" wx:if="{{item.label}}">
-                <view class="legend-dot" style="background: {{item.color}}"></view>
-                <text>{{item.label}}</text>
-              </view>
-            </block>
-          </view>
-
-          <view class="foot-note">
-            分区色带只标联赛名次能确定的欧战席位，不含杯赛冠军名额与欧战表现名额；降级与欧国联升降级按官方赛制标注。
-            足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
-            电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
-          </view>
 
           <view class="safe-bottom"></view>
         </block>
@@ -114,11 +185,11 @@
   </swiper>
 
   <view class="empty" wx:if="{{emptyReason}}">
-    <view class="empty-title">没有可展示的积分榜</view>
+    <view class="empty-title">没有可展示的榜单</view>
     <view class="empty-desc">
       {{emptyReason}}
       <block wx:if="{{comps.length}}">
-        换一个有积分榜的赛事看看，杯赛和中国国字号本来就没有排名。
+        换一个有榜单的赛事看看，杯赛和中国国字号本来就没有排名。
       </block>
     </view>
     <view class="empty-btn" bindtap="goSchedule">去看赛程</view>

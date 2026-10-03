@@ -1152,6 +1152,90 @@ async function run() {
       return true
     })(), ligaRows.map((r) => (r.zone && r.zone.label) || '').filter(Boolean).join('/'))
 
+  /* ---------- 射手榜 / 助攻榜（2026-10-03 新增） ---------- */
+  const scFile = path.join(ROOT, 'data/scorers.js')
+  check('射手榜：数据文件存在', fs.existsSync(scFile))
+  const scData = allData.scorersTables()
+  const scKeys = allData.scorersKeys()
+  check('射手榜：至少 10 个赛事有球员榜', Object.keys(scData).length >= 10, `${Object.keys(scData).length} 个`)
+  const scWant = ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'uel', 'csl', 'acl']
+  const scMissing = scWant.filter((k) => !scData[k])
+  check('射手榜：关键赛事都在', scMissing.length === 0, scMissing.length ? `缺 ${scMissing.join('/')}` : scKeys.join(','))
+  check('射手榜：keys 顺序与大类一致',
+    scKeys.join(',').indexOf('ucl') === 0 && scKeys.indexOf('epl') < scKeys.indexOf('csl'), scKeys.join(','))
+  // 上游不提供这两个榜的赛事不能凭空出现（篮球、电竞、国字号、杯赛）
+  check('射手榜：杯赛 / 国字号 / 篮球 / 电竞都没有球员榜',
+    !scData.worlds && !scData.msi && !scData.chn && !scData.agames
+    && !scData.nba && !scData.cba && !scData.kpl && !scData.u17 && !scData.u17w && !scData.asiacup)
+  // 覆盖面关系：有射手榜的赛事一定有积分榜，反过来不成立（欧协联有榜但上游不给球员榜）
+  check('射手榜：覆盖面是积分榜的真子集（欧协联有榜无射手榜）',
+    Object.keys(scData).every((k) => !!stData[k]) && !!stData.uecl && !scData.uecl,
+    `射手榜 ${Object.keys(scData).length} 项 / 积分榜 ${Object.keys(stData).length} 项`)
+  check('射手榜：每个赛事至少 20 名球员',
+    Object.keys(scData).every((k) => (scData[k].players || []).length >= 20),
+    Object.keys(scData).map((k) => `${k}=${scData[k].players.length}`).join(' '))
+
+  const scFlat = []
+  Object.keys(scData).forEach((k) => (scData[k].players || []).forEach((p) => scFlat.push(Object.assign({ comp: k }, p))))
+  check('射手榜：每条记录都有数字 athlete id', scFlat.every((p) => /^\d+$/.test(String(p.i || ''))), `${scFlat.length} 人`)
+  check('射手榜：每条记录至少有一个进球或助攻', scFlat.every((p) => p.g != null || p.a != null))
+  check('射手榜：球员 id 在同一赛事内唯一',
+    Object.keys(scData).every(function (k) {
+      const seen = {}
+      return (scData[k].players || []).every((p) => {
+        if (seen[p.i]) return false
+        seen[p.i] = 1
+        return true
+      })
+    }))
+  // 🔴 队名绝不能空着 —— 页面拿到空 tz 就会回落显示裸数字 team id（"7115"），比英文名还糟。
+  //    根因：espnZh 只按 id 查 ESPN_ZH，亚冠那批俱乐部只在按**名字**索引的 CLUB_ZH 里。
+  const bareTeam = scFlat.filter((p) => p.t && !p.tz)
+  check('射手榜：球队名不为空（不能把数字 team id 当队名显示）',
+    bareTeam.length === 0,
+    bareTeam.length ? `${bareTeam.length} 人，例如 ${bareTeam.slice(0, 3).map((p) => `${p.s}@${p.t}`).join(' / ')}` : `${scFlat.length} 人全部有队名`)
+  // 🔴 中文名必须含汉字。Wikidata 带 languagefallback 时缺中文标签会**回填英文**，
+  //    直接采信就会往字典里写进 'Danijel Šturm' 这种"中文名"（生成器已改为以 zhwiki 标题为准）
+  const badZh = scFlat.filter((p) => p.z && !/[\u3400-\u9fff]/.test(p.z))
+  check('射手榜：中文名必须含汉字（防止用英文回填）',
+    badZh.length === 0,
+    badZh.length ? badZh.slice(0, 3).map((p) => p.z).join(' / ') : `已汉化 ${scFlat.filter((p) => p.z).length}/${scFlat.length} 人`)
+
+  const znMod = require(path.join(ROOT, 'tools/zh-names'))
+  const manualIds = Object.keys(znMod.PLAYER_ZH || {})
+  check('射手榜：PLAYER_ZH 的 key 是 athlete id 且值非空',
+    manualIds.every((k) => /^\d+$/.test(k) && !!String(znMod.PLAYER_ZH[k]).trim()), `${manualIds.length} 条人工条目`)
+  let autoCount = 0
+  try {
+    autoCount = Object.keys(require(path.join(ROOT, 'tools/player-zh')).AUTO_PLAYER_ZH || {}).length
+  } catch (e) { autoCount = 0 }
+  check('射手榜：球员中文字典已建立（人工 + 自动种子）', manualIds.length + autoCount >= 100,
+    `人工 ${manualIds.length} + 自动 ${autoCount}`)
+  check('射手榜：playerZh 只吃 id，不按名字查（同名球员很多）',
+    znMod.playerZh('253989') === '哈兰德' && znMod.playerZh(253989) === '哈兰德' && znMod.playerZh('no-such-id') === '')
+  // 生成器里不能把友谊赛接上：友谊赛进球毫无参考价值（与「不抓友谊赛详情」同一理由）
+  const scSrc = fs.readFileSync(path.join(ROOT, 'tools/scorers.js'), 'utf8')
+  check('射手榜：友谊赛故意不接（进球无参考价值）', scSrc.indexOf("key: 'friendly'") === -1)
+
+  const uclGoals = allData.scorersTop('ucl', 'goals', 20)
+  check('射手榜：按进球降序', uclGoals.length > 0 && uclGoals.every((r, i) => i === 0 || uclGoals[i - 1].value >= r.value),
+    uclGoals.slice(0, 3).map((r) => `${r.name} ${r.value}`).join(' / '))
+  check('射手榜：名次从 1 连续、进球为 0 的不进榜',
+    uclGoals.every((r, i) => r.pos === i + 1 && r.value > 0))
+  check('射手榜：name 优先中文（有中文名的行必须含汉字）',
+    uclGoals.filter((r) => r.hasZh).every((r) => /[\u3400-\u9fff]/.test(r.name)))
+  check('射手榜：未收录中文名的回落英文短名（不是留空）',
+    uclGoals.filter((r) => !r.hasZh).every((r) => !!r.name && r.name === r.en))
+  const uclAssists = allData.scorersTop('ucl', 'assists', 20)
+  check('助攻榜：按助攻降序', uclAssists.length > 0 && uclAssists.every((r, i) => i === 0 || uclAssists[i - 1].value >= r.value),
+    uclAssists.slice(0, 3).map((r) => `${r.name} ${r.value}`).join(' / '))
+  check('射手榜：排序稳定（同一批数据两次调用结果一致）',
+    JSON.stringify(allData.scorersTop('liga', 'goals', 20)) === JSON.stringify(allData.scorersTop('liga', 'goals', 20)))
+  check('射手榜：没有球员榜的赛事返回空数组',
+    allData.scorersTop('uecl', 'goals', 20).length === 0
+    && allData.scorersTop('chn', 'goals', 20).length === 0
+    && allData.scorersTop('nba', 'goals', 20).length === 0)
+
   /* ---------- 比赛详情：事件时间轴 / 双方近况 / 历史交锋 / 技术统计 ---------- */
   const md = require(path.join(ROOT, 'tools/match-detail.js'))
   // ESPN 的 keyEvents 里约 1/4 是 "Start Delay" / "End Delay"，还有开哨、中场这类
@@ -1388,6 +1472,58 @@ async function run() {
   // 待定不是真球队，不能跳
   rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: 'TBD' } } })
   check('积分榜页：待定队名不可点', !/\/pages\/team\/team\?comp=csl&id=TBD/.test(collected.navigateTo || ''))
+
+  /* ---------- 积分榜页：射手榜 / 助攻榜档（2026-10-03 新增） ---------- */
+  rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'epl' } } })
+  check('积分榜页：三档都存在（积分榜 / 射手榜 / 助攻榜）',
+    ctxRank.data.tiers.length === 3 && ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜/射手榜/助攻榜',
+    ctxRank.data.tiers.map((t) => t.label).join('/'))
+  check('积分榜页：默认停在积分榜档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+
+  rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'goals' } } })
+  check('积分榜页：切到射手榜档并渲染出榜单',
+    ctxRank.data.tier === 'goals' && ctxRank.data.rankRows.length > 0,
+    `${ctxRank.data.tier} / ${ctxRank.data.rankRows.length} 行`)
+  check('积分榜页：射手榜按进球降序（渲染的就是排序后的行）',
+    ctxRank.data.rankRows.every((r, i) => i === 0 || ctxRank.data.rankRows[i - 1].value >= r.value),
+    ctxRank.data.rankRows.slice(0, 3).map((r) => `${r.name} ${r.value}`).join(' / '))
+  check('积分榜页：射手榜名次从 1 连续', ctxRank.data.rankRows.every((r, i) => r.pos === i + 1))
+  // 每一屏自带当前档位的行 —— 横滑切屏那一帧不能拿错榜（页面级镜像会晚一拍）
+  check('积分榜页：每一屏都自带当前档位的行数据',
+    ctxRank.data.slides.every((s) => Array.isArray(s.rankRows) && Array.isArray(s.goals) && Array.isArray(s.assists)))
+
+  rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'assists' } } })
+  check('积分榜页：切到助攻榜档并按助攻降序',
+    ctxRank.data.tier === 'assists' && ctxRank.data.rankRows.length > 0
+    && ctxRank.data.rankRows.every((r, i) => i === 0 || ctxRank.data.rankRows[i - 1].value >= r.value),
+    ctxRank.data.rankRows.slice(0, 3).map((r) => `${r.name} ${r.value}`).join(' / '))
+
+  // 射手榜一行点进去看的是「他所在的球队」，不是球员本人（没有球员详情页）
+  const scorerRow = ctxRank.data.rankRows[0]
+  collected.navigateTo = ''
+  rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: String(scorerRow.teamId) } } })
+  check('积分榜页：射手榜点一行跳到该球员所在球队',
+    !!scorerRow.teamId && new RegExp(`/pages/team/team\\?comp=epl&id=${scorerRow.teamId}`).test(collected.navigateTo || ''),
+    collected.navigateTo)
+
+  // 欧协联上游不给球员榜 → 该档位置灰、点了不响应、档位自动回落
+  rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'uecl' } } })
+  check('积分榜页：切到无球员榜的赛事时档位自动回落积分榜',
+    ctxRank.data.tier === 'standings', ctxRank.data.tier)
+  check('积分榜页：无球员榜赛事的射手榜档位置灰',
+    (ctxRank.data.tiers.find((t) => t.key === 'goals') || {}).enabled === false
+    && (ctxRank.data.tiers.find((t) => t.key === 'standings') || {}).enabled === true,
+    ctxRank.data.tiers.map((t) => `${t.label}${t.enabled ? '' : '(灰)'}`).join('/'))
+  rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'goals' } } })
+  check('积分榜页：点置灰的档位不生效',
+    ctxRank.data.tier === 'standings' && ctxRank.data.rankRows.length === 0)
+
+  // 分享链接带上档位，别人点开直接落在同一档
+  rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'liga' } } })
+  rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'goals' } } })
+  const scShare = rankOpts.onShareAppMessage.call(ctxRank)
+  check('积分榜页：分享链接带上了当前档位',
+    /comp=liga/.test(scShare.path || '') && /tier=goals/.test(scShare.path || ''), scShare.path)
 
   /* ---------- 入口打通 ---------- */
   // 首页赛事卡：有积分榜的才显示「积分榜 ›」

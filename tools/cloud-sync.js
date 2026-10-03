@@ -12,9 +12,11 @@
  *      （本地数据同时作为联网失败时的兜底）
  *   2) 复用 tools/standings.js 抓取积分榜、刷新本地 data/standings.js
  *      附加数据：失败只告警，不让主链路跟着失败（与 daily_brief 一个约定）
+ *   2c) 复用 tools/scorers.js 抓取射手榜/助攻榜、刷新本地 data/scorers.js
+ *      同样是附加数据，失败只告警
  *   3) 读取刚生成的快照
  *   4) 用 Node 云 SDK（以 publishableKey 的 anon 身份）upsert 进
- *      schedule_cache(id='latest') 与 standings_cache(id='latest')
+ *      schedule_cache(id='latest')、standings_cache(id='latest') 与 scorers_cache(id='latest')
  *
  * 退出码：任何一步失败都以非零退出，便于自动化捕获告警。
  */
@@ -125,6 +127,20 @@ async function main() {
     console.warn('[cloud-sync] ⚠ 比赛详情抓取失败，本次跳过推送：', (err && err.message) || err)
   }
 
+  // 2c) 抓取射手榜 / 助攻榜。
+  //     ⚠️ 只跑 ESPN 那一段（10 个请求），**不跑** tools/player-names.js ——
+  //        球员中文名靠 Wikidata 逐个核验，要跑好几分钟，塞进 15 分钟一班的定时任务
+  //        既慢又不值当。中文名在 player-names.js 生成时烘焙进 data/scorers.js，
+  //        未收录的新球员回落英文短名（预期行为）。
+  let scorers = null
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, 'scorers.js')], { stdio: 'inherit' })
+    delete require.cache[require.resolve('../data/scorers.js')]
+    scorers = require('../data/scorers.js')
+  } catch (err) {
+    console.warn('[cloud-sync] ⚠ 射手榜抓取失败，本次跳过推送：', (err && err.message) || err)
+  }
+
   // 3) 读取刚生成的快照（注意：本进程尚未 require 过，拿到的是新文件）
   //    用新进程跑 sync，避免 sync.js 底部的 main() 在 require 时被执行两次
   //
@@ -178,6 +194,23 @@ async function main() {
     }
   } else {
     console.warn('[cloud-sync] ⚠ 本次没有可用的积分榜数据，跳过推送')
+  }
+
+  if (scorers && scorers.tables && Object.keys(scorers.tables).length) {
+    log('推送云端 scorers_cache(id=latest) …')
+    const psc = await pushRow(cloud, 'scorers_cache', {
+      id: 'latest',
+      data: scorers,
+      generated_at: new Date().toISOString(),
+    })
+    if (!psc.ok) {
+      // 射手榜同样是增强数据，写不进去不该让整个同步任务失败
+      console.warn('[cloud-sync] ⚠ 射手榜推送云端失败：', psc.problem)
+    } else {
+      log(`已写入云端 scorers_cache：${Object.keys(scorers.tables).length} 个赛事`)
+    }
+  } else {
+    console.warn('[cloud-sync] ⚠ 本次没有可用的射手榜数据，跳过推送')
   }
 
   if (details && details.buckets && details.buckets.length) {

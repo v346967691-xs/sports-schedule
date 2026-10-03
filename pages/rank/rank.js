@@ -1,9 +1,12 @@
 /**
- * 积分榜页
+ * 积分榜 / 射手榜 / 助攻榜 页
  *
- * 数据来自 data/standings.js（本地兜底）+ 云端 standings_cache（打开即读）。
- * 哪些赛事有积分榜由数据本身决定 —— 杯赛（全球总决赛等）和中国国字号
- * 本来就没有排名，同步脚本不会产出，这里也就不会出现它们的标签。
+ * 数据来自 data/standings.js + data/scorers.js（本地兜底），
+ * 云端 standings_cache / scorers_cache 打开即读覆盖。
+ *
+ * ⚠️ 三档的**赛事覆盖面不一样**：有积分榜的赛事不一定有射手榜
+ *    （欧协联就没有，上游不提供这两个榜），所以每一档各自判断可用性，
+ *    不能「有积分榜就假设有射手榜」。不可用的档位置灰、点了不响应。
  *
  * ⚠️ 这是页面层：新增 / 改动都要发版。
  */
@@ -11,6 +14,16 @@ const share = require('../../utils/share')
 const data = require('../../utils/data')
 const fmt = require('../../utils/format')
 const { appInstance } = require('../../utils/app-instance')
+
+/** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
+const SCORER_ROWS = 20
+
+/** 三档的定义。key 同时是页面态与数据取数的开关 */
+const TIERS = [
+  { key: 'standings', label: '积分榜' },
+  { key: 'goals', label: '射手榜' },
+  { key: 'assists', label: '助攻榜' },
+]
 
 /**
  * 把一行积分榜数据压成 WXML 能直接渲染的形状。
@@ -74,6 +87,12 @@ Page({
     slides: [],
     /** 各赛事内容区自己的竖向滚动位置，点标签时把目标重置回顶部 */
     slideTop: {},
+    /** 当前档位：standings | goals | assists */
+    tier: 'standings',
+    /** 三档的可用性（随 activeComp 变），供分段控件置灰 */
+    tiers: [],
+    /** 当前档位的榜单行（射手榜 / 助攻榜），积分榜档为空数组 */
+    rankRows: [],
     // 以下是当前激活赛事的镜像，供分享标题等使用
     columns: [],
     groups: [],
@@ -92,11 +111,14 @@ Page({
     // ⚠️ query.comp 只在「分享卡片冷启动」这条路上有值。
     //    站内跳转**走不到这里** —— 积分榜是 tabBar 页面，只能 wx.switchTab，
     //    而 switchTab 不支持带 query，参数靠 globalData.pendingComp 交接（见 onShow）。
+    //    同理 query.tier：分享出去的射手榜，点开要直接落在射手榜档。
     const keys = data.standingsKeys()
     const wanted = query && query.comp ? decodeURIComponent(query.comp) : ''
     const activeComp = keys.indexOf(wanted) > -1 ? wanted : (keys[0] || '')
+    const tier = this.resolveTier(activeComp, query && query.tier ? decodeURIComponent(query.tier) : '')
     this.setData({
       activeComp,
+      tier,
       comps: keys.map((k) => {
         const c = data.compOf(k)
         return { key: k, name: c.name, accent: c.accent }
@@ -123,6 +145,36 @@ Page({
     data.refresh().then((r) => { if (r.updated) this.render() })
   },
 
+  /**
+   * 某个赛事在某一档下有没有内容。
+   * 判定只看**数据本身**：上游不给榜的赛事（欧协联）自然就没有这两档。
+   */
+  tierAvailable(key, tier) {
+    if (tier === 'standings') return !!data.standingsOf(key)
+    if (tier === 'goals') return data.scorersTop(key, 'goals', 1).length > 0
+    if (tier === 'assists') return data.scorersTop(key, 'assists', 1).length > 0
+    return false
+  },
+
+  /** 换赛事时把档位收敛到该赛事真正有的那几档；都没有就回到积分榜 */
+  resolveTier(key, want) {
+    const order = ['standings', 'goals', 'assists']
+    if (want && order.indexOf(want) > -1 && this.tierAvailable(key, want)) return want
+    for (const t of order) {
+      if (this.tierAvailable(key, t)) return t
+    }
+    return 'standings'
+  },
+
+  /** 顶部分段控件的三档状态（不可用的置灰，不可点） */
+  tierState(key) {
+    return TIERS.map((t) => ({
+      key: t.key,
+      label: t.label,
+      enabled: this.tierAvailable(key, t.key),
+    }))
+  },
+
   /** 把某个赛事的内容区滚动位置归零（点标签进来时，从第 1 名开始看） */
   topAt(key) {
     const st = Object.assign({}, this.data.slideTop)
@@ -138,17 +190,25 @@ Page({
     return -1
   },
 
-  /** 构造一个赛事的整屏数据 */
-  buildSlide(key, index, curIdx) {
+  /** 构造一个赛事的整屏数据。tier 传进来是为了让每一屏自己就知道该渲染哪张榜 */
+  buildSlide(key, index, curIdx, tier) {
     const name = data.compOf(key).name
     const near = Math.abs(index - curIdx) <= 1
     const visible = near || !!this._rendered[key]
     if (visible) this._rendered[key] = true
 
+    const goals = data.scorersTop(key, 'goals', SCORER_ROWS)
+    const assists = data.scorersTop(key, 'assists', SCORER_ROWS)
+    // 每一屏自带当前档位的行数据 —— 这样 WXML 里不必按档位写两套 wx:for，
+    // 横滑切屏的那一帧也不会拿错榜（页面级的镜像会晚一拍才同步）
+    const rankRows = tier === 'goals' ? goals : tier === 'assists' ? assists : []
+
     const blank = {
       key, name, index, visible, empty: true,
       columns: [], groups: [], legend: [], rows: 0,
       season: '', totalTeams: 0, scrollTop: this.data.slideTop[key] || 0,
+      goals: [], assists: [], rankRows,
+      hasGoals: goals.length > 0, hasAssists: assists.length > 0,
     }
     const table = data.standingsOf(key)
     if (!table) return blank
@@ -180,23 +240,34 @@ Page({
       season: table.season || '',
       totalTeams: groups.reduce((n, g) => n + g.rows.length, 0),
       scrollTop: this.data.slideTop[key] || 0,
+      // 射手榜 / 助攻榜：两个榜都在这里备好，切档只是换渲染，不重新算数据
+      goals,
+      assists,
+      rankRows,
+      hasGoals: goals.length > 0,
+      hasAssists: assists.length > 0,
     }
   },
 
   render() {
     const keys = data.standingsKeys()
     if (!keys.length) {
-      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
+      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
       return
     }
     const idx = Math.max(0, this.indexOfKey(this.data.activeComp))
-    const slides = keys.map((k, i) => this.buildSlide(k, i, idx))
-    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '' }
+    // 数据可能在刷新后变化：档位要按最新数据再收敛一次，避免停在一个已经没内容的档
+    const tier = this.resolveTier(this.data.activeComp, this.data.tier)
+    const slides = keys.map((k, i) => this.buildSlide(k, i, idx, tier))
+    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [] }
 
     this.setData({
       slides,
       swiperIndex: idx,
       emptyReason: '',
+      tier,
+      tiers: this.tierState(this.data.activeComp),
+      rankRows: cur.rankRows || [],
       // 激活赛事的镜像，供分享标题 / 冒烟断言使用
       compName: cur.name,
       columns: cur.columns,
@@ -204,9 +275,20 @@ Page({
       legend: cur.legend,
       season: cur.season,
       totalTeams: cur.totalTeams,
-      updatedAt: timeLabel(data.standingsGeneratedAt()),
+      updatedAt: timeLabel(tier === 'standings' ? data.standingsGeneratedAt() : data.scorersGeneratedAt()),
       source: data.source() === 'cloud' ? '云端' : '本地',
     })
+  },
+
+  /**
+   * 点「积分榜 / 射手榜 / 助攻榜」分段控件 → 切档。
+   * 不可用的档位置灰且点了不响应（与「空赛事入口隐藏」同一约定：拿不到就别给入口）。
+   */
+  onTierTap(e) {
+    const key = e.currentTarget.dataset.key
+    if (!key || key === this.data.tier) return
+    if (!this.tierAvailable(this.data.activeComp, key)) return
+    this.setData({ tier: key, slideTop: this.topAt(this.data.activeComp) }, () => this.render())
   },
 
   /**
@@ -218,6 +300,7 @@ Page({
     if (!key || key === this.data.activeComp) return
     this.setData({
       activeComp: key,
+      tier: this.resolveTier(key, this.data.tier),
       swiperIndex: this.indexOfKey(key),
       slideTop: this.topAt(key),
     }, () => this.render())
@@ -230,10 +313,14 @@ Page({
     const key = (slides[idx] || {}).key || (this.data.comps[idx] || {}).key
     if (!key || key === this.data.activeComp) return
     // 横滑不重置滚动位置：滑回来还在刚才那一行，符合直觉
-    this.setData({ activeComp: key }, () => this.render())
+    this.setData({ activeComp: key, tier: this.resolveTier(key, this.data.tier) }, () => this.render())
   },
 
-  /** 点一支球队 → 球队详情页 */
+  /**
+   * 点一行 → 球队详情页。
+   * ⚠️ 球队行才有 comp+id；射手榜的行是**球员**，没有球员详情页，
+   *    所以这里跟着球队 id 走：射手榜一行点了就去他所在的球队。
+   */
   onRowTap(e) {
     const id = e.currentTarget.dataset.id
     if (!id || String(id) === 'TBD') return
@@ -251,17 +338,23 @@ Page({
 
   onShareAppMessage() {
     const name = this.data.compName
+    const tierLabel = (TIERS.find((t) => t.key === this.data.tier) || {}).label || '积分榜'
     return share.message({
-      title: name ? `${name}积分榜 · 闪现赛程助手` : '闪现赛程助手 · 各赛事积分榜',
-      path: this.data.activeComp ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}` : '/pages/rank/rank',
+      title: name ? `${name}${tierLabel} · 闪现赛程助手` : `闪现赛程助手 · 各赛事${tierLabel}`,
+      path: this.data.activeComp
+        ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
+        : '/pages/rank/rank',
     })
   },
 
   onShareTimeline() {
     const name = this.data.compName
+    const tierLabel = (TIERS.find((t) => t.key === this.data.tier) || {}).label || '积分榜'
     return share.timeline({
-      title: name ? `${name}积分榜实时更新` : '各赛事积分榜实时更新',
-      query: this.data.activeComp ? `comp=${encodeURIComponent(this.data.activeComp)}` : '',
+      title: name ? `${name}${tierLabel}实时更新` : `各赛事${tierLabel}实时更新`,
+      query: this.data.activeComp
+        ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
+        : '',
     })
   },
 })

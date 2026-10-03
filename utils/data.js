@@ -18,12 +18,27 @@ const META_FALLBACK = { generatedAt: '', range: { from: '', to: '' }, categories
    文件缺失时整个数值就是一个空表，页面会显示「暂无积分榜」，不会白屏。 */
 const STANDINGS_FALLBACK = { generatedAt: '', tables: {} }
 
+/* 射手榜 / 助攻榜：与积分榜同一个套路（本地包兜底 + 云端覆盖）。
+   ⚠️ 它和积分榜是**两张独立的表**，各有各的赛事覆盖面：
+     有积分榜的赛事不一定有射手榜（欧协联就没有），反之亦然（欧国联有榜没榜）。
+      所以页面上「积分榜 / 射手榜 / 助攻榜」三档各自判断可用性，别互相推导。 */
+const SCORERS_FALLBACK = { generatedAt: '', tables: {} }
+
 let standingsData = (() => {
   try {
     return require('../data/standings.js')
   } catch (err) {
     console.error('[赛程助手] 积分榜数据加载失败', err)
     return STANDINGS_FALLBACK
+  }
+})()
+
+let scorersData = (() => {
+  try {
+    return require('../data/scorers.js')
+  } catch (err) {
+    console.error('[赛程助手] 射手榜数据加载失败', err)
+    return SCORERS_FALLBACK
   }
 })()
 
@@ -277,6 +292,72 @@ function teamStanding(compKey, teamId) {
   return null
 }
 
+/* -------------------------------------------------------- 射手榜 / 助攻榜 */
+
+/** 全部射手榜：{ [compKey]: { season, players[] } } */
+function scorersTables() {
+  return (scorersData && scorersData.tables) || {}
+}
+
+/** 某个赛事的射手榜/助攻榜数据；没有则返回 null（上游不提供这两个榜） */
+function scorersOf(compKey) {
+  return scorersTables()[compKey] || null
+}
+
+/** 哪些赛事有射手榜（按 SPORT_CATS 的展示顺序输出，用于页面切换） */
+function scorersKeys() {
+  const has = scorersTables()
+  const order = []
+  categories().forEach((cat) => {
+    cat.competitions.forEach((key) => { if (has[key]) order.push(key) })
+  })
+  return order
+}
+
+/** 当前生效的射手榜生成时间（云端优先，回落本地包） */
+function scorersGeneratedAt() {
+  return (scorersData && scorersData.generatedAt) || ''
+}
+
+/**
+ * 某个赛事的射手榜 / 助攻榜前 N 名。
+ *
+ * ⚠️ 数据里**只存一份球员列表**（进球榜 ∪ 助攻榜去重后的并集），
+ *    排序是页面按需现算的 —— 所以这里必须自己排，不要指望数据已经是排好的。
+ *    并列时用进球数兜底，保证顺序稳定、不会每次渲染都跳。
+ *
+ * @param {string} compKey
+ * @param {'goals'|'assists'} kind
+ * @param {number} [n=20]
+ */
+function scorersTop(compKey, kind, n) {
+  const table = scorersOf(compKey)
+  if (!table || !Array.isArray(table.players)) return []
+  const key = kind === 'assists' ? 'a' : 'g'
+  const other = kind === 'assists' ? 'g' : 'a'
+  const take = Number(n) || 20
+  return table.players
+    // 那一项没有数据的人不进这个榜（例如只上了助攻榜、进球数缺失的球员）
+    .filter((p) => p && p[key] != null && p[key] > 0)
+    .slice()
+    .sort((x, y) => (y[key] - x[key]) || ((y[other] || 0) - (x[other] || 0)) || String(x.i).localeCompare(String(y.i)))
+    .slice(0, take)
+    .map((p, i) => ({
+      pos: i + 1,
+      id: p.i,
+      // 中文名优先，未收录回落英文短名 —— 中英混排是预期内的正常状态
+      name: p.z || p.s || '',
+      en: p.s || '',
+      hasZh: !!p.z,
+      team: p.tz || '',
+      teamId: p.t || '',
+      value: p[key],
+      other: p[other] || 0,
+      played: p.p == null ? '' : String(p.p),
+      jersey: p.j || 0,
+    }))
+}
+
 /**
  * 某支球队的近期战绩（W/D/L），按时间倒序。
  *
@@ -402,6 +483,30 @@ async function refreshStandings() {
 }
 
 /**
+ * 射手榜同样打开即读云端。失败 / 云端更旧都沿用本地包，绝不抛错。
+ * 与赛程共用一次 refresh 的节流窗口，不额外增加请求压力。
+ */
+async function refreshScorers() {
+  if (!cloudClient.isReady()) return false
+  try {
+    const { data, error } = await cloudClient.cloud.database
+      .from('scorers_cache')
+      .select('data, generated_at')
+      .eq('id', 'latest')
+      .maybeSingle()
+    if (error || !data || !data.data || !data.data.tables) return false
+    const cloudTime = data.data.generatedAt ? Date.parse(data.data.generatedAt) : 0
+    const bundleTime = scorersData.generatedAt ? Date.parse(scorersData.generatedAt) : 0
+    if (cloudTime <= bundleTime) return false
+    scorersData = data.data
+    return true
+  } catch (err) {
+    console.warn('[赛程助手] 云端射手榜读取失败，沿用本地数据', err)
+    return false
+  }
+}
+
+/**
  * 北京时间（UTC+8）下的 YYYYMMDD —— 与 tools/match-detail.js 归档口径必须一致，
  * 两边算法不同会导致「明明抓到了，页面却读不到」。
  */
@@ -435,8 +540,8 @@ async function matchDetail(match) {
 
 async function doRefresh() {
   try {
-    // 并行拉两张表：它们互不依赖，串行只会白白多等一个 RTT
-    const [main] = await Promise.all([refreshSchedule(), refreshStandings()])
+    // 并行拉三张表：它们互不依赖，串行只会白白多等两个 RTT
+    const [main] = await Promise.all([refreshSchedule(), refreshStandings(), refreshScorers()])
 
     // decodeSnapshot 同时吃「扁平数组」和「紧凑对象」，云端换格式时这里不用改
     const list = snapshot.decodeSnapshot(main.data && main.data.data)
@@ -496,6 +601,12 @@ module.exports = {
   teamStanding,
   teamForm,
   teamUpcoming,
+  // 射手榜 / 助攻榜
+  scorersTables,
+  scorersOf,
+  scorersKeys,
+  scorersGeneratedAt,
+  scorersTop,
   matchDetail,
   refresh,
   source,

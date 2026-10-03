@@ -492,4 +492,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, detailCapable, needsFetch, isPlayed }
+module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh }

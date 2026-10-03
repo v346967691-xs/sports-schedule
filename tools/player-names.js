@@ -41,6 +41,8 @@ const path = require('path')
 
 const ROOT = path.join(__dirname, '..')
 const OUT_FILE = path.join(__dirname, 'player-zh.js')
+/** 抓取阶段的候选结果缓存 —— 见 main() 里的说明，是「可续跑」的关键 */
+const CACHE_FILE = path.join(__dirname, '.player-names-cache.json')
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 const WD_API = 'https://www.wikidata.org/w/api.php'
@@ -266,14 +268,46 @@ async function main() {
   //
   // ⚠️ 中文维基对**来源 IP** 限流极狠（不像 Wikidata 只按请求速率）：
   //    实测连续 5 次请求后就开始 429，而且之后即使降到 0.3 秒一次也不解封。
-  //    所以这里只能慢慢来（默认并发 2、每次间隔 1.2 秒），并且脚本是**可续跑**的
-  //    —— 和上一轮的 player-zh.js 合并，跑几次就能把覆盖面一点点攒起来。
-  //    别为了快把并发调高：换来的只是更长的一串 429 退避，总耗时反而更久。
+  //    所以这里只能慢慢来（默认并发 2、每次间隔 1.2 秒）。
+  //
+  // 🔴 **因此候选结果必须落盘缓存**：抓取阶段占了这个脚本 99% 的耗时
+  //    （解析阶段是瞬时的），而整轮要几十分钟 —— 中途断一次就全白跑。
+  //    缓存命中的人直接跳过请求，所以中断后重跑只补没抓到的那些，越跑越全。
+  let cacheStore = {}
+  if (!DRY) {
+    try {
+      cacheStore = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')) || {}
+    } catch (e) {
+      cacheStore = {}
+    }
+  }
+  const saveCache = () => {
+    if (DRY) return
+    try {
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(cacheStore))
+    } catch (e) { /* 缓存写不进去不该影响主流程 */ }
+  }
+
   const candById = {}
+  let done = 0
+  let reused = 0
   await mapPool(targets, CONC, async (p) => {
-    candById[p.id] = await searchZhwiki(p.full)
-    await sleep(1200)
+    if (cacheStore[p.id]) {
+      candById[p.id] = cacheStore[p.id]
+      reused += 1
+    } else {
+      candById[p.id] = await searchZhwiki(p.full)
+      cacheStore[p.id] = candById[p.id]
+      await sleep(1200)
+    }
+    done += 1
+    if (done % 25 === 0) {
+      saveCache()
+      log(`  已处理 ${done}/${targets.length}（缓存命中 ${reused}）`)
+    }
   })
+  saveCache()
+  log(`抓取完成：${targets.length} 人，其中 ${reused} 人直接用了缓存`)
 
   const allQids = []
   const seenQid = {}

@@ -1306,9 +1306,27 @@ async function run() {
     check('详情：抽出的事件类型全部是中文', evs.length > 0 && evs.every((e) => /[一-龥]/.test(e.t)),
       evs.length ? evs.slice(0, 5).map((e) => e.t).join('/') : '无事件')
     const opps = all.reduce((acc, d) => acc.concat((d.form && d.form.home) || [], (d.form && d.form.away) || []), [])
-    check('详情：双方近况的对手名已汉化',
-      opps.length > 0 && opps.every((g) => /[一-龥]/.test(g.opp || '')),
-      opps.slice(0, 5).map((g) => g.opp).join('/'))
+    // ⚠️ 数据层只能查到「空 / 裸数字」这一档 —— 存量条目只留了对手名、把 id 丢了，
+    //    所以「该翻的没翻」验不了（大俱乐部的映射按 **id** 存在 ESPN_ZH 里，
+    //    按名字查是查不到的）。汉化正确性交给下面对 teamZh 的单元级校验。
+    //    另外：近况里混进**业余杯赛对手**（拜仁的 DFB-Pokal 对手 "HEBC Hamburg"、
+    //    "Lüneburger SK Hansa"）本来就该回落英文，不能当成汉化漏网。
+    const oppBad = opps.filter((g) => {
+      const s = String(g.opp || '').trim()
+      return !s || /^\d+$/.test(s)
+    })
+    check('详情：近况的对手名不为空、不出现裸数字 id',
+      opps.length > 0 && oppBad.length === 0,
+      oppBad.length ? oppBad.slice(0, 5).map((g) => g.opp).join('/') : `${opps.length} 条通过`)
+    // 对手名映射这件事本身：已知队出中文、未知队回落英文原名、**绝不把 id 当名字吐出来**
+    // （亚冠那批俱乐部就踩过：只按 id 查字典 → 界面上出现 "7115"）
+    check('详情：对手名映射对已知队出中文、未知队回落英文、绝不回数字 id',
+      /[\u3400-\u9fff]/.test(md.teamZh('86', 'Real Madrid'))
+      && md.teamZh('99999999', 'HEBC Hamburg') === 'HEBC Hamburg'
+      && md.teamZh('31415263', 'Not A Real Club') === 'Not A Real Club'
+      && md.teamZh('31415263', '') === ''
+      && md.teamZh('', '') === '',
+      `${md.teamZh('86', 'Real Madrid')} / ${md.teamZh('99999999', 'HEBC Hamburg')} / ${JSON.stringify(md.teamZh('31415263', ''))}`)
     check('详情：交锋战绩已汉化（不出现 Series / leads）',
       all.every((d) => !d.h2h || !d.h2h.summary || (/[一-龥]/.test(d.h2h.summary) && !/Series|leads/i.test(d.h2h.summary))),
       (all.find((d) => d.h2h && d.h2h.summary) || {}).h2h ? all.find((d) => d.h2h && d.h2h.summary).h2h.summary : '无')

@@ -428,12 +428,12 @@ async function run() {
   // ⚠️ 分享能力：页面不实现 onShareAppMessage，右上角「转发给朋友」和「复制链接」就是灰的，
   //    而「复制链接」还依赖「转发给朋友」。2026-09-30 想在公众号图文挂卡片时才踩到。
   const fsMod = require('fs')
-  const SHARE_PAGES = ['index', 'schedule', 'mine', 'detail', 'brief', 'teams', 'rank', 'team']
+  const SHARE_PAGES = ['index', 'schedule', 'mine', 'detail', 'brief', 'teams', 'rank', 'team', 'search']
   const noShare = SHARE_PAGES.filter((p) => {
     const s = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')
     return s.indexOf('onShareAppMessage') < 0 || s.indexOf('onShareTimeline') < 0
   })
-  check('分享：7 个页面都挂了分享方法（否则「复制链接」是灰的）',
+  check(`分享：${SHARE_PAGES.length} 个页面都挂了分享方法（否则「复制链接」是灰的）`,
     noShare.length === 0, noShare.join(' ') || '全部已挂')
 
   const shareMod = require(path.join(ROOT, 'utils/share.js'))
@@ -1745,6 +1745,240 @@ async function run() {
   const nameW = 750 - posW - 4 * tdW - padX * 2
   check('积分榜：队名列够放 6 个汉字', nameW >= 6 * nameFont,
     `队名列 ${nameW}rpx，6 字需 ${6 * nameFont}rpx（数字列 ${tdW}rpx × 4）`)
+
+  /* ---------- 首发阵容（详情页渲染） ----------
+     payload 里是 tools/match-detail.js 的 pickLineups 产物 {home:[{n,j,p,st}], away:[...]}，
+     详情页要把它整理成「按位置分组 + 替补席」。两条红线用合成数据守：
+      ① 先按 st 分首发/替补，再按位置分组（替补的位置上游给的是 Substitute，抽出来是空）；
+      ② 位置缺失的首发要进兜底组，不能丢人。 */
+  const detMod = require(path.join(ROOT, 'pages/detail/detail.js'))
+
+  check('首发阵容：上游没给阵容时返回 null（页面据整块隐藏，不留白壳）',
+    detMod.buildLineups(null, () => '主') === null
+    && detMod.buildLineups({}, () => '主') === null
+    && detMod.buildLineups({ lineups: { home: [], away: [] } }, () => '主') === null)
+
+  const luPayload = {
+    lineups: {
+      home: [
+        { n: '门将甲', j: 1, p: 'G', st: 1 },
+        { n: '后卫甲', j: 4, p: 'D', st: 1 },
+        { n: '后卫乙', j: 5, p: 'D', st: 1 },
+        { n: '中场甲', j: 8, p: 'M', st: 1 },
+        { n: '前锋甲', j: 9, p: 'F', st: 1 },
+        { n: '未给位置首发', j: 3, p: '', st: 1 },
+        { n: '替补甲', j: 12, p: '', st: 0 },
+        { n: '替补乙', j: 13, p: '', st: 0 },
+      ],
+      away: [{ n: '客队前锋', j: 7, p: 'F', st: 1 }],
+    },
+  }
+  const lu = detMod.buildLineups(luPayload, (s) => (s === 'home' ? '主队' : '客队'))
+  check('首发阵容：主客两侧都出，并带上侧名',
+    Array.isArray(lu) && lu.length === 2 && lu[0].side === '主队' && lu[1].side === '客队',
+    lu ? lu.map((x) => x.side + ':' + x.count).join(' , ') : '为 null')
+  check('首发阵容：首发按位置分组且顺序是 门将→后卫→中场→前锋→兜底',
+    lu[0].groups.map((g) => g.key).join('') === 'GDMFX',
+    lu[0].groups.map((g) => g.label + g.rows.length).join(' '))
+  check('首发阵容：上游没给位置的首发进兜底组，不丢人',
+    lu[0].groups.some((g) => g.key === 'X' && g.rows.some((r) => r.n === '未给位置首发')))
+  check('首发阵容：替补全部进替补席，不会被当成「位置缺失的首发」混进首发',
+    lu[0].bench.length === 2 && lu[0].hasBench === true
+    && lu[0].groups.every((g) => g.rows.every((r) => r.n.indexOf('替补') === -1)),
+    `bench=${lu[0].bench.length} groups=${lu[0].groups.map((g) => g.key).join('')}`)
+  check('首发阵容：首发人数按 st 统计（含那位位置缺失的）', lu[0].count === 6, String(lu[0].count))
+
+  const luMatchStub = { home: { zhName: '主队' }, away: { zhName: '客队' } }
+  const decLu = detMod.decorateDetail(JSON.parse(JSON.stringify(luPayload)), luMatchStub)
+  check('首发阵容：decorateDetail 给出 lineups 与 hasLineups',
+    decLu.hasLineups === true && decLu.lineups && decLu.lineups.length === 2,
+    `hasLineups=${decLu.hasLineups}`)
+  const decNoLu = detMod.decorateDetail({ events: [] }, luMatchStub)
+  check('首发阵容：没有阵容时 hasLineups=false（wxml 据此隐藏整块）',
+    decNoLu.hasLineups === false && !decNoLu.lineups)
+
+  // 落到真实数据上的不变量：**存下来的阵容一定含首发**。
+  // 未开赛的比赛上游也会给 rosters，但 starter 全是 0 —— pickLineups 对这种情况返回 null，
+  // 所以只要有人在抓取侧放宽了这个判断，这条就会红。
+  const detailBundle = require(path.join(ROOT, 'data/match-details.js'))
+  let luStored = 0
+  let luNoStarter = 0
+  let luRenderable = 0
+  ;(detailBundle.buckets || []).forEach((bk) => {
+    Object.keys(bk.payload || {}).forEach((id) => {
+      const d = bk.payload[id]
+      if (!d || !d.lineups) return
+      luStored += 1
+      const home = (d.lineups.home || []).some((p) => p && p.st)
+      const away = (d.lineups.away || []).some((p) => p && p.st)
+      if (!home && !away) luNoStarter += 1
+      if (detMod.buildLineups(d, () => '主')) luRenderable += 1
+    })
+  })
+  check('首发阵容：云端存下来的阵容一定含首发（未开赛的名单不会被存进来）',
+    luStored > 0 && luNoStarter === 0, `存了 ${luStored} 场，其中零首发 ${luNoStarter} 场`)
+  check('首发阵容：存下来的每一场都能渲染出分组（不会存了却画不出来）',
+    luRenderable === luStored, `${luRenderable}/${luStored}`)
+
+  /* ---------- 全站搜索（球队 + 赛事，纯本地索引） ----------
+     utils/search.js 是纯函数 + 内存索引，可以直接当模块测，不用起页面。
+     这里守四件事：① 索引规模与数据层一致（没漏没重）；② 去重与"主场赛事"的挑法；
+     ③ 简称别名不出错；④ 页面跳转该走 tabBar 的那两处没写成 navigateTo。 */
+  const searchMod = require(path.join(ROOT, 'utils/search.js'))
+
+  // ① 索引里的球队数必须等于「各赛事球队按 大类+id 去重」后的数量。
+  //    这样写不依赖具体数字，赛季窗口里球队增减都不会假红。
+  const expectTeams = (() => {
+    const seen = {}
+    dataMod.competitions().forEach((c) => {
+      dataMod.teamsOf(c.key).forEach((t) => { seen[c.cat + '/' + t.id] = 1 })
+    })
+    return Object.keys(seen).length
+  })()
+  const sStats = searchMod.stats()
+  check('搜索：球队索引 = 各赛事按「大类+id」去重的数量（不重不漏）',
+    sStats.teams === expectTeams && expectTeams > 0, `${sStats.teams} / 期望 ${expectTeams}`)
+  check('搜索：赛事索引 = 全部赛事数',
+    sStats.comps === dataMod.competitions().length, `${sStats.comps} / ${dataMod.competitions().length}`)
+
+  // ② 空查询与"太宽"的查询不能把整个索引倒出来
+  check('搜索：空查询 / 纯空格 / 单字母英文都返回空（不倒全量）',
+    searchMod.search('').length === 0
+    && searchMod.search('   ').length === 0
+    && searchMod.search('a').length === 0)
+  check('搜索：单字母中文照常能搜（"曼" → 曼城 与 曼联）',
+    ['曼城', '曼联'].every((n) => searchMod.search('曼', 20).some((x) => x.display === n)))
+
+  // ③ 跨赛事重复的球队只出现一行，且标签用的是"主场赛事"
+  const arsenalHits = searchMod.search('阿森纳')
+  check('搜索：同一支队横跨多个赛事只出现一行（阿森纳 ucl+epl）',
+    arsenalHits.length === 1 && arsenalHits[0].comps.length === 2,
+    arsenalHits.map((x) => x.display + ':' + x.comps.join('+')).join(' , '))
+  check('搜索：球队标签取"主场赛事"而不是赛事列表里的第一个（阿森纳 → 英超）',
+    !!arsenalHits[0] && arsenalHits[0].comp === 'epl', arsenalHits[0] ? arsenalHits[0].comp : '未命中')
+  const portHit = searchMod.search('上海海港')[0]
+  check('搜索：同一支队在联赛与杯赛之间优先国内联赛（上海海港 → 中超）',
+    !!portHit && portHit.comp === 'csl', portHit ? portHit.comp : '未命中')
+
+  // ④ 赛事既能用中文名搜，也能用 key 搜
+  const eplHit = searchMod.search('英超')
+  check('搜索：赛事中文名命中赛事且排在球队前面',
+    eplHit.length > 0 && eplHit[0].kind === 'comp' && eplHit[0].key === 'epl',
+    eplHit.slice(0, 2).map((x) => x.kind + ':' + x.display).join(' , '))
+  const keyHit = searchMod.search('epl')[0]
+  check('搜索：赛事 key（epl）也能搜到', !!keyHit && keyHit.key === 'epl', keyHit ? keyHit.name : '未命中')
+
+  // ⑤ 简写别名：格式必须正确，且不能指到库里根本没有的名字
+  const aliasPairs = Object.keys(searchMod.ALIAS).map((k) => ({ k, t: searchMod.ALIAS[k] }))
+  check('搜索：别名表格式正确（简称与规范名不同、都不为空）',
+    aliasPairs.length > 0 && aliasPairs.every((p) => p.k && p.t && searchMod.fold(p.k) !== searchMod.fold(p.t)),
+    `${aliasPairs.length} 条`)
+  const inIndex = (d) => searchMod.search(d, 60).some((x) => x.display === d)
+  const deadAlias = aliasPairs.filter((p) => inIndex(p.t)
+    && !searchMod.search(p.k, 60).some((x) => x.display === p.t))
+  check('搜索：别名不会指错（规范名在库时，简称必须能搜到它）',
+    deadAlias.length === 0, deadAlias.map((p) => p.k + '→' + p.t).join(' ') || '全部正确')
+  // 端到端只要有一条别名真的在库里命中即可 —— 窗口内没有对应球队时（如休赛期）跳过
+  const aliasSample = aliasPairs.find((p) => inIndex(p.t))
+  if (!aliasSample) {
+    check('搜索：别名机制端到端生效（简称 → 规范名）', true, '跳过：当前快照窗口内没有别名目标')
+  } else {
+    check('搜索：别名机制端到端生效（简称 → 规范名）',
+      searchMod.search(aliasSample.k, 60).some((x) => x.display === aliasSample.t),
+      `${aliasSample.k} → ${aliasSample.t}`)
+  }
+
+  // ⑥ 推荐词：搜不到的推荐词比没有推荐更糟 —— 每一条都必须实测有结果
+  const hotList = searchMod.hot()
+  const badHot = hotList.filter((h) => searchMod.search(h.w, 1).length === 0)
+  check('搜索：空状态推荐词全部实测可搜到', hotList.length >= 8 && badHot.length === 0,
+    `${hotList.length} 条，坏的 ${badHot.length}`)
+
+  // ⑦ 页面：注册、四个文件齐、跳转姿势正确
+  const appJson2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8').replace(/^\s*\/\/.*$/gm, ''))
+  check('搜索页已注册且四个文件齐全',
+    appJson2.pages.indexOf('pages/search/search') > -1
+    && ['js', 'wxml', 'wxss', 'json'].every((ext) => fs.existsSync(path.join(ROOT, 'pages/search/search.' + ext))))
+  check('搜索页不在 tabBar 里（它不是 tab，是二级页）',
+    (appJson2.tabBar.list || []).every((t) => t.pagePath !== 'pages/search/search'))
+
+  require(path.join(ROOT, 'pages/search/search.js'))
+  const searchOpts = global.__page
+  check('搜索页挂了转发与朋友圈',
+    typeof searchOpts.onShareAppMessage === 'function' && typeof searchOpts.onShareTimeline === 'function')
+
+  const ctxSearch = makeCtx(searchOpts)
+  searchOpts.onLoad.call(ctxSearch, {})
+  check('搜索页：空关键词时不出一堆结果，而是给推荐词',
+    ctxSearch.data.searched === false && ctxSearch.data.teamHits.length === 0
+    && ctxSearch.data.hot.length > 0,
+    `hot=${ctxSearch.data.hot.length}`)
+  check('搜索页：空关键词时自动聚焦输入框（进来就能打字）', ctxSearch.data.autoFocus === true)
+  // 从分享链接冷启动带词时不该抢键盘
+  const ctxSearchKw = makeCtx(searchOpts)
+  searchOpts.onLoad.call(ctxSearchKw, { kw: encodeURIComponent('英超') })
+  check('搜索页：分享链接带 kw 冷启动时直接出结果且不弹键盘',
+    ctxSearchKw.data.keyword === '英超' && ctxSearchKw.data.searched === true
+    && ctxSearchKw.data.autoFocus === false
+    && ctxSearchKw.data.compHits.some((c) => c.key === 'epl'),
+    `kw=${ctxSearchKw.data.keyword} compHits=${ctxSearchKw.data.compHits.length}`)
+
+  searchOpts.onInput.call(ctxSearch, { detail: { value: '皇马' } })
+  check('搜索页：输入即出结果（本地索引，不防抖也不发请求）',
+    ctxSearch.data.teamHits.length > 0, ctxSearch.data.teamHits.map((t) => t.display).join(' , '))
+  check('搜索页：结果行带上了关注态与所属赛事',
+    ctxSearch.data.teamHits.every((t) => typeof t.followed === 'boolean' && !!t.compName),
+    ctxSearch.data.teamHits[0] ? `${ctxSearch.data.teamHits[0].display}/${ctxSearch.data.teamHits[0].compName}` : '')
+
+  // ⚠️ 搜索结果是索引里的共享对象，页面必须拷贝后再挂 followed ——
+  //    直接改会把关注态写进索引，下一次搜索带着上一次的陈旧状态
+  const firstHit = searchMod.search('皇马', 1)[0]
+  check('搜索页：不会把关注态写回索引（索引对象没有 followed 字段）',
+    !!firstHit && firstHit.followed === undefined)
+
+  searchOpts.onClearKeyword.call(ctxSearch)
+  check('搜索页：清空关键词后回到推荐词态',
+    ctxSearch.data.keyword === '' && ctxSearch.data.searched === false && ctxSearch.data.teamHits.length === 0)
+
+  // 点球队 → 球队详情页（非 tabBar，navigateTo 可用）
+  searchOpts.onInput.call(ctxSearch, { detail: { value: '阿森纳' } })
+  collected.navigateTo = ''
+  searchOpts.onTeamTap.call(ctxSearch, { currentTarget: { dataset: { index: 0 } } })
+  check('搜索页：点球队名进球队详情页', /^\/pages\/team\/team\?comp=epl&id=359$/.test(collected.navigateTo || ''),
+    collected.navigateTo)
+
+  // 点赛事 → 赛程 tab（tabBar 页面，必须 switchTab + globalData 交接）
+  searchOpts.onInput.call(ctxSearch, { detail: { value: '英超' } })
+  collected.switchTab = ''
+  collected.navigateTo = ''
+  mockApp.globalData.pendingComp = ''
+  searchOpts.onCompTap.call(ctxSearch, { currentTarget: { dataset: { key: 'epl' } } })
+  check('搜索页：点赛事切到赛程 tab（不能 navigateTo）',
+    collected.switchTab === '/pages/schedule/schedule' && collected.navigateTo === '',
+    `${collected.switchTab} / navigateTo=${collected.navigateTo || '无'}`)
+  check('搜索页：点赛事带上该赛事', mockApp.globalData.pendingComp === 'epl', mockApp.globalData.pendingComp)
+
+  // 赛事行里的「积分榜 ›」→ 积分榜 tab
+  collected.switchTab = ''
+  mockApp.globalData.pendingComp = ''
+  searchOpts.onCompRankTap.call(ctxSearch, { currentTarget: { dataset: { key: 'epl' } } })
+  check('搜索页：点「积分榜」切到积分榜 tab 并带上赛事',
+    collected.switchTab === '/pages/rank/rank' && mockApp.globalData.pendingComp === 'epl',
+    `${collected.switchTab} / ${mockApp.globalData.pendingComp}`)
+  mockApp.globalData.pendingComp = ''
+
+  // 两个动作必须分开：点名字进详情、点按钮只切关注（混在一起会误取消关注）
+  check('搜索页：球队名与关注按钮是两个独立动作',
+    typeof searchOpts.onTeamTap === 'function' && typeof searchOpts.onFollowTap === 'function'
+    && searchOpts.onTeamTap !== searchOpts.onFollowTap)
+  const swxml = fs.readFileSync(path.join(ROOT, 'pages/search/search.wxml'), 'utf8')
+  check('搜索页：关注按钮用 bindtap="onFollowTap" 且球队名用 bindtap="onTeamTap"',
+    swxml.indexOf('bindtap="onFollowTap"') > -1 && swxml.indexOf('bindtap="onTeamTap"') > -1)
+
+  // 入口：首页与关注页都能进搜索页
+  check('搜索入口：首页与关注页各有一个入口指向 /pages/search/search',
+    fs.readFileSync(path.join(ROOT, 'pages/index/index.js'), 'utf8').indexOf('/pages/search/search') > -1
+    && fs.readFileSync(path.join(ROOT, 'pages/teams/teams.js'), 'utf8').indexOf('/pages/search/search') > -1)
 
   /* ---------- 输出 ---------- */
   let failed = 0

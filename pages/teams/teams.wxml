@@ -3,7 +3,12 @@
     <view class="tf-count">
       已关注 <text class="tf-num">{{followedCount}}</text> 支球队
     </view>
-    <view class="tf-clear {{followedCount ? '' : 'is-dim'}}" bindtap="onClear">清空</view>
+    <view class="tf-acts">
+      <!-- 这页的输入框只在**当前分类内**过滤，且不覆盖欧战/世界赛。
+           找不到时给一条去全站搜索的出口，别让人以为"这队没有" -->
+      <view class="tf-all" bindtap="goSearch">全站搜索</view>
+      <view class="tf-clear {{followedCount ? '' : 'is-dim'}}" bindtap="onClear">清空</view>
+    </view>
   </view>
 
   <scroll-view class="tf-cats-wrap" scroll-x enable-flex>

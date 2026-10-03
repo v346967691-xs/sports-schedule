@@ -95,7 +95,31 @@
     </view>
   </view>
 
-  <!-- ③ 双方近况 -->
+  <!-- ③ 首发阵容（只有足球有。未开赛上游不标首发、NBA 没有此数据、超出 48 小时窗口会被裁掉 → 整块隐藏） -->
+  <view class="section card" wx:if="{{detail.hasLineups}}">
+    <view class="sec-title">首发阵容</view>
+    <view class="lu-block" wx:for="{{detail.lineups}}" wx:key="key">
+      <view class="lu-side">{{item.side}}</view>
+      <view class="lu-group" wx:for="{{item.groups}}" wx:for-item="g" wx:key="key">
+        <view class="lu-pos">{{g.label}}</view>
+        <view class="lu-rows">
+          <view class="lu-p" wx:for="{{g.rows}}" wx:for-item="p" wx:key="n">
+            <view class="lu-no">{{p.j}}</view>
+            <view class="lu-nm">{{p.n}}</view>
+          </view>
+        </view>
+      </view>
+      <view class="lu-bgroup" wx:if="{{item.hasBench}}">
+        <view class="lu-pos">替补席</view>
+        <view class="lu-bench">
+          <text class="lu-bn" wx:for="{{item.bench}}" wx:for-item="p" wx:key="n">{{p.j}} {{p.n}}</text>
+        </view>
+      </view>
+    </view>
+    <view class="foot-note tight">阵容为赛前公布的名单，临场调整请以官方发布为准。</view>
+  </view>
+
+  <!-- ④ 双方近况 -->
   <view class="section card" wx:if="{{detail.hasForm}}">
     <view class="sec-title">双方近况</view>
     <view class="sec-sub">最近参加的 5 场正式比赛，可能跨赛季</view>
@@ -110,7 +134,7 @@
     </view>
   </view>
 
-  <!-- ④ 历史交锋 -->
+  <!-- ⑤ 历史交锋 -->
   <view class="section card" wx:if="{{detail.hasH2H}}">
     <view class="sec-title">历史交锋</view>
     <view class="sec-sub" wx:if="{{detail.h2h.summary}}">{{detail.h2h.summary}}</view>

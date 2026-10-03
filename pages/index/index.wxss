@@ -27,6 +27,43 @@
   font-size: 25rpx;
 }
 
+/* ---------- 搜索入口 ---------- */
+.search-entry {
+  display: flex;
+  align-items: center;
+  margin: 20rpx 24rpx 0;
+  padding: 18rpx 18rpx 18rpx 28rpx;
+  border-radius: 999rpx;
+  background: #fff;
+  border: 2rpx solid var(--line);
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.04);
+}
+
+.search-entry-hover {
+  background: #f7f8fb;
+}
+
+.se-ph {
+  flex: 1;
+  min-width: 0;
+  font-size: 27rpx;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.se-go {
+  flex: none;
+  margin-left: 16rpx;
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 25rpx;
+  font-weight: 600;
+}
+
 /* ---------- 日报入口条 ---------- */
 .brief-entry {
   margin: 20rpx 24rpx 0;

@@ -1,0 +1,99 @@
+<view class="page search">
+  <view class="s-bar">
+    <view class="s-box">
+      <input
+        class="s-input"
+        placeholder="搜球队 / 赛事，如 阿森纳、英超、T1"
+        placeholder-class="s-ph"
+        value="{{keyword}}"
+        focus="{{autoFocus}}"
+        confirm-type="search"
+        bindinput="onInput"
+        bindconfirm="onInput"
+      />
+      <view class="s-clear" wx:if="{{keyword}}" bindtap="onClearKeyword">✕</view>
+    </view>
+    <view class="s-scale">已收录 {{scale.teams}} 支球队 · {{scale.comps}} 个赛事</view>
+  </view>
+
+  <!-- 空状态：推荐词。每一条都实测过能搜到，点一下直接出结果 -->
+  <block wx:if="{{!searched}}">
+    <view class="section">
+      <view class="section-head">
+        <view class="section-title">大家都在搜</view>
+      </view>
+      <view class="s-hot">
+        <view
+          wx:for="{{hot}}"
+          wx:key="w"
+          class="s-hot-chip {{item.kind === 'comp' ? 'is-comp' : ''}}"
+          data-w="{{item.w}}"
+          bindtap="onHotTap"
+          hover-class="s-hot-hover"
+        >{{item.w}}</view>
+      </view>
+      <view class="s-tip">
+        支持中文名、英文名和缩写 —— 输入「皇马」「Barcelona」「REA」都能找到皇家马德里。
+        搜赛事名（如「英超」）可直接进入该赛事赛程。
+      </view>
+    </view>
+  </block>
+
+  <!-- 赛事命中 -->
+  <view class="section" wx:if="{{searched && compHits.length}}">
+    <view class="section-head">
+      <view class="section-title">赛事</view>
+      <view class="section-more">{{compHits.length}} 个</view>
+    </view>
+    <view
+      wx:for="{{compHits}}"
+      wx:key="key"
+      class="s-comp"
+      data-key="{{item.key}}"
+      bindtap="onCompTap"
+      hover-class="s-row-hover"
+    >
+      <view class="s-comp-dot" style="background: {{item.accent}}"></view>
+      <view class="s-comp-main">
+        <view class="s-comp-name">{{item.name}}</view>
+        <view class="s-comp-sub" wx:if="{{item.full}}">{{item.full}}</view>
+      </view>
+      <view class="s-comp-go" wx:if="{{item.hasStandings}}" data-key="{{item.key}}" catchtap="onCompRankTap">积分榜 ›</view>
+      <view class="s-arrow" wx:else>›</view>
+    </view>
+  </view>
+
+  <!-- 球队命中 -->
+  <view class="section" wx:if="{{searched && teamHits.length}}">
+    <view class="section-head">
+      <view class="section-title">球队</view>
+      <view class="section-more">{{teamHits.length}} 支</view>
+    </view>
+    <view
+      wx:for="{{teamHits}}"
+      wx:key="k"
+      class="s-team"
+      hover-class="s-row-hover"
+    >
+      <view class="s-team-bar" style="background: {{item.color}}"></view>
+      <view class="s-team-main" data-index="{{index}}" bindtap="onTeamTap">
+        <view class="s-team-name">{{item.display}}</view>
+        <view class="s-team-sub">
+          <text class="s-tag">{{item.compName}}</text>
+          <text class="s-team-en" wx:if="{{item.abbr}}">{{item.abbr}}</text>
+        </view>
+      </view>
+      <view class="s-follow {{item.followed ? 'on' : ''}}" data-index="{{index}}" bindtap="onFollowTap">{{item.followed ? '已关注' : '+ 关注'}}</view>
+    </view>
+  </view>
+
+  <view class="empty" wx:if="{{searched && !compHits.length && !teamHits.length}}">
+    <view class="empty-title">没有找到「{{keyword}}」</view>
+    <view class="empty-desc">换一个关键词试试，或直接搜赛事名（如 英超 / NBA / LPL）</view>
+  </view>
+
+  <view class="s-foot" wx:if="{{searched && (compHits.length || teamHits.length)}}">
+    只展示前 40 条结果，输入更多字可以缩小范围
+  </view>
+  <view class="safe-bottom"></view>
+</view>

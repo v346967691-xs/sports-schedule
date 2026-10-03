@@ -1,0 +1,196 @@
+/* ---------- 搜索框 ---------- */
+.s-bar {
+  padding: 20rpx 28rpx 4rpx;
+}
+
+.s-box {
+  display: flex;
+  align-items: center;
+  height: 76rpx;
+  padding: 0 20rpx 0 28rpx;
+  border-radius: 16rpx;
+  background: #F1F3F7;
+}
+
+.s-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: #1F2733;
+}
+
+.s-ph {
+  color: #A6AEBC;
+}
+
+.s-clear {
+  flex: none;
+  width: 44rpx;
+  height: 44rpx;
+  line-height: 44rpx;
+  text-align: center;
+  margin-left: 10rpx;
+  font-size: 26rpx;
+  color: #9AA2B1;
+}
+
+.s-scale {
+  padding: 12rpx 4rpx 0;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+/* ---------- 推荐词 ---------- */
+.s-hot {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.s-hot-chip {
+  padding: 14rpx 26rpx;
+  margin: 0 14rpx 14rpx 0;
+  border-radius: 999rpx;
+  background: #F1F3F7;
+  color: #5A6376;
+  font-size: 27rpx;
+}
+
+/* 赛事类推荐词用品牌色区分：点它进的是赛程，点球队进的是球队页 */
+.s-hot-chip.is-comp {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.s-hot-hover {
+  opacity: 0.65;
+}
+
+.s-tip {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* ---------- 结果行（赛事 / 球队共用一套卡片） ---------- */
+.s-comp,
+.s-team {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 24rpx;
+  margin-bottom: 14rpx;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 2rpx 10rpx rgba(16, 24, 40, 0.04);
+}
+
+.s-row-hover {
+  background: #F7F8FB;
+}
+
+.s-comp-dot {
+  flex: none;
+  width: 10rpx;
+  height: 56rpx;
+  margin-right: 18rpx;
+  border-radius: 6rpx;
+}
+
+.s-team-bar {
+  flex: none;
+  width: 8rpx;
+  height: 62rpx;
+  margin-right: 18rpx;
+  border-radius: 6rpx;
+}
+
+.s-comp-main,
+.s-team-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.s-comp-name {
+  font-size: 31rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.s-comp-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-team-name {
+  font-size: 31rpx;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s-team-sub {
+  display: flex;
+  align-items: center;
+  margin-top: 8rpx;
+}
+
+.s-tag {
+  padding: 4rpx 14rpx;
+  border-radius: 6rpx;
+  background: #F1F3F7;
+  color: #5A6376;
+  font-size: 21rpx;
+}
+
+.s-team-en {
+  margin-left: 12rpx;
+  font-size: 21rpx;
+  color: var(--muted);
+}
+
+.s-comp-go {
+  flex: none;
+  margin-left: 16rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 24rpx;
+}
+
+.s-arrow {
+  flex: none;
+  margin-left: 14rpx;
+  color: var(--muted);
+  font-size: 32rpx;
+}
+
+/* 关注按钮与球队名是两个独立点击区：样式也要分开，别让人误以为整行都是关注 */
+.s-follow {
+  flex: none;
+  margin-left: 14rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  background: #F1F3F7;
+  color: #7A8395;
+  font-size: 23rpx;
+}
+
+.s-follow.on {
+  background: var(--brand);
+  color: #FFFFFF;
+}
+
+.s-foot {
+  padding: 20rpx 28rpx 0;
+  font-size: 22rpx;
+  color: var(--muted);
+  text-align: center;
+}

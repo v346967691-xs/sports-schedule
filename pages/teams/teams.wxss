@@ -17,6 +17,20 @@
   margin: 0 8rpx;
 }
 
+.tf-acts {
+  display: flex;
+  align-items: center;
+}
+
+.tf-all {
+  margin-right: 16rpx;
+  padding: 8rpx 22rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid #C7D0E8;
+  color: #14235C;
+  font-size: 26rpx;
+}
+
 .tf-clear {
   font-size: 26rpx;
   color: #DC2626;

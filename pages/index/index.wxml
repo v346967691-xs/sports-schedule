@@ -18,6 +18,13 @@
     </view>
   </view>
 
+  <!-- 搜索入口。搜索是独立页面，这里只是一个「长得像输入框」的入口，
+       点了才跳过去（不在这里做实时搜索：本地索引虽然快，但首页要保持首屏轻） -->
+  <view class="search-entry" bindtap="goSearch" hover-class="search-entry-hover">
+    <view class="se-ph">搜索球队 / 赛事，如 阿森纳、英超、T1</view>
+    <view class="se-go">搜索</view>
+  </view>
+
   <!-- 日报入口 -->
   <view class="brief-entry" wx:if="{{brief}}" bindtap="goBrief" hover-class="brief-entry-hover">
     <view class="be-head">

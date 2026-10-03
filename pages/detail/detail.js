@@ -9,6 +9,42 @@ const { appInstance } = require('../../utils/app-instance')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
+/** 首发阵容的位置归组与中文标签。顺序就是首发列表的展示顺序。 */
+const LINEUP_POS = [['G', '门将'], ['D', '后卫'], ['M', '中场'], ['F', '前锋']]
+
+/**
+ * 首发阵容：payload 里是 `{home:[{n,j,p,st}], away:[...]}`（见 tools/match-detail.js 的 pickLineups），
+ * 这里整理成「按位置分组 + 替补席」的可渲染结构。
+ *
+ * ⚠️ 两个必须守住的点：
+ *  ① **先用 `st` 分首发/替补，再按位置分组**。替补的位置在 ESPN 那边是 Substitute，
+ *     抽出来就是空 —— 若先按位置分组，替补会被当成「位置缺失的首发」混进首发列表。
+ *  ② 位置缺失的首发（上游没给）单独兜底一组，**不能丢人**。
+ *
+ * 没有 `lineups` 是常态（NBA 没有；未开赛的比赛上游不标首发；超出 48 小时窗口的
+ * 日桶会被裁掉）—— 页面据此整块隐藏，不报错也不留白块。
+ */
+function buildLineups(d, sideName) {
+  if (!d || !d.lineups || !d.lineups.home || !d.lineups.away) return null
+  const rowOf = (p) => ({ j: p.j || '', n: p.n || '' })
+  const side = (key, list) => {
+    const all = (list || []).filter((p) => p && p.n)
+    const starters = all.filter((p) => p.st)
+    const groups = []
+    LINEUP_POS.forEach(([code, label]) => {
+      const rows = starters.filter((p) => (p.p || '') === code).map(rowOf)
+      if (rows.length) groups.push({ key: code, label, rows })
+    })
+    const rest = starters.filter((p) => !LINEUP_POS.some(([code]) => code === (p.p || ''))).map(rowOf)
+    if (rest.length) groups.push({ key: 'X', label: '首发', rows: rest })
+    const bench = all.filter((p) => !p.st).map(rowOf)
+    if (!groups.length) return null
+    return { key, side: sideName(key), groups, bench, hasBench: bench.length > 0, count: starters.length }
+  }
+  const rows = [side('home', d.lineups.home), side('away', d.lineups.away)].filter(Boolean)
+  return rows.length ? rows : null
+}
+
 /**
  * 把云端详情整理成页面直接可用的形状。
  *
@@ -69,6 +105,7 @@ function decorateDetail(d, match) {
         list: (d.h2h.list || []).map((e, i) => Object.assign({ i }, e)),
       })
     : null
+  const lineups = buildLineups(d, sideName)
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -80,6 +117,8 @@ function decorateDetail(d, match) {
     hasTimeline: events.length > 0,
     stats,
     hasStats: stats.length > 0,
+    lineups,
+    hasLineups: !!lineups,
     formRows,
     hasForm: formRows.length > 0,
     h2h,
@@ -336,4 +375,4 @@ Page({
   },
 })
 
-module.exports = { decorateDetail }
+module.exports = { decorateDetail, buildLineups }

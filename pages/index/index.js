@@ -191,6 +191,16 @@ Page({
     wx.navigateTo({ url: '/pages/teams/teams' })
   },
 
+  /** 去全站搜索页（/pages/search/search 不是 tabBar 页面，navigateTo 正常可用） */
+  goSearch() {
+    wx.navigateTo({
+      url: '/pages/search/search',
+      fail() {
+        wx.showToast({ title: '暂时打不开搜索', icon: 'none' })
+      },
+    })
+  },
+
   /** 默认落在最近一个有比赛的日期，避免一打开就是空列表 */
   pickStartDay(strip) {
     const today = fmt.todayStr()

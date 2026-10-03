@@ -115,6 +115,16 @@ Page({
     this.setData({ keyword: '' }, () => this.build())
   },
 
+  /** 去全站搜索页：这页只搜当前分类，且不覆盖欧战/世界赛，给它一个出口 */
+  goSearch() {
+    wx.navigateTo({
+      url: '/pages/search/search',
+      fail() {
+        wx.showToast({ title: '暂时打不开搜索', icon: 'none' })
+      },
+    })
+  },
+
   /** 点名字区 → 进球队详情页 */
   onTeamTap(e) {
     const item = this.data.teams[e.currentTarget.dataset.index]

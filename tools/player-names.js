@@ -2,7 +2,7 @@
  * 球员中文名「种子」生成器
  * ============================================================
  * 用法： node tools/player-names.js [--dry] [--only=ucl,epl] [--limit=200] [--source=all|scorers|lineups]
- *                                  [--concurrency=1] [--sleep=6500]
+ *                                  [--channel=a|b|both] [--concurrency=1] [--sleep=6500]
  *
  *   --limit=N   只处理本轮前 N 个「还没查过」的球员。
  *              每批结束都会落盘，比一把梭哈更抗中断。
@@ -10,6 +10,14 @@
  *                 scorers（默认之一）= 射手榜 / 助攻榜（上游有榜的 10 个赛事）
  *                 lineups            = 比赛详情首发阵容里出现过的球员
  *                 all（默认）        = 两者并集
+ *   --channel=  用哪条检索通道：
+ *                 a（默认） = Wikidata `wbsearchentities`，按知名度返回前 10
+ *                 b         = 服务端足员过滤（`haswbstatement:P106=Q937857`），
+ *                             **专治中文/亚洲常见名**（`Li Yang` 的足员挤不进 A 的前 10）
+ *                 both      = 两条都跑，候选取并集（A 在前）
+ *               ⚠️ 两条通道各有独立缓存文件，互不作废 → 详见 CACHE_FILE / B_CACHE_FILE 注释。
+ *               🔴 推荐节奏：先 `--channel=a` 跑一遍（覆盖欧美球员），
+ *                  再 `--channel=b` 补那些「仍然没有中文名」的人。
  *
  * 为什么需要它：ESPN **全站不提供任何球员中文名**（`?lang=zh` 实测无效，
  * 见 tools/scorers.js 顶部的探测结论），所以球员汉化只能自建字典。
@@ -35,9 +43,12 @@
  *
  * ------------------------------------------------------------ 取数策略
  * ⚠️ **译名优先级：Wikidata `zh-cn` → `zh-hans` → 中文维基条目标题**（见 `zhNameOf`）。
- *   ① 召回靠中文维基全文检索：Wikidata 的 `wbsearchentities` 对「M. Olise」这种缩写
- *      基本搜不到，而 zhwiki 全文检索能命中；实测同一批球员命中数高出一倍以上。
- *      ⚠️ **后来推翻**：改用 Wikidata `wbsearchentities` 查完整英文名，命中率 95%+，见 searchEntities 注释。
+ *   ① **召回用哪条通道——改过一次、又补了一刀**（结论都在，别再来回改）：
+ *      · 最早用中文维基全文检索 —— **已推翻**（搜 `Gonzalo García` 返回「加西亚·马尔克斯／百年孤独」，
+ *        通道选错，后面所有闸门都是在垃圾里挑）。
+ *      · 改用 Wikidata `wbsearchentities` 查**完整英文名**（不是 `shortName`）→ 欧美球员命中率 95%+。
+ *      · 但它按**知名度**排序，**中文/亚洲常见名全线失效**（`Li Yang` 足员挤不进前 10）。
+ *        → 补一条通道 B：`haswbstatement:P106=Q937857` 交给服务端预过滤，实测可回收 5/6。
  *   ② 译名取 Wikidata 的 **`zh-cn`/`zh-hans` 标签**（大陆译法），
  *      **不要用 `zh` 标签** —— 实测它大量是港台写法（路易斯·賀爾 / 詹姆斯·塔爾斯基）。
  *      zh-cn/zh-hans 都缺时才回落中文维基标题（已过 `varianttitles` 转简体）。
@@ -69,8 +80,21 @@ const POOL_FILE = path.join(__dirname, '.lineup-players.json')
  * 缓存格式版本。**改了检索通道 / 闸门口径就必须 +1** ——
  * 版本对不上会整份作废重抓，避免拿旧口径的结果冒充新结果。
  * 历史：1 = zhwiki 全文检索 gsrlimit 5；2 = 同上 limit 20；3 = 改用 Wikidata wbsearchentities。
+ *
+ * ⚠️ **通道 B 有它自己的缓存文件与版本号**（见 B_CACHE_FILE），
+ *    所以加 B 不需要把这里抬到 4 —— A 的查询语句没变，它的缓存依然有效，
+ *    抬版本等于让已经查过的 1300 人白查一遍（约 2.4 小时）。**两条通道各自独立失效。**
  */
 const CACHE_VERSION = 3
+
+/**
+ * 通道 B（服务端足员过滤）的候选缓存。
+ *
+ * 独立落盘的理由见上：只让「真正需要的人」重查，而不是整份作废。
+ */
+const B_CACHE_FILE = path.join(__dirname, '.player-names-cache-b.json')
+/** 通道 B 的缓存版本。改了 B 的查询语句（`haswbstatement` 的口径）就 +1。 */
+const B_CACHE_VERSION = 1
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 const WD_API = 'https://www.wikidata.org/w/api.php'
@@ -85,6 +109,17 @@ const LIMIT = Math.max(0, Number((args.find((a) => a.startsWith('--limit=')) || 
 const SOURCE = (() => {
   const v = ((args.find((a) => a.startsWith('--source=')) || '').split('=')[1] || 'all').trim()
   return ['all', 'scorers', 'lineups'].includes(v) ? v : 'all'
+})()
+/**
+ * 检索通道：`a`（默认，`wbsearchentities`）| `b`（服务端足员过滤）| `both`。
+ *
+ * 默认保持 `a` 是为了**不改变既有行为**（老缓存的语义、日志里的命中率口径都跟着变）。
+ * 要捞回中文/亚洲常见名，跑 `--channel=b` —— 只查那些「还没有中文名」的人，
+ * 用独立的缓存续跑，参见 `searchEntitiesBySport` 与 B_CACHE_FILE 的注释。
+ */
+const CHANNEL = (() => {
+  const v = ((args.find((a) => a.startsWith('--channel=')) || '').split('=')[1] || 'a').trim()
+  return ['a', 'b', 'both'].includes(v) ? v : 'a'
 })()
 // 🔴 默认**串行**（CONC=1）。MediaWiki 的 API 礼仪明确要求「请求必须串行、每秒不超过 1 次」，
 //    并发请求本身就会触发限流 —— 踩过：并发 2 时约 22% 的请求吃 429，每次要退避 4~16 秒，
@@ -429,6 +464,36 @@ async function searchEntities(name) {
   return ((j.search) || []).map((c) => c.id).filter(Boolean)
 }
 
+/**
+ * 通道 B：把「必须是足球运动员」这道闸门**交给服务端**。
+ *
+ * ⚠️ **为什么需要它**：通道 A 的 `wbsearchentities` 按**知名度**排序返回前 10，
+ *    `Li Yang` / `Chen Pu` / `Jin Cheng` 这种中文常见名，真正的足员条目根本挤不进去，
+ *    闸门看到的是 10 条同名的导演 / 研究员 / 明朝人 → 全员判负。
+ *    本轮实测：688 人只命中 20%，闸门记「非人类/非足球员」1022 次，挡掉的几乎全是这类噪音。
+ *    改用 CirrusSearch 的 `haswbstatement` 预过滤后，实测可回收 5/6
+ *    （证据表见 `tools/probe-wd-channel.js` 与 REFERENCE.md §二）。
+ *
+ * ⚠️ **两点实现约定，别改错**：
+ *  1. `srnamespace=0` 在 Wikidata 上就是「条目」，而条目的 **title 本身就是 QID**
+ *     （`Q19840344`），所以拿到的是 QID、不需要再换一次 id。
+ *     但仍要 `^Q\d+$` 过一道 —— disambiguation 之类的会在结果里混进非 Q 标题。
+ *  2. 名字必须打**引号**做精确短语匹配，否则 `Li Yang` 会被拆成两个词。
+ *     代价是 `M. Sierra` 这种首字母缩写名一个也搜不出来 ——
+ *     所以 B 是 **A ∪ B 取并集**（A 的候选排在前面），**不是替换掉 A**。
+ *
+ * 返回：QID 数组（可信负结果为 `[]`）／`null`（请求失败，**不缓存**，与通道 A 同约定）。
+ */
+async function searchEntitiesBySport(name) {
+  const q = `"${name}" haswbstatement:P106=Q937857`
+  const url = `${WD_API}?action=query&list=search&srsearch=${encodeURIComponent(q)}` +
+    '&srnamespace=0&srlimit=10&format=json'
+  const j = await getJSON(url)
+  if (!j) return null
+  const list = ((j.query || {}).search) || []
+  return list.map((c) => String((c && c.title) || '')).filter((t) => /^Q\d+$/.test(t))
+}
+
 /* --------- 第三步：qid → 实体（批量），带上 zhwiki 的 sitelink 标题 */
 
 async function qidsToEntities(qids) {
@@ -535,39 +600,103 @@ async function main() {
   }
   const cached = (id) => Object.prototype.hasOwnProperty.call(cacheStore, id)
 
-  let todo = all.filter((p) => !cached(p.id))
+  // ---- 通道 B 的缓存（独立文件、独立版本号，见 B_CACHE_FILE 的注释） ----
+  const needA = CHANNEL === 'a' || CHANNEL === 'both'
+  const needB = CHANNEL === 'b' || CHANNEL === 'both'
+  let bStore = {}
+  if (!DRY && needB) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(B_CACHE_FILE, 'utf8')) || {}
+      bStore = raw.v === B_CACHE_VERSION && raw.d ? raw.d : {}
+    } catch (e) {
+      bStore = {}
+    }
+  }
+  const saveBCache = () => {
+    if (DRY) return
+    try {
+      fs.writeFileSync(B_CACHE_FILE, JSON.stringify({ v: B_CACHE_VERSION, d: bStore }))
+    } catch (e) { /* 同上，缓存写不进去不该影响主流程 */ }
+  }
+  const bCached = (id) => Object.prototype.hasOwnProperty.call(bStore, id)
+
+  // ⚠️ `--channel=b` 时只查「还没有中文名」的人：A 已经给出名字的人再补一次 B
+  //    对结果没有影响（A 的候选排在并集前面），却要白花 ~6.5 秒/人。
+  //    这条捷径只在 needB 且不需要 A 时生效，`--channel=a` 的行为完全不变。
+  const bEligible = (p) => !prev[p.id] && !manual[p.id]
+
+  let todo = all.filter((p) => {
+    const wantA = needA && !cached(p.id)
+    const wantB = needB && !bCached(p.id) && (needA || bEligible(p))
+    return wantA || wantB
+  })
   if (LIMIT > 0 && todo.length > LIMIT) {
     log(`--limit=${LIMIT}：本轮只处理 ${LIMIT}/${todo.length} 个未查过的`)
     todo = todo.slice(0, LIMIT)
   }
-  log(`开始检索（并发 ${CONC}、间隔 ${SLEEP}ms）：待查 ${todo.length} 人 / 已缓存 ${all.length - todo.length} 人`)
+  log(`检索通道 ${CHANNEL}：待查 ${todo.length} 人 / 已缓存 ${all.length - todo.length} 人` +
+    `（A 缓存 ${Object.keys(cacheStore).length}，B 缓存 ${Object.keys(bStore).length}）`)
 
   let done = 0
   let failed = 0
   let noneFound = 0
+  let bFailed = 0
+  let bNoneFound = 0
   await mapPool(todo, CONC, async (p) => {
-    const qids = await searchEntities(p.full)
-    if (qids === null) failed += 1
-    else {
-      cacheStore[p.id] = qids
-      if (!qids.length) noneFound += 1
+    if (needA && !cached(p.id)) {
+      const qids = await searchEntities(p.full)
+      if (qids === null) failed += 1
+      else {
+        cacheStore[p.id] = qids
+        if (!qids.length) noneFound += 1
+      }
+      // ⚠️ 双通道时两次请求之间也要等 —— 配额是按请求数算的，连发两枪就是 2 次
+      if (needB) await sleep(SLEEP)
+    }
+    if (needB && !bCached(p.id)) {
+      const qids = await searchEntitiesBySport(p.full)
+      if (qids === null) bFailed += 1
+      else {
+        bStore[p.id] = qids
+        if (!qids.length) bNoneFound += 1
+      }
     }
     await sleep(SLEEP)
     done += 1
     if (done % 50 === 0) {
       saveCache()
-      log(`  已查 ${done}/${todo.length}（请求失败 ${failed}／无实体 ${noneFound}）`)
+      saveBCache()
+      log(`  已查 ${done}/${todo.length}（A 请求失败 ${failed}／无实体 ${noneFound}；` +
+        `B 请求失败 ${bFailed}／无实体 ${bNoneFound}）`)
     }
   })
   saveCache()
-  log(`检索完成：本轮查 ${todo.length} 人（请求失败 ${failed}，其中无实体 ${noneFound}）`)
+  saveBCache()
+  log(`检索完成：本轮 ${todo.length} 人（A：请求失败 ${failed}，其中无实体 ${noneFound}）`)
+  if (needB) log(`　　　　　　　　　　（B：请求失败 ${bFailed}，其中无实体 ${bNoneFound}）`)
+
+  // 候选并集：**A 的候选排在前面**，B 只做补充 —— A 是按知名度排的，多数情况下第一个就是对的，
+  // 让 B 插到前面反而会把「运气好撞上」的正确条目挤掉。
+  const candOf = {}
+  const pushCand = (id, q) => {
+    if (!q) return
+    if (!candOf[id]) candOf[id] = []
+    if (candOf[id].indexOf(q) === -1) candOf[id].push(q)
+  }
+  Object.keys(cacheStore).forEach((id) => (cacheStore[id] || []).forEach((q) => pushCand(id, q)))
+  /** 只被 B 找到的 QID —— 用来统计「这一轮有多少名字是靠通道 B 捞回来的」，人工抽查用 */
+  const bOnlyQids = {}
+  Object.keys(bStore).forEach((id) => (bStore[id] || []).forEach((q) => {
+    if (!candOf[id] || candOf[id].indexOf(q) === -1) { pushCand(id, q); bOnlyQids[q] = 1 }
+  }))
 
   const allQids = []
   const seenQid = {}
-  Object.keys(cacheStore).forEach((id) => (cacheStore[id] || []).forEach((q) => {
+  Object.keys(candOf).forEach((id) => candOf[id].forEach((q) => {
     if (q && !seenQid[q]) { seenQid[q] = 1; allQids.push(q) }
   }))
-  log(`去重后 wikibase item ${allQids.length} 个，开始批量取实体（含 zhwiki sitelink）…`)
+  log(`去重后 wikibase item ${allQids.length} 个（其中 ${Object.keys(bOnlyQids).length} 个只有通道 B 能查到），` +
+    '开始批量取实体（含 zhwiki sitelink）…')
 
   const ents = await qidsToEntities(allQids)
 
@@ -587,12 +716,15 @@ async function main() {
   let tradOnly = 0
   let notFoot = 0
   let nameBad = 0
+  let fromB = 0
+  const fromBSample = []
   const misses = []
   // 遍历 `all` 而不是本轮的 `todo` —— 缓存命中的人也要参与匹配，
   // 否则分批跑（--limit）时，前几批已经查过的人永远进不了输出。
   all.forEach((p) => {
     let picked = ''
-    for (const q of cacheStore[p.id] || []) {
+    // 候选是 A ∪ B 的并集（A 在前），见上面 candOf 的注释
+    for (const q of candOf[p.id] || []) {
       const ent = ents[q]
       if (!ent || ent.missing !== undefined) continue
       if (!isFootballer(ent)) { notFoot += 1; continue }
@@ -606,6 +738,10 @@ async function main() {
       if (looksTraditional(zh)) { tradOnly += 1; continue }
       if (cache.seenZh[zh]) continue
       picked = zh
+      if (bOnlyQids[q]) {
+        fromB += 1
+        if (fromBSample.length < 30) fromBSample.push(`${p.id}\t${zh}\t${p.full}`)
+      }
       break
     }
     if (picked) {
@@ -620,6 +756,10 @@ async function main() {
 
   log(`命中 ${hit} 人 / 未命中 ${miss} 人（命中率 ${Math.round((hit / Math.max(1, all.length)) * 100)}%）`)
   log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜港台译名回落英文 ${tradOnly}`)
+  if (fromB) {
+    log(`其中 ${fromB} 人是靠通道 B（服务端足员过滤）捞回来的 —— 抽查这 30 条：`)
+    fromBSample.forEach((l) => console.log('  ' + l))
+  }
 
   // 保留上一轮里本轮没拿到的（射手上下榜会掉出集合，不该因此丢字典）
   //
@@ -659,10 +799,17 @@ async function main() {
     ' *    `node tools/player-names.js --only=ucl,epl`',
     ' * 看生成结果而不落盘：`node tools/player-names.js --dry`',
     ' *',
+    ' * 🔴 通道 A 对**中文 / 亚洲常见名**基本失效（`Li Yang`、`Chen Pu` 的足员条目挤不进前 10），',
+    ' *    这类人要用通道 B 单独补一轮（只查还没有中文名的人，有独立缓存可续跑）：',
+    ' *    `node tools/player-names.js --channel=b`',
+    ' *',
     ' * 输入源：射手榜 / 助攻榜 + 比赛详情里的阵容球员池（tools/.lineup-players.json）。',
+    ' * ⚠️ 顺序：**先 `node tools/match-detail.js --force` 把阵容池填满，再跑这个脚本**，',
+    ' *    反过来的话那一轮的池子成员全都还没被查过，等于白跑一轮。',
     ' * 生成后要把中文名烘焙进数据文件才有用：',
     ' *    `node tools/scorers.js`        → data/scorers.js（射手榜）',
     ' *    `node tools/match-detail.js`   → data/match-details.js（首发阵容）',
+    ' *    （`match-detail.js` 要带 `--force`，否则已结束的比赛不会重烘焙）',
     ' */',
     '',
     'const AUTO_PLAYER_ZH = {',
@@ -708,12 +855,16 @@ module.exports = {
   TARGETS,
   COMP_RANK,
   CACHE_FILE,
+  B_CACHE_FILE,
   POOL_FILE,
   CACHE_VERSION,
+  B_CACHE_VERSION,
   SOURCE,
+  CHANNEL,
   sleep,
   getJSON,
   searchEntities,
+  searchEntitiesBySport,
   titlesToSimplified,
   zhwikiTitleOf,
   qidsToEntities,

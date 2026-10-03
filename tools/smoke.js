@@ -1939,6 +1939,29 @@ async function run() {
     && pnMod.COMP_RANK.every((k) => !!dataMod.compOf(k).name && dataMod.compOf(k).name !== k),
     `${pnMod.COMP_RANK.length} 项`)
 
+  /* ---------- 球员字典的检索通道（A = 模糊搜、B = 服务端足员过滤） ----------
+     守三件事：① 两条通道的缓存必须**分开存、各自带版本号**（合并会让 A 的 1300 人白查一遍）；
+     ② B 的查询语句必须真的带 `haswbstatement` 且只收 QID（否则等于跑了两遍同一个 A）；
+     ③ 默认通道保持 a —— 改默认值会静默改变命中率口径与缓存语义。 */
+  check('播种器：默认检索通道是 a（不改变既有行为）', pnMod.CHANNEL === 'a', pnMod.CHANNEL)
+  check('播种器：两条通道的缓存文件与版本号都是分开的',
+    pnMod.B_CACHE_FILE !== pnMod.CACHE_FILE
+    && pnMod.B_CACHE_FILE.indexOf('cache-b') > -1
+    && pnMod.B_CACHE_VERSION >= 1,
+    `${path.basename(pnMod.CACHE_FILE)} v${pnMod.CACHE_VERSION} / ${path.basename(pnMod.B_CACHE_FILE)} v${pnMod.B_CACHE_VERSION}`)
+  // 源码级守卫：B 通道的实现必须同时满足「服务端足员过滤」与「只收 QID」两个条件。
+  // 这两点任何一个丢了都不会报错，只会让 B 退化成 A 的复制品 —— 只能靠读源码守。
+  const pnSrcB = fs.readFileSync(path.join(ROOT, 'tools/player-names.js'), 'utf8')
+  const bFn = pnSrcB.slice(pnSrcB.indexOf('async function searchEntitiesBySport'))
+  // 只看函数体开头的这段即可（URL 拼接与返回值都在这几十行里）
+  const bBody = bFn.slice(0, 1600)
+  check('播种器：通道 B 把「必须是足球员」交给服务端（haswbstatement:P106=Q937857）',
+    /haswbstatement:P106=Q937857/.test(bBody), '源码里有该过滤条件')
+  check('播种器：通道 B 只用引号精确短语搜（否则名字会被拆词）',
+    /`"\$\{name\}" haswbstatement/.test(bBody), '引号短语 + 过滤条件同时存在')
+  check('播种器：通道 B 只接受 QID 形状的标题（防 disambiguation 混入）',
+    /\^Q\\d\+\$/.test(bBody) && /srnamespace=0/.test(bBody), 'QID 正则 + srnamespace=0')
+
   /* ---------- 全站搜索（球队 + 赛事，纯本地索引） ----------
      utils/search.js 是纯函数 + 内存索引，可以直接当模块测，不用起页面。
      这里守四件事：① 索引规模与数据层一致（没漏没重）；② 去重与"主场赛事"的挑法；

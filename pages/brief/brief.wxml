@@ -11,7 +11,10 @@
     </view>
     <view class="rule-double"></view>
     <view class="mast-meta">
-      <text wx:if="{{cur}}">{{pubText}}　{{cur.kindZh}}　{{cur.windowLabel}}</text>
+      <!-- 🔴 不显示 {{cur.windowLabel}}（信息采集时间窗）：2026-10-03 用户要求不对外写明。
+           该字段仍在数据层生成，前瞻导语（utils/brief.js / brief-preview.js）要用它，
+           只是**页面上不出现** —— 改这里即可，别去删数据字段。 -->
+      <text wx:if="{{cur}}">{{pubText}}　{{cur.kindZh}}</text>
       <text wx:else>每日 06:00 / 21:00 出报</text>
     </view>
     <view class="rule"></view>

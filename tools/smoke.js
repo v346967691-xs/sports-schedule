@@ -1206,11 +1206,33 @@ async function run() {
   check('射手榜：PLAYER_ZH 的 key 是 athlete id 且值非空',
     manualIds.every((k) => /^\d+$/.test(k) && !!String(znMod.PLAYER_ZH[k]).trim()), `${manualIds.length} 条人工条目`)
   let autoCount = 0
+  let autoDict = {}
   try {
-    autoCount = Object.keys(require(path.join(ROOT, 'tools/player-zh')).AUTO_PLAYER_ZH || {}).length
+    autoDict = require(path.join(ROOT, 'tools/player-zh')).AUTO_PLAYER_ZH || {}
+    autoCount = Object.keys(autoDict).length
   } catch (e) { autoCount = 0 }
   check('射手榜：球员中文字典已建立（人工 + 自动种子）', manualIds.length + autoCount >= 100,
     `人工 ${manualIds.length} + 自动 ${autoCount}`)
+
+  // 🔴 自动字典里不能出现港台译名。
+  //    踩过：早期用中文维基全文检索，捞回一批港式音译（「安祖·罗拔臣」「伊斯高」「尼曼查·马迪」），
+  //    面向大陆读者比英文短名更让人困惑 —— 生成器现在宁可回落英文，这里守住别退回。
+  const TRAD_ONLY = /[羅爾賓貝蘭馬奧薩費華維賀蘇積龍衛頓遜謝贊亞倫齊傑納萊內魯歷聯賽國隊韋]/
+  const tradAuto = Object.keys(autoDict).filter((k) => TRAD_ONLY.test(autoDict[k]))
+  check('射手榜：自动字典里没有港台译名（含繁体专用字）', tradAuto.length === 0,
+    tradAuto.length ? tradAuto.slice(0, 3).map((k) => autoDict[k]).join(' / ') : `${autoCount} 条自动条目全部像简体`)
+  check('射手榜：自动字典的值都含汉字（不能用英文回填）',
+    Object.keys(autoDict).every((k) => /[\u3400-\u9fff]/.test(autoDict[k])))
+
+  // 🔴 生成器的检索通道 —— 别退回到中文维基全文检索（那是被推翻的做法，见 REFERENCE.md）
+  const pnSrc = fs.readFileSync(path.join(ROOT, 'tools/player-names.js'), 'utf8')
+  check('球员名生成器：走 Wikidata wbsearchentities 找实体',
+    pnSrc.indexOf('action=wbsearchentities') !== -1 && pnSrc.indexOf('generator=search') === -1)
+  check('球员名生成器：译名优先 zh-cn / zh-hans（大陆译法）',
+    pnSrc.indexOf("'zh-cn'") !== -1 && pnSrc.indexOf("'zh-hans'") !== -1)
+  check('球员名生成器：可被 require 而不触发整轮抓取（require.main 守卫）',
+    pnSrc.indexOf('require.main === module') !== -1)
+
   check('射手榜：playerZh 只吃 id，不按名字查（同名球员很多）',
     znMod.playerZh('253989') === '哈兰德' && znMod.playerZh(253989) === '哈兰德' && znMod.playerZh('no-such-id') === '')
   // 生成器里不能把友谊赛接上：友谊赛进球毫无参考价值（与「不抓友谊赛详情」同一理由）

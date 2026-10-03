@@ -18,24 +18,30 @@
   </view>
 
   <!-- 期次翻阅 -->
-  <!-- 2026-10-03 用户真机反馈：右端的「更新」灰掉之后看着像个坏掉的刷新按钮。
-       两处根因，都改了：
-       ① 措辞 —— 「更新」在中文里默认读作「刷新」（gēngxīn），而这里的意思是「更新的期次」（gèng xīn）。
-          换成与「更早」严格对称的「较新」，歧义消失。
-       ② 样式 —— 原来两端只是纯文字，可点/不可点**只差一个颜色深浅**，看起来像"文字没渲染好"。
-          改成有边框的胶囊按钮，不可点时边框/底色/文字**一起**淡下去，靠结构区分状态。 -->
+  <!-- 2026-10-03 三轮真机反馈，都改了：
+       ① 措辞 —— 右端原写「更新」，中文里默认读作「刷新」（gēng xīn），像坏掉的刷新按钮。
+       ② 样式 —— 边界页把其中一个按钮单独淡下去，两端长得不一样；现在**任何一页都完全一致**，
+          边界反馈交给 js 的 toast。
+       ③ 🔴 **左右方向曾经配反**（最容易踩）：序列里 `idx 0 = 最新`，越往后越旧。
+          所以 **`idx-1` 是更新的那一期、`idx+1` 是更旧（更早）的那一期**。
+          上一版把左端写成「更早」（而它实际跳向更新），用户点「较新」却被带到更早的一期。
+          现在按**期刊语序**命名 —— 「上期」= 时间更早的那一期、「下期」= 时间更晚的那一期：
+            左端 ← 下期（onPrev，idx-1，指向更新的）
+            右端 上期 →（onNext，idx+1，指向更早的）
+          ⚠️ 文案和 bindtap 是**一对要有也对**的约束，`tools/smoke.js` 有守卫，
+             改文案时必须同步确认它绑的是哪个方法。 -->
   <view class="pager" wx:if="{{list.length > 1}}">
     <!-- 两端样式完全一致，不做「禁用态」灰化（2026-10-03 用户要求）：
          到边界时由 js 弹一句 toast，而不是把按钮变暗。 -->
     <view class="pager-btn"
           hover-class="pager-btn-hover"
           hover-stay-time="80"
-          bindtap="onPrev">← 更早</view>
+          bindtap="onPrev">← 下期</view>
     <view class="pager-pos">{{idx + 1}} / {{list.length}}</view>
     <view class="pager-btn"
           hover-class="pager-btn-hover"
           hover-stay-time="80"
-          bindtap="onNext">较新 →</view>
+          bindtap="onNext">上期 →</view>
   </view>
 
   <view class="loading" wx:if="{{loading}}">正在取报…</view>

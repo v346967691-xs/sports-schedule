@@ -676,6 +676,9 @@ async function run() {
   const bWxss = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.wxss'), 'utf8')
   // 日报页源码字符串：翻页到边界时该不该给反馈，属于页面行为，得看源码而不是 require 后的模块
   const bJs = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.js'), 'utf8')
+  // 文案类断言必须**剥掉注释再判**：注释里会写「上一版叫『更早』」这类历史说明，
+  // 不剥掉的话"不许出现更早"这种断言会被自己的注释打挂。
+  const bWxmlCode = bWxml.replace(/<!--[\s\S]*?-->/g, '')
   // 非贪婪匹配到 </button>：只取标题行整块（匹配到 </view> 会在 mast-title 处提前截断）
   const titleRow = (bWxml.match(/<view class="mast-title-row">[\s\S]*?<\/button>/) || [])[0] || ''
   check('布局：日报页「分享好友」在标题行右侧',
@@ -983,15 +986,26 @@ async function run() {
     nameLost.length === 0,
     nameLost.length ? `${nameLost.length} 场丢队名，例：${nameLost[0].comp} ${nameLost[0].id}` : `${allFinished.length} 场全扫`)
 
-  /* ---------- 日报页翻页控件（2026-10-03 用户真机反馈两轮） ----------
-     ① 「更新」在中文里默认读作「刷新」，而这里表达的是「更新的期次」→ 两端改成「更早 / 较新」。
-     ② 第一版做法：两端做胶囊按钮，不可点时边框/底色/文字一起淡掉。
-        用户真机第二轮反馈：**边界页把其中一个按钮单独淡下去，两个按钮长得不一样，仍然别扭**
-        → 改成两端样式在任何一页都完全一致，边界反馈交给 toast。 */
-  check('日报页：翻页两端文案是「更早 / 较新」（不用有歧义的「更新」）',
-    /较新\s*→/.test(bWxml) && /←\s*更早/.test(bWxml) && !/更新\s*→/.test(bWxml))
+  /* ---------- 日报页翻页控件（2026-10-03 **三轮**真机反馈） ----------
+     ① 「更新」在中文里默认读作「刷新」→ 文案改掉。
+     ② 边界页把其中一个按钮单独淡下去，两端长得不一样 → 去掉禁用态，改 toast 反馈。
+     ③ 🔴 **左右方向曾经配反**（最容易踩，也最难自查）：序列 `idx 0 = 最新`，越往后越旧，
+        所以 **idx-1 才是"更新的那一期"**。上一版左端写「更早」（而它实际跳向更新），
+        用户点「较新」却被带到更早的一期。现在按**期刊语序**命名：
+        **上期 = 时间更早** / **下期 = 时间更晚**。 */
+  check('日报页：翻页文案是「下期 / 上期」（不用「更新/更早/较新」这类会歧义的说法）',
+    /←\s*下期/.test(bWxmlCode) && /上期\s*→/.test(bWxmlCode)
+    && !/更早/.test(bWxmlCode) && !/较新/.test(bWxmlCode) && !/更新\s*→/.test(bWxmlCode))
+  // 🔴 方向守卫：文案和 bindtap 是绑定的一对，**改一个不改另一个就会再次左右相反**
+  check('日报页：左端「下期」必须绑 onPrev（-1，指向更新的一期）',
+    /bindtap="onPrev">\s*←\s*下期/.test(bWxmlCode) && /onPrev\(\)\s*\{\s*this\.step\(-1\)/.test(bJs))
+  check('日报页：右端「上期」必须绑 onNext（+1，指向更早的一期）',
+    /bindtap="onNext">\s*上期\s*→/.test(bWxmlCode) && /onNext\(\)\s*\{\s*this\.step\(1\)/.test(bJs))
+  // 上面两条守卫都依赖这个前提 —— 万一以后把 list 改成倒序，这里先炸，别让方向悄悄错位
+  check('日报页：idx 0 仍是最新一期（方向守卫的前提）',
+    /idx:\s*0,[\s\S]{0,80}0\s*=\s*最新/.test(bJs))
   check('日报页：翻页两端都常挂按下反馈（没有禁用态，所以不做条件）',
-    (bWxml.match(/pager-btn[\s\S]{0,120}?hover-class="pager-btn-hover"/g) || []).length >= 2
+    (bWxmlCode.match(/pager-btn[\s\S]{0,120}?hover-class="pager-btn-hover"/g) || []).length >= 2
     && /\.pager-btn-hover/.test(bWxss),
     '两个按钮都挂了 hover-class')
   // 🔴 反向守卫：**不许**再出现按边界分叉的禁用态（用户明确要求两端一致）。
@@ -1001,9 +1015,12 @@ async function run() {
     && !/\{\{[^}]*\?\s*'off'/.test(bWxml)
     && !/hover-class="\{\{/.test(bWxml),
     '两端样式任何一页都一致')
-  check('日报页：到边界时用 toast 说明，而不是静默吞掉点击',
-    /已经是最早一期/.test(bJs) && /已经是最新一期/.test(bJs) && /showToast/.test(bJs),
-    'step() 里两端各有一句提示')
+  // 🔴 越界提示的方向也必须对：dir<0 是往"更新"走，越界说明已经最新（**与 dir 符号相反**）。
+  //    上一版这里也是反的 —— 点「去更新的那一期」却提示「已经是最早一期了」。
+  const stepTip = bJs.match(/dir\s*<\s*0\s*\?\s*'([^']+)'\s*:\s*'([^']+)'/) || []
+  check('日报页：越界提示方向正确（dir<0 ⇒ 已经最新，dir>0 ⇒ 已经最早）',
+    /最新/.test(stepTip[1] || '') && /最早/.test(stepTip[2] || ''),
+    stepTip[1] ? `dir<0 → ${stepTip[1]}；dir>0 → ${stepTip[2]}` : '没匹配到 step() 里的三元')
 
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸

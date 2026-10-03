@@ -690,4 +690,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, LINEUP_KEEP_DAYS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

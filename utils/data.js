@@ -538,6 +538,62 @@ async function matchDetail(match) {
   }
 }
 
+/**
+ * 球队名单（含球员档案：位置 / 球衣号 / 年龄 / 国籍 / 身高体重）。
+ *
+ * 🔴 这份数据**不进代码包**，只在云端（`team_roster` 表，由 `tools/team-roster.js` 推送）。
+ *    一支队 27 人 × 几百支球队打进包要 500KB+，包体积红线扛不住。
+ *
+ * ⚠️ 必须带缓存：球队页的 `onShow` 每次都会 render，没有缓存的话
+ *    每次回前台就发一次请求，等于把名单当比分刷。
+ *  · 命中缓存直接返回（10 分钟内）
+ *  · 同一个 key 的并发请求合并成一个 Promise（onShow 与 render 会同时触发）
+ *  · 读不到返回 null，页面据此把整块藏掉 —— 名单是增强内容，没有它页面照样能用
+ */
+const ROSTER_TTL = 10 * 60 * 1000
+const rosterCache = {}
+const rosterPending = {}
+
+async function teamRoster(comp, teamId) {
+  if (!comp || !teamId || !cloudClient.isReady()) return null
+  const key = `${comp}:${teamId}`
+  const hit = rosterCache[key]
+  if (hit && Date.now() - hit.t < ROSTER_TTL) return hit.v
+  if (rosterPending[key]) return rosterPending[key]
+  rosterPending[key] = (async () => {
+    try {
+      const { data, error } = await cloudClient.cloud.database
+        .from('team_roster')
+        .select('payload')
+        .eq('id', key)
+        .maybeSingle()
+      if (error || !data || !data.payload) return null
+      rosterCache[key] = { t: Date.now(), v: data.payload }
+      return data.payload
+    } catch (err) {
+      console.warn('[赛程助手] 云端球队名单读取失败', err)
+      return null
+    } finally {
+      delete rosterPending[key]
+    }
+  })()
+  return rosterPending[key]
+}
+
+/**
+ * 单个球员档案。球员详情页要它，但**不值得为它再打一张表** ——
+ * 名单里已经带了全部档案字段，按 athlete id 从所属队的名单里捞一行即可。
+ * ⚠️ 捞不到返回 null（比如这名球员不在当前名册里，或名单还没抓）。
+ */
+async function playerProfile(comp, teamId, athleteId) {
+  const roster = await teamRoster(comp, teamId)
+  if (!roster || !roster.players) return null
+  const id = String(athleteId)
+  const row = roster.players.find((p) => String(p.i) === id)
+  if (!row) return null
+  return { player: row, team: roster.team, coach: roster.coach, season: roster.season }
+}
+
 async function doRefresh() {
   try {
     // 并行拉三张表：它们互不依赖，串行只会白白多等两个 RTT
@@ -608,6 +664,8 @@ module.exports = {
   scorersGeneratedAt,
   scorersTop,
   matchDetail,
+  teamRoster,
+  playerProfile,
   refresh,
   source,
   generatedAt,

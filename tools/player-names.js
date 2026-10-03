@@ -290,9 +290,66 @@ function enNamesOf(ent) {
  * 「只在繁体里出现」的常用字 —— 粗筛，用来在多个写法里优先挑简体。
  * ⚠️ 它抓不住**港式音译**（「伊斯高」三个字简繁同形、「安祖·罗拔臣」字符已简体），
  *    那种只能靠 Wikidata 的 zh-cn 标签救，这里的字表只解决字符级差异。
+ *    → 那类**简体字形的港台译名**改由下面的 `MANUAL_REJECT` 兜底。
+ *
+ * 2026-10-03 补：上一轮通道 B 捞回「湯·京治」「卡恩·凱里寧」「阿尼斯·邁赫邁蒂」，
+ *    原表只有 48 字、太窄。这里按球员译名的实际用字范围补一批。
+ * 🔴 **只加「繁体专用字」** —— 简繁同形的字（高/路/非/面/革…）或简体字混进来，
+ *    会把正常的简体译名整片误杀。加字前逐个确认「简体写法一定不同」。
  */
-const TRAD_ONLY = /[羅爾賓貝蘭馬奧薩費華維賀蘇積龍衛頓遜謝贊亞倫齊傑納萊內魯歷聯賽國隊韋]/
+const TRAD_ONLY = new RegExp(
+  '[' +
+  '羅爾賓貝蘭馬奧薩費華維賀蘇積龍衛頓遜謝贊亞倫齊傑納萊內魯歷聯賽國隊韋' +
+  '湯凱寧邁嚴區單團園圖壓聲職聽讀語調談請諾講識議護譯豐趙躍軌載軟較輔輕輛輝輩輪輸轉' +
+  '辦農適選遺鄉鄭鐘鋼錢鎮鏈鐵門閉開關陽階際隨隱難雲靜韓頂項順須預領頭題顏願類顧' +
+  '風飛飯飲飾養館駐驗體麗麥黃點齒龜' +
+  ']'
+)
 const looksTraditional = (s) => TRAD_ONLY.test(String(s || ''))
+
+/**
+ * 🔴 **人工复核后确认「不能用」的 id** —— 命中过、但译名是错的，必须挡在字典外。
+ *
+ * 为什么需要这张表：通道 B 只解决「必须是足球运动员」，**解决不了同名同姓**。
+ * 按英文名搜出来的条目，可能是**另一个球员**，也可能是**港台译名**。
+ * 用户红线是「错的比英文更糟」，所以这些宁可落回英文短名。
+ *
+ * 两类典型错法（2026-10-03 通道 B 首轮 43 条里，17 条中招，命中率不到六成）：
+ *   ① **张冠李戴**：`Carlos Augusto` 命中卡瓦利亚尔（那是教练 Carlos Carvalhal）、
+ *      `Leonardo` 命中莱昂纳多·博努奇、`Pedro Malheiro` 命中若泽·萨。
+ *   ② **港台译名**：戴雅高 / 梅里路 / 湯·京治 / 盎尼·瓦拉卡里 —— 字符是简体，
+ *      `looksTraditional` 抓不到，但对大陆读者等于不认识。
+ *
+ * ⚠️ **维护方式**：跑完 `--channel=b` 后，把日志里的 30 条抽查样本
+ *    （以及 `git diff tools/player-zh.js` 出的**全部**新增）逐条核英文名与译名，
+ *    确认不可用的写进这里。**不要因为"看着还行"就放行** —— 这一轮 43 条里
+ *    明确错的就有 9 条，靠"看着差不多"是过不去的。
+ */
+const MANUAL_REJECT = new Map([
+  // 张冠李戴：英文名指向的是另一个人
+  ['271769', 'Carlos Augusto → 卡洛斯·卡瓦利亚尔（那是教练 Carlos Carvalhal）'],
+  ['302013', 'Leonardo → 莱昂纳多·博努奇（Bonucci 是另一个人）'],
+  ['324588', 'Pedro Malheiro → 若泽·萨（José Sá 是另一个人）'],
+  ['165085', 'Fabiano → 路易斯·法比亚诺（多出来的 Luis 是另一个人）'],
+  ['20016', 'Patrick Kelly → 连姆·凯利（Liam ≠ Patrick）'],
+  ['278038', 'Benjamin Kallman → 本杰明·谢尔曼（Kallman 不是 Sherman）'],
+  ['323973', 'Cristian Shpendi → 克里斯蒂安·姆彭帝（Shpendi 不是 Mpenti）'],
+  ['229556', 'Yan → 提哈罗（对不上任何常见译名）'],
+  // 名姓颠倒
+  ['240900', 'Li Yang → 杨丽（名姓颠倒，且"杨丽"是女足球员）'],
+  // 港台译名：简体字形，但大陆读者不认
+  ['134169', 'Lukas Hradecky → 鲁卡斯·哈迪基（港澳译法，大陆叫赫拉德茨基）'],
+  ['148515', 'Tom King → 湯·京治（香港译法，且残留繁体「湯」）'],
+  ['192278', 'Diego Gómez → 戴雅高（港澳译法）'],
+  ['235669', 'Kaan Kairinen → 卡恩·凱里寧（港澳译法，且残留繁体）'],
+  ['277212', 'Onni Valakari → 盎尼·瓦拉卡里（港澳译法）'],
+  ['296406', 'Lucas Bergstrom → 卢卡斯·贝治斯特朗（港澳译法）'],
+  ['308891', 'Anis Mehmeti → 阿尼斯·邁赫邁蒂（港澳译法，且残留繁体）'],
+  ['338894', 'Murillo → 梅里路（港澳译法，大陆叫穆里略）'],
+])
+
+/** 手工复核通过的样本，用来在日志里对照「什么才算能用的译名」。 */
+const REVIEW_SAMPLE_OK = ['陈蒲', '魏震', '刘洋', '程进', '钟义浩', '岳鑫', '林创益', '戴伟浚', '黄晟豪']
 
 /**
  * 挑中文译名 —— **优先级：Wikidata `zh-cn` → `zh-hans` → 中文维基条目标题**。
@@ -716,12 +773,16 @@ async function main() {
   let tradOnly = 0
   let notFoot = 0
   let nameBad = 0
+  let rejected = 0
   let fromB = 0
   const fromBSample = []
   const misses = []
   // 遍历 `all` 而不是本轮的 `todo` —— 缓存命中的人也要参与匹配，
   // 否则分批跑（--limit）时，前几批已经查过的人永远进不了输出。
   all.forEach((p) => {
+    // 人工复核判定不可用的（张冠李戴 / 港台译名）：连查都不查。
+    // ⚠️ 这里必须排在结转逻辑**之前** —— 否则上一轮已经写进字典的错名会被结转顶回来。
+    if (MANUAL_REJECT.has(p.id)) { rejected += 1; return }
     let picked = ''
     // 候选是 A ∪ B 的并集（A 在前），见上面 candOf 的注释
     for (const q of candOf[p.id] || []) {
@@ -755,7 +816,7 @@ async function main() {
   })
 
   log(`命中 ${hit} 人 / 未命中 ${miss} 人（命中率 ${Math.round((hit / Math.max(1, all.length)) * 100)}%）`)
-  log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜港台译名回落英文 ${tradOnly}`)
+  log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜港台译名回落英文 ${tradOnly}｜人工复核否决 ${rejected}`)
   if (fromB) {
     log(`其中 ${fromB} 人是靠通道 B（服务端足员过滤）捞回来的 —— 抽查这 30 条：`)
     fromBSample.forEach((l) => console.log('  ' + l))
@@ -777,6 +838,8 @@ async function main() {
   players.forEach((p) => { inInput[p.id] = 1 })
   Object.keys(prev).forEach((id) => {
     if (!prev[id] || result[id] || manual[id]) return
+    // 人工否决的 id 也不许结转回来（它可能已经在上一轮写进了字典）
+    if (MANUAL_REJECT.has(id)) return
     if (looksTraditional(prev[id])) return
     result[id] = prev[id]
     cache.seenZh[prev[id]] = 1

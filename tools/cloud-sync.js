@@ -118,13 +118,27 @@ async function main() {
 
   // 2b) 抓取比赛详情（事件时间轴 / 双方近况 / 历史交锋 / 技术统计）
   //     同样属于附加数据：失败只告警，不让赛程主链路跟着失败
+  //
+  // ⚠️ **子进程以 exit 3 退出不算失败** —— 那是「本轮没有需要抓的场次」的正常信号
+  //    （`match-detail.js` 的增量规则：已结束的只抓一次、未开赛 12h 一次）。
+  //    **刚跑过 `--force` 之后必然如此**：所有场次都已抓过。
+  //    这时 `data/match-details.js` 里仍是上一轮的成果，**照样要推上去**。
+  //    🔴 踩过的坑（2026-10-03）：把 exec 的异常当成"详情不可用"，结果
+  //       先 `--force` 再 `cloud-sync` 时，详情整整一班没上云端，本地却一切正常。
   let details = null
+  let execNote = ''
   try {
     execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js')], { stdio: 'inherit' })
+  } catch (err) {
+    execNote = (err && err.message) || String(err)
+  }
+  try {
     delete require.cache[require.resolve('../data/match-details.js')]
     details = require('../data/match-details.js')
+    if (execNote) log(`详情增量抓取无新增（${execNote}），改用现有 data/match-details.js 推送`)
   } catch (err) {
-    console.warn('[cloud-sync] ⚠ 比赛详情抓取失败，本次跳过推送：', (err && err.message) || err)
+    details = null
+    console.warn('[cloud-sync] ⚠ 详情数据文件不可用，本次跳过推送：', (err && err.message) || err)
   }
 
   // 2c) 抓取射手榜 / 助攻榜。

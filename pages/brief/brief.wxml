@@ -25,13 +25,15 @@
        ② 样式 —— 原来两端只是纯文字，可点/不可点**只差一个颜色深浅**，看起来像"文字没渲染好"。
           改成有边框的胶囊按钮，不可点时边框/底色/文字**一起**淡下去，靠结构区分状态。 -->
   <view class="pager" wx:if="{{list.length > 1}}">
-    <view class="pager-btn {{idx >= list.length - 1 ? 'off' : ''}}"
-          hover-class="{{idx >= list.length - 1 ? 'none' : 'pager-btn-hover'}}"
+    <!-- 两端样式完全一致，不做「禁用态」灰化（2026-10-03 用户要求）：
+         到边界时由 js 弹一句 toast，而不是把按钮变暗。 -->
+    <view class="pager-btn"
+          hover-class="pager-btn-hover"
           hover-stay-time="80"
           bindtap="onPrev">← 更早</view>
     <view class="pager-pos">{{idx + 1}} / {{list.length}}</view>
-    <view class="pager-btn {{idx <= 0 ? 'off' : ''}}"
-          hover-class="{{idx <= 0 ? 'none' : 'pager-btn-hover'}}"
+    <view class="pager-btn"
+          hover-class="pager-btn-hover"
           hover-stay-time="80"
           bindtap="onNext">较新 →</view>
   </view>

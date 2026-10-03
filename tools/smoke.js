@@ -674,6 +674,8 @@ async function run() {
     /class="btn primary share-btn"/.test(dWxml))
   const bWxml = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.wxml'), 'utf8')
   const bWxss = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.wxss'), 'utf8')
+  // 日报页源码字符串：翻页到边界时该不该给反馈，属于页面行为，得看源码而不是 require 后的模块
+  const bJs = fsMod.readFileSync(path.join(ROOT, 'pages/brief/brief.js'), 'utf8')
   // 非贪婪匹配到 </button>：只取标题行整块（匹配到 </view> 会在 mast-title 处提前截断）
   const titleRow = (bWxml.match(/<view class="mast-title-row">[\s\S]*?<\/button>/) || [])[0] || ''
   check('布局：日报页「分享好友」在标题行右侧',
@@ -981,20 +983,27 @@ async function run() {
     nameLost.length === 0,
     nameLost.length ? `${nameLost.length} 场丢队名，例：${nameLost[0].comp} ${nameLost[0].id}` : `${allFinished.length} 场全扫`)
 
-  /* ---------- 日报页翻页控件（2026-10-03 用户真机反馈） ----------
+  /* ---------- 日报页翻页控件（2026-10-03 用户真机反馈两轮） ----------
      ① 「更新」在中文里默认读作「刷新」，而这里表达的是「更新的期次」→ 两端改成「更早 / 较新」。
-     ② 原来两端是纯文字，可点与不可点只差一个颜色深浅，看起来像"渲染坏了"。
-        现在是有边框的胶囊，且不可点时边框/底色/文字一起淡掉。 */
+     ② 第一版做法：两端做胶囊按钮，不可点时边框/底色/文字一起淡掉。
+        用户真机第二轮反馈：**边界页把其中一个按钮单独淡下去，两个按钮长得不一样，仍然别扭**
+        → 改成两端样式在任何一页都完全一致，边界反馈交给 toast。 */
   check('日报页：翻页两端文案是「更早 / 较新」（不用有歧义的「更新」）',
     /较新\s*→/.test(bWxml) && /←\s*更早/.test(bWxml) && !/更新\s*→/.test(bWxml))
-  check('日报页：翻页两端都有按下反馈（hover-class，不可点时挂 none）',
-    (bWxml.match(/pager-btn[\s\S]{0,160}?hover-class=/g) || []).length >= 2
-    && /pager-btn-hover/.test(bWxss),
+  check('日报页：翻页两端都常挂按下反馈（没有禁用态，所以不做条件）',
+    (bWxml.match(/pager-btn[\s\S]{0,120}?hover-class="pager-btn-hover"/g) || []).length >= 2
+    && /\.pager-btn-hover/.test(bWxss),
     '两个按钮都挂了 hover-class')
-  const offCss = (bWxss.match(/\.pager-btn\.off\s*\{([\s\S]*?)\}/) || [])[1] || ''
-  check('日报页：不可点状态的边框与底色一起淡掉（不能只改文字颜色）',
-    /border-color/.test(offCss) && /background/.test(offCss) && /color/.test(offCss),
-    offCss ? '边框+底色+文字三样都覆盖' : '没找到 .pager-btn.off')
+  // 🔴 反向守卫：**不许**再出现按边界分叉的禁用态（用户明确要求两端一致）。
+  //    这条比"有 off 样式"更重要 —— 它是防止以后有人"顺手"把灰化加回来。
+  check('日报页：翻页两端不做边界灰化（没有 off 状态类 / 没有条件 hover-class）',
+    !/pager-btn\.off/.test(bWxss)
+    && !/\{\{[^}]*\?\s*'off'/.test(bWxml)
+    && !/hover-class="\{\{/.test(bWxml),
+    '两端样式任何一页都一致')
+  check('日报页：到边界时用 toast 说明，而不是静默吞掉点击',
+    /已经是最早一期/.test(bJs) && /已经是最新一期/.test(bJs) && /showToast/.test(bJs),
+    'step() 里两端各有一句提示')
 
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸

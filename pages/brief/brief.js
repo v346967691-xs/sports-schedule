@@ -61,8 +61,27 @@ Page({
     if (img && cur === this.data.cur) this.setData({ shareImage: img, shareDate: dateText })
   },
 
-  onPrev() { this.pick(this.data.idx - 1) },
-  onNext() { this.pick(this.data.idx + 1) },
+  onPrev() { this.step(-1) },
+  onNext() { this.step(1) },
+
+  /**
+   * 翻期次（dir = -1 更早 / +1 较新）。
+   *
+   * 🔴 到边界时**不能静默吞掉**：2026-10-03 用户要求两个按钮在任何一页样式完全一致，
+   *    也就是界面上**不再有"不可点"的视觉暗示** —— 这时候再不给反馈，
+   *    就真的成了「点了没反应」。所以用一句 toast 说明原因。
+   *    （`pick()` 自己仍然 clamp，防止别处直接调用时越界。）
+   */
+  step(dir) {
+    const list = this.data.list || []
+    const next = this.data.idx + dir
+    if (!list.length) return
+    if (next < 0 || next > list.length - 1) {
+      wx.showToast({ title: dir < 0 ? '已经是最早一期了' : '已经是最新一期了', icon: 'none' })
+      return
+    }
+    this.pick(next)
+  },
 
   onPullDownRefresh() {
     this.load().then(() => wx.stopPullDownRefresh())

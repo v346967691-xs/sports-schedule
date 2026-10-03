@@ -1393,12 +1393,21 @@ async function run() {
     const pre = all.filter((d) => upIds.indexOf(d.id) > -1)
     check('详情：未来 7 天内开赛的比赛都已抓到（赛前预览）',
       upIds.length > 0 && pre.length > 0, `赛程里 ${upIds.length} 场未开赛，已抓 ${pre.length} 场`)
+    // 🔴 **必须再按「此刻是否已开球」筛一遍**。
+    //    快照天生滞后一个同步周期：刚开球的比赛快照里还写着 `upcoming`，
+    //    但上游此刻已经返回事件/统计了 —— 这是**对的**（比赛真的在踢），不是 bug。
+    //    不筛的话，每天开球那一刻这条守卫必然假报警（踩过：nations-401861111，
+    //    快照 13:00Z 开球、13:33Z 抓详情，拿到 4 条事件 + 9 项统计）。
+    const startOf = {}
+    ;(matches() || []).forEach((x) => { startOf[x.id] = new Date(x.start).getTime() })
+    const notKickedOff = pre.filter((d) => startOf[d.id] > Date.now())
     check('详情：赛前场次没有事件与统计（页面据此隐藏那两块）',
-      pre.every((d) => !(d.events || []).length && !(d.stats || []).length),
-      pre.filter((d) => (d.events || []).length || (d.stats || []).length).slice(0, 3).map((d) => d.id).join(',') || 'ok')
+      notKickedOff.every((d) => !(d.events || []).length && !(d.stats || []).length),
+      notKickedOff.filter((d) => (d.events || []).length || (d.stats || []).length).slice(0, 3).map((d) => d.id).join(',') ||
+        `ok（${notKickedOff.length}/${pre.length} 场此刻仍未开球）`)
     check('详情：赛前场次至少有一方的近况（不是空壳）',
-      pre.some((d) => ((d.form && d.form.home) || []).length > 0),
-      pre.length ? `${pre.filter((d) => ((d.form && d.form.home) || []).length).length}/${pre.length} 场有近况` : '无')
+      notKickedOff.length === 0 || notKickedOff.some((d) => ((d.form && d.form.home) || []).length > 0),
+      notKickedOff.length ? `${notKickedOff.filter((d) => ((d.form && d.form.home) || []).length).length}/${notKickedOff.length} 场有近况` : 'ok（此刻无未开球场次）')
     // 交锋里出现「未来日期 + 0-0」＝把没打的比赛当成了历史战绩
     const ghostH2H = []
     all.forEach((d) => ((d.h2h && d.h2h.list) || []).forEach((e) => {

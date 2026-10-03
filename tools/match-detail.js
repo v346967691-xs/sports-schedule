@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * 比赛详情抓取：一次 ESPN summary 请求，抽出四个模块
+ * 比赛详情抓取：一次 ESPN summary 请求，抽出五个模块
  *
  *   ① 事件时间轴  keyEvents    —— 进球 / 点球 / 红黄牌 / 换人，带分钟与文字描述
  *   ② 双方近况    lastFiveGames —— 两队各自最近 5 场（主客、比分、胜负）
  *   ③ 历史交锋    seasonseries  —— 近 5 次交手与总战绩
  *   ④ 技术统计    boxscore     —— 控球率 / 射门 / 射正 / 角球 / 犯规 / 传球成功率
+ *   ⑤ 首发阵容    rosters      —— 两队首发 11 人 + 替补席（号码 / 位置），仅足球
  *
  * ⚠️ 三个硬约束（改这个文件前先读）：
  *   1. **小程序不能直连 ESPN**，必须由本脚本预抓、抽取字段后落云表；
@@ -15,6 +16,9 @@
  *      已抓过的名单从云端 match_detail 现读，不落本地文件（Actions 每次是
  *      干净 checkout，本地文件留不住）。
  *   3. 与积分榜同级别：失败只告警，绝不让赛程主链路跟着失败。
+ *
+ * ⚠️ ⑤ 是最贵的一块：`data/match-details.js` 是**打进包**的（包体积是稀缺资源），
+ *    所以阵容只在「开赛后 48 小时内」保留，细节见 pickLineups 与 LINEUP_KEEP_DAYS。
  */
 const fs = require('fs')
 const path = require('path')
@@ -55,12 +59,20 @@ const BASKETBALL = { nba: true }
  *    已结束的比赛只抓一次、之后永不刷新，光改代码老数据不会变。
  *    needsFetch 见到版本号不同会强制重抓一次，老数据自动淘汰。
  */
-const SCHEMA = 3
+const SCHEMA = 4
 
 const FINISHED_MS = 48 * 3600 * 1000 // 已结束：只补最近 48 小时
 const UPCOMING_MS = 7 * 24 * 3600 * 1000 // 赛前预览：未来 7 天内开赛的也抓
 const UPCOMING_REFRESH_MS = 12 * 3600 * 1000 // 未开赛的近况变化慢，12 小时刷一次就够
 const KEEP_DAYS = 7 // 云端保留天数（与 RLS 的 DELETE 策略一致）
+/**
+ * 首发阵容的保留窗口：**保留「今天 / 昨天」两个日桶，约等于最近 48 小时**。
+ * ⚠️ 这是一条**包体积红线**，别随手调大：详情桶是打进 `data/match-details.js` 的。
+ *    单场阵容实测 ~1.5KB（46 人：首发 22 + 替补席 24）；旺季单日最多 43 场足球，
+ *    两个日桶 ≈ 86 场 ≈ 130KB。放到 7 天就是 200+ 场、300KB+，等于白送一个半分享底图。
+ *    超出窗口的桶在写文件前会把 lineups 摘掉（见主流程的 lineups 裁剪）。
+ */
+const LINEUP_KEEP_DAYS = 1
 
 /* ---------------------------- 事件：过滤与汉化 ---------------------------- */
 
@@ -285,6 +297,69 @@ function pickStats(j, homeId) {
 }
 
 /**
+ * 位置归组：ESPN 给的是**很细的位置**（Goalkeeper / Center Left Defender /
+ * Left Back / Center Left Midfielder / Center Left Forward / Substitute），
+ * 缩写是 `G` / `CD-L` / `LB` / `CM-L` / `CF-R` / `SUB`（同一支队能出 11 种不同值）。
+ * 中文界面用不到这么细，而且一一映射要维护一张表 —— 统一归成 4 组，
+ * 首发按「门将 → 后卫 → 中场 → 前锋」排就是这个顺序。
+ * ⚠️ 判定顺序不能乱：`/back/` 要在 `/midfielder/` 之前（"Left Back" 里没有 midfielder，
+ *    但 "Defensive Midfielder" 里也没有 defender —— 两者其实不冲突，仍然按最具体的先判）。
+ */
+function posGroup(raw) {
+  const s = String(raw || '')
+  if (!s) return ''
+  if (/goalkeeper/i.test(s)) return 'G'
+  if (/defender|\bback\b/i.test(s)) return 'D'
+  if (/midfielder/i.test(s)) return 'M'
+  if (/forward|striker|winger/i.test(s)) return 'F'
+  return ''
+}
+
+/* ------------------------------ 首发阵容 ------------------------------ */
+
+/**
+ * 首发阵容：summary 的 `rosters` 里两队各 22~25 人，`starter` 标出首发 11 人。
+ *
+ * ⚠️ 三个刻意的取舍（改这里前先想清楚，每条都有实测依据）：
+ *  1. **没有首发标记就整个返回 null**。实测未开赛的比赛**也会**返回 rosters，
+ *     但 `starter` 全是 0 —— 那只是一份 23 人大名单，没有"首发"这层信息。
+ *     而快照里 45 天前向窗口有 600+ 场待开赛，全存会把包撑爆。
+ *     所以「无首发 → 不存」，这个功能天然只覆盖已开踢的比赛。
+ *  2. **姓名内联，不存 athlete id 引用查表**。7 天窗口里同一支队最多打 2 场，
+ *     去重省不下多少；内联反而让页面零查表、payload 自解释。
+ *  3. **位置只存归组后的 1 个字母**（G/D/M/F，见 posGroup）。
+ *  姓名优先取中文名（`tools/zh-names.js` 按 ESPN athlete id 查，
+ *  与射手榜共用同一套字典与自动播种），查不到回落英文短名 ——
+ *  **中英混排是预期内的正常状态，不要改成留空**。
+ *  NBA 的 summary 没有 rosters，这里自然返回 null，页面会整块隐藏。
+ */
+function pickLineups(j, homeId) {
+  const rs = Array.isArray(j.rosters) ? j.rosters : []
+  if (rs.length < 2) return null
+  const one = (r) =>
+    ((r && r.roster) || [])
+      .map((p) => {
+        const a = p.athlete || {}
+        const name = zhNames.playerZh(a.id) || String(a.shortName || a.displayName || '')
+        if (!name) return null
+        const row = { n: name }
+        if (p.jersey) row.j = String(p.jersey)
+        const pos = posGroup(p.position && (p.position.name || p.position.displayName))
+        if (pos) row.p = pos
+        if (p.starter) row.st = 1
+        return row
+      })
+      .filter(Boolean)
+  // 优先按队伍 id 认主客；认不出来就退回 ESPN 给的顺序（home 在前）
+  const home = rs.find((r) => String((r.team && r.team.id) || '') === String(homeId)) || rs[0]
+  const away = rs.find((r) => r !== home) || rs[1]
+  const H = one(home)
+  const A = one(away)
+  if (!H.some((x) => x.st) || !A.some((x) => x.st)) return null
+  return { home: H, away: A }
+}
+
+/**
  * 定位 ESPN 端点用的联赛 slug。
  * 单一来源赛事（五大联赛/欧冠/中超/NBA）直接查 SLUG 表；
  * 多来源赛事（中国国字号）没有固定 slug，由 sync.js 在抓取时写进比赛对象。
@@ -348,6 +423,7 @@ async function fetchDetail(m) {
     form: { home: form[String(homeId)] || [], away: form[String(awayId)] || [] },
     h2h,
     stats: pickStats(j, homeId),
+    lineups: pickLineups(j, homeId),
   }
 }
 
@@ -444,20 +520,30 @@ async function main() {
   })
 
   // 清理过期桶：本地不删云端行，交给 cloud-sync 在推送后处理
-  const cutoff = (() => {
-    const d = new Date(now - KEEP_DAYS * 24 * 3600 * 1000 + 8 * 3600 * 1000)
+  const cutoffOf = (days) => {
+    const d = new Date(now - days * 24 * 3600 * 1000 + 8 * 3600 * 1000)
     return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
-  })()
+  }
+  const cutoff = cutoffOf(KEEP_DAYS)
+  // ⚠️ 阵容的窗口比整桶的保留期短得多（包体积红线，见 LINEUP_KEEP_DAYS）。
+  //    超过窗口的桶把 lineups 摘掉再推 —— 已结束的比赛不会被重抓，
+  //    不主动裁的话它会一直躺在桶里占着包体积。
+  const lineupCutoff = cutoffOf(LINEUP_KEEP_DAYS)
 
   const touched = []
+  let lineups = 0
   Object.keys(buckets).forEach((id) => {
     const day = String(id).slice(2)
     if (day < cutoff) return // 过期桶整行丢掉，不再推送（云端的旧行由 cloud-sync 清理）
     const payload = buckets[id].payload || {}
+    const staleLineups = day < lineupCutoff
     // 清掉已经不再抓详情的赛事（比如后来决定不抓的国际友谊赛），
     // 否则这些行会一直被推到云端、也一直占着包体积
     Object.keys(payload).forEach((k) => {
-      if (!detailCapable(payload[k] && payload[k].comp)) delete payload[k]
+      const d = payload[k]
+      if (!detailCapable(d && d.comp)) { delete payload[k]; return }
+      if (staleLineups && d && d.lineups) d.lineups = null
+      if (d && d.lineups) lineups += 1
     })
     if (!Object.keys(payload).length) return
     touched.push({ id, day, payload })
@@ -466,7 +552,7 @@ async function main() {
   const out = {
     generatedAt: new Date().toISOString(),
     buckets: touched,
-    stats: { targets: targets.length, fetched: ok, failed: failed.length, buckets: touched.length },
+    stats: { targets: targets.length, fetched: ok, failed: failed.length, buckets: touched.length, lineups },
   }
   const file = path.join(__dirname, '..', 'data', 'match-details.js')
   fs.writeFileSync(
@@ -475,7 +561,7 @@ async function main() {
     'utf8'
   )
   const size = Math.round(fs.statSync(file).size / 1024)
-  console.log(`[match-detail] 抓取成功 ${ok} 场，失败 ${failed.length} 场，${touched.length} 个日桶 / ${size}KB`)
+  console.log(`[match-detail] 抓取成功 ${ok} 场，失败 ${failed.length} 场，${touched.length} 个日桶 / 阵容 ${lineups} 场 / ${size}KB`)
   if (failed.length) console.warn('[match-detail] 失败场次：', failed.slice(0, 6).join(' | '))
   if (!ok) {
     console.warn('[match-detail] ⚠ 本轮没有抓到任何详情，不覆盖已有数据')
@@ -492,4 +578,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh }
+module.exports = { SCHEMA, LINEUP_KEEP_DAYS, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh }

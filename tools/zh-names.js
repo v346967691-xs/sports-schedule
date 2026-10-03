@@ -173,6 +173,16 @@ const NAME_ZH = {
   Bermuda: '百慕大', 'British Virgin Islands': '英属维尔京群岛',
   'Cayman Islands': '开曼群岛', Dominica: '多米尼克', Guyana: '圭亚那',
   'Saint Kitts and Nevis': '圣基茨和尼维斯', 'Saint Lucia': '圣卢西亚', Suriname: '苏里南',
+  // ⚠️ ESPN 在这批小岛国上写的是缩写 "St."，与上面的 "Saint" 是**两个不同的 key**
+  //    （foldKey 只剥声调与撇号，不会把 St. 还原成 Saint），所以必须各自写一份。
+  'St. Kitts and Nevis': '圣基茨和尼维斯', 'St. Lucia': '圣卢西亚',
+  'St. Vincent and the Grenadines': '圣文森特和格林纳丁斯',
+  'Antigua and Barbuda': '安提瓜和巴布达', Montserrat: '蒙特塞拉特',
+  Guadeloupe: '瓜德罗普', Martinique: '马提尼克', Bonaire: '博奈尔',
+  'Turks and Caicos Islands': '特克斯和凯科斯群岛',
+  'US Virgin Islands': '美属维尔京群岛', 'French Guiana': '法属圭亚那',
+  // 圣马丁岛分属法荷，ESPN 用 "St. Martin"（法属）与 "Sint Maarten"（荷属）区分，别合并
+  'St. Martin': '法属圣马丁', 'Sint Maarten': '荷属圣马丁',
   // 南美
   Argentina: '阿根廷', Bolivia: '玻利维亚', Brazil: '巴西', Chile: '智利',
   Colombia: '哥伦比亚', Ecuador: '厄瓜多尔', Paraguay: '巴拉圭', Peru: '秘鲁',
@@ -253,6 +263,54 @@ const CLUB_ZH = {
   'Esteghlal': '德黑兰独立', 'Neftchi Fergana': '费尔干纳石油',
   'Pakhtakor Tashkent': '塔什干棉农', 'Shabab Al-Ahli': '迪拜青年国民',
   'Traktor Sazi FC': '大不里士拖拉机',
+
+  // ── 2026-10-04 新增 5 项赛事的队名 ──────────────────────────────────────
+  // 亚冠二级（afc.cup，2026 赛季有上海申花）
+  'Arkadag': '阿尔卡达格', 'Al Muharraq': '穆哈拉格', 'Gol Gohar FC Sirjan': '戈尔戈哈尔',
+  'Al-Jazira': '阿布扎比半岛', 'Persib': '万隆', 'Viettel': '越电信',
+  'Al Hussein': '侯赛因', 'SC East Bengal': '东孟加拉',
+  'Al-Nahda Muscat Club': '纳赫达', 'Al Taawoun': '塔翁', 'Al-Wahda': '瓦赫达',
+  'Kuwait SC': '科威特体育', 'Khaldiya': '哈尔迪亚', 'Nasaf Qarshi': '纳萨夫',
+  'Al Rayyan': '拉扬', 'Al-Faisaly': '费萨里', 'Al-Shorta': '警察队',
+  'Al-Seeb': '锡卜', 'Tai Po FC': '大埔', 'Lion City Sailors FC': '狮城水手',
+  'Preah Khan Reach Svay Rieng FC': '柴桢', 'Kitchee': '杰志',
+  'Phnom Penh Crown': '金边皇冠', 'Kuching City': '古晋市',
+  'BG Tampines Rovers FC': '淡滨尼流浪者',
+  // 女足欧冠（uefa.wchampions）：球队 id 与男足不同，只能按英文名收
+  'Bayern Munich': '拜仁慕尼黑', 'Manchester City': '曼城', 'Internazionale': '国际米兰',
+  'BK Häcken': '赫根', 'HB Køge': '克厄', 'OH Leuven': '鲁汶',
+  'OL Lyonnes': '里昂', 'Paris FC': '巴黎FC', 'Austria Vienna': '奥地利维也纳',
+  'Servette': '塞尔维特', 'Paris Saint-Germain': '巴黎圣日耳曼',
+  'Juventus': '尤文图斯', 'Benfica': '本菲卡', 'Real Madrid': '皇家马德里',
+  'Barcelona': '巴塞罗那', 'Chelsea': '切尔西', 'Arsenal': '阿森纳', 'Roma': '罗马',
+  // 美职联（usa.1）
+  'New York City FC': '纽约城', 'Nashville SC': '纳什维尔', 'Charlotte FC': '夏洛特',
+  'Houston Dynamo FC': '休斯敦迪纳摩', 'Columbus Crew': '哥伦布机员',
+  'Colorado Rapids': '科罗拉多急流', 'Orlando City SC': '奥兰多城',
+  'San Diego FC': '圣迭戈', 'Philadelphia Union': '费城联', 'CF Montréal': '蒙特利尔',
+  'Toronto FC': '多伦多', 'Chicago Fire FC': '芝加哥火焰', 'Austin FC': '奥斯汀',
+  'San Jose Earthquakes': '圣何塞地震', 'FC Dallas': '达拉斯',
+  'Sporting Kansas City': '堪萨斯城竞技', 'Seattle Sounders FC': '西雅图海湾人',
+  'Red Bull New York': '纽约红牛', 'Inter Miami CF': '迈阿密国际',
+  'Atlanta United FC': '亚特兰大联', 'LA Galaxy': '洛杉矶银河',
+  'New England Revolution': '新英格兰革命', 'Real Salt Lake': '皇家盐湖城',
+  'LAFC': '洛杉矶FC', 'Portland Timbers': '波特兰伐木者',
+  'Minnesota United FC': '明尼苏达联', 'Vancouver Whitecaps': '温哥华白帽',
+  'St. Louis CITY SC': '圣路易斯城', 'D.C. United': '华盛顿特区联',
+  'FC Cincinnati': '辛辛那提',
+  // 解放者杯（conmebol.libertadores）
+  'Fluminense': '弗卢米嫩塞', 'Platense': '普拉滕斯', 'Palmeiras': '帕尔梅拉斯',
+  'Liga de Quito': '基多体育大学', 'Corinthians': '科林蒂安',
+  'Independiente del Valle': '山谷独立', 'Flamengo': '弗拉门戈',
+  // 解放者杯 · 其余参赛队（射手榜会带出这些队，不补就会在界面上冒裸 team id）
+  'Universidad Católica': '天主教大学', 'Cruzeiro': '克鲁塞罗', 'Libertad': '自由队',
+  'Cerro Porteño': '波特诺山丘', 'Sporting Cristal': '水晶竞技', 'Bolívar': '玻利瓦尔',
+  'Peñarol': '佩纳罗尔', 'Nacional': '民族队', 'Universitario': '大学队',
+  'Atlético Junior': '巴兰基亚青年', 'Independiente Santa Fe': '圣菲独立',
+  'Deportes Tolima': '托利马', 'Coquimbo Unido': '科金博联合', 'Mirassol': '米拉索尔',
+  'Independiente Rivadavia': '里瓦达维亚独立', 'Cusco FC': '库斯科',
+  'Deportivo La Guaira': '拉瓜伊拉', 'Always Ready': '时刻准备',
+  'MLS All-Stars': '美职联全明星',
 }
 
 /**
@@ -524,6 +582,9 @@ function placeholderZh(name) {
   if ((m = s.match(/^([A-Za-z]+)\s+(\d+)\s+Winner$/i)) && KO_ROUND_ZH[m[1].toLowerCase()])
     return `${KO_ROUND_ZH[m[1].toLowerCase()]}第 ${m[2]} 场胜者`
   if ((m = s.match(/^Group\s+([A-Z])$/i))) return `${m[1]} 组`
+  // "TBD" / "TBD Home" / "TBD Away"：淘汰赛对阵还没定（解放者杯见过）。
+  // 主客两个都叫「待定」——在待定状态下区分主客没有意义，显示了反而像坏数据。
+  if (/^TBD(\s+(Home|Away))?$/i.test(s)) return '待定'
   return ''
 }
 

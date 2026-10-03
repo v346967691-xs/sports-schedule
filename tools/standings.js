@@ -553,6 +553,16 @@ const TARGETS = [
   { key: 'csl', cat: 'football', sport: 'soccer', espn: 'chn.1' },
   // 亚冠精英：东/西两个区各 16 队（不是联赛，是一张「小组积分表」）
   { key: 'acl', cat: 'football', sport: 'soccer', espn: 'afc.champions' },
+  // 亚冠二级：8 个小组 × 4 队（children 直接是分组）
+  { key: 'acl2', cat: 'football', sport: 'soccer', espn: 'afc.cup' },
+  // 女足欧冠：瑞士轮 18 队一张表
+  { key: 'wucl', cat: 'football', sport: 'soccer', espn: 'uefa.wchampions' },
+  // 美职联：东/西两个联盟
+  { key: 'mls', cat: 'football', sport: 'soccer', espn: 'usa.1' },
+  // 解放者杯：小组赛阶段 8 组 × 4 队
+  { key: 'lib', cat: 'football', sport: 'soccer', espn: 'conmebol.libertadores' },
+  // 北美国家联赛：League A/B/C 各分组
+  { key: 'cnl', cat: 'football', sport: 'soccer', espn: 'concacaf.nations.league' },
   // U17 世界杯：男足 12 组 × 4 队、女足 6 组 × 4 队，children 直接就是分组
   { key: 'u17', cat: 'football', sport: 'soccer', espn: 'fifa.world.u17' },
   { key: 'u17w', cat: 'football', sport: 'soccer', espn: 'fifa.wworld.u17' },

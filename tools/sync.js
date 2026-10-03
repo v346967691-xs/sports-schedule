@@ -87,6 +87,14 @@ const COMPETITIONS = [
   { key: 'csl', source: 'espn', sport: 'soccer', cat: 'football', name: '中超', full: '中国足球协会超级联赛', espn: 'chn.1', accent: '#A21C2E' },
   // 亚冠精英：北京国安 / 上海海港等中超球队参加的洲际俱乐部赛事（东亚区 + 西亚区）
   { key: 'acl', source: 'espn', sport: 'soccer', cat: 'football', name: '亚冠精英', full: '亚足联冠军精英联赛', espn: 'afc.champions', accent: '#0B6E4F' },
+  // 亚冠二级：亚足联第二级别俱乐部赛事，ESPN 的 slug 仍叫 afc.cup（旧名亚足联杯）。
+  // 有中超球队参加（2026 赛季上海申花在列）→ 关注页开放、详情也抓
+  { key: 'acl2', source: 'espn', sport: 'soccer', cat: 'football', name: '亚冠二级', full: '亚足联冠军二级联赛', espn: 'afc.cup', accent: '#13755C' },
+  // 女足欧冠：UEFA Women's Champions League，瑞士轮 18 队
+  { key: 'wucl', source: 'espn', sport: 'soccer', cat: 'football', name: '女足欧冠', full: '欧足联女子冠军联赛', espn: 'uefa.wchampions', accent: '#6A2C91' },
+  { key: 'mls', source: 'espn', sport: 'soccer', cat: 'football', name: '美职联', full: '美国职业足球大联盟', espn: 'usa.1', accent: '#0F5FA6' },
+  { key: 'lib', source: 'espn', sport: 'soccer', cat: 'football', name: '解放者杯', full: '南美解放者杯', espn: 'conmebol.libertadores', accent: '#C99700' },
+  { key: 'cnl', source: 'espn', sport: 'soccer', cat: 'football', name: '北美国联', full: '中北美及加勒比海国家联赛', espn: 'concacaf.nations.league', accent: '#2E86AB' },
   // 亚洲杯：2027-01-07 开赛（沙特）。ESPN 已经放了 48 场小组赛，但要等抓取窗口
   // 推到 2027-01 才会进快照（约 2026-12-17）——空赛事入口会自动隐藏，不用管
   { key: 'asiacup', source: 'espn', sport: 'soccer', cat: 'football', name: '亚洲杯', full: '亚足联亚洲杯（沙特 2027）', espn: 'afc.asian.cup', accent: '#B8860B' },
@@ -122,7 +130,7 @@ const COMPETITIONS = [
 const SPORT_CATS = {
   football: {
     name: '足球',
-    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'uecl', 'csl', 'acl', 'asiacup', 'u17', 'u17w', 'friendly'],
+    competitions: ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'uel', 'uecl', 'csl', 'acl', 'acl2', 'wucl', 'mls', 'lib', 'cnl', 'asiacup', 'u17', 'u17w', 'friendly'],
   },
   basketball: { name: '篮球', competitions: ['nba', 'cba'] },
   esports: { name: '电竞', competitions: ['worlds', 'demacia', 'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames'] },

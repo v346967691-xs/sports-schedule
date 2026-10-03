@@ -89,6 +89,7 @@ const ALL_STRONG = new Set([
 const FOOTBALL_COMPS = new Set([
   'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'ucl', 'uel', 'uecl', 'nations', 'chn',
   'csl', 'acl', 'asiacup', 'u17', 'u17w', 'friendly',
+  'acl2', 'wucl', 'mls', 'lib', 'cnl',
 ]);
 /** 英雄联盟系（含亚运会英雄联盟项目、德杯这种区域杯赛）—— 措辞按「局」走 */
 const LOL_COMPS = new Set(['lpl', 'lck', 'lec', 'worlds', 'msi', 'demacia', 'agames']);

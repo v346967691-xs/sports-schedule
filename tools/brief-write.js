@@ -30,7 +30,7 @@ const { stageBonus } = require('./brief-score.js');
 /**
  * 赛事 key → 报纸上用的中文名。
  *
- * 🔴 **必须覆盖全部 26 个赛事**（2026-10-03 补全）。这张表原来只有 13 项，
+ * 🔴 **必须覆盖全部 31 个赛事**（2026-10-03 补全到 26，10-04 再加 5 项）。这张表原来只有 13 项，
  *    缺的那一半会 `|| comp` **把原始 key 直接漏进正文** —— 用户截图里那句
  *    「北京时间…，demacia瑞士轮一场比赛结束」就是这么来的。
  *    `tools/smoke.js` 有守卫：每个赛事 key 都要有值、且值不能等于 key 本身。
@@ -41,6 +41,7 @@ const COMP_ZH = {
   ucl: '欧冠', epl: '英超', liga: '西甲', seriea: '意甲', bundesliga: '德甲', ligue1: '法甲',
   uel: '欧联', uecl: '欧协联', nations: '欧国联', chn: '中国之队',
   csl: '中超', acl: '亚冠精英', asiacup: '亚洲杯',
+  acl2: '亚冠二级', wucl: '女足欧冠', mls: '美职联', lib: '解放者杯', cnl: '北美国联',
   u17: 'U17世界杯', u17w: 'U17女足世界杯', friendly: '国际友谊赛',
   // 篮球
   nba: 'NBA', cba: 'CBA',

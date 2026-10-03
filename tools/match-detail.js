@@ -48,6 +48,15 @@ const SLUG = {
   uecl: 'uefa.europa.conf',
   csl: 'chn.1',
   acl: 'afc.champions',
+  // 亚冠二级有中超球队（2026 赛季上海申花），详情照抓
+  acl2: 'afc.cup',
+  wucl: 'uefa.wchampions',
+  mls: 'usa.1',
+  lib: 'conmebol.libertadores',
+  // ⚠️ 北美国家联赛**故意不抓详情**（与国际友谊赛同一个理由）：
+  //    实测 10 天窗口 37 场 = **63KB** 包体积，是同期新增赛事里最大的一笔，
+  //    而中文语境下它的「历史交锋 / 双方近况」几乎没人看。赛程 + 比分已经够用。
+  //    cnl: 'concacaf.nations.league',
   asiacup: 'afc.asian.cup',
   // ⚠️ 国际友谊赛**故意不抓详情**：友谊赛密集（未来 7 天就有 40 场），而且
   //    它的「历史交锋 / 双方近况」本来就是最没参考价值的一类，

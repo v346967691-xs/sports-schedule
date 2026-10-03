@@ -170,17 +170,35 @@ function buildIndex() {
     })
   })
 
-  // ② 挑主场赛事（去重后每支队只留一个展示赛事）
+  // ①b 同名去重：**显示名完全一样**的两条合成一条。
+  // 起因是女足欧冠：ESPN 给女足球队的是**另一套 team id**（男足阿森纳 359，女足是别的号），
+  // 按「大类+id」去不掉 → 搜「阿森纳」会冒出两行一模一样的「阿森纳」，用户分不清也点不错。
+  // 判据只认显示名：显示名都相同意味着界面上根本无法区分，合并才是正确的；
+  // 名字不同（哪怕是同一家俱乐部不同写法）不动，避免误合并。
+  const byDisplay = {}
+  const merged = []
   teams.forEach((t) => {
+    const k = `${t.cat}/${t.display}`
+    const hit = byDisplay[k]
+    if (hit) {
+      t.comps.forEach((c) => { if (hit.comps.indexOf(c) === -1) hit.comps.push(c) })
+      return
+    }
+    byDisplay[k] = t
+    merged.push(t)
+  })
+
+  // ② 挑主场赛事（去重后每支队只留一个展示赛事）
+  merged.forEach((t) => {
     const best = t.comps.slice().sort((a, b) => prio(a) - prio(b))[0]
     t.comp = best
     t.compName = compName[best] || best
   })
 
-  const list = comps.concat(teams)
+  const list = comps.concat(merged)
   return {
     list,
-    teams,
+    teams: merged,
     comps,
     // 「主赛事 / 副赛事」的名字表，页面要展示「另有 N 个赛事」时用得上
     compName,

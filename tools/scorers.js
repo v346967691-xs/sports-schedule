@@ -73,6 +73,11 @@ const TARGETS = [
   { key: 'uel', name: '欧联', espn: 'uefa.europa' },
   { key: 'csl', name: '中超', espn: 'chn.1' },
   { key: 'acl', name: '亚冠精英', espn: 'afc.champions' },
+  { key: 'acl2', name: '亚冠二级', espn: 'afc.cup' },
+  { key: 'wucl', name: '女足欧冠', espn: 'uefa.wchampions' },
+  { key: 'mls', name: '美职联', espn: 'usa.1' },
+  { key: 'lib', name: '解放者杯', espn: 'conmebol.libertadores' },
+  { key: 'cnl', name: '北美国联', espn: 'concacaf.nations.league' },
   // ⚠️ 国际友谊赛上游**有**榜，但故意不接：友谊赛进球毫无参考价值，
   //    和「故意不抓友谊赛详情」同一个理由（见 match-detail.js）。别再"顺手补上"。
 ]

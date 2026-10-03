@@ -543,7 +543,7 @@ async function run() {
   // 大类里的展示顺序（2026-10-02 用户定）：欧冠→五大联赛→欧国联→国字号→欧联→中超 /
   // NBA→CBA / 全球总决赛→德玛西亚杯→LPL→LCK→KPL→LEC→季中赛→亚运会
   const ORDER = {
-    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,uecl,csl,acl,asiacup,u17,u17w,friendly',
+    football: 'ucl,epl,liga,seriea,bundesliga,ligue1,nations,chn,uel,uecl,csl,acl,acl2,wucl,mls,lib,cnl,asiacup,u17,u17w,friendly',
     basketball: 'nba,cba',
     esports: 'worlds,demacia,lpl,lck,kpl,lec,msi,agames',
   }
@@ -2081,17 +2081,24 @@ async function run() {
      ③ 简称别名不出错；④ 页面跳转该走 tabBar 的那两处没写成 navigateTo。 */
   const searchMod = require(path.join(ROOT, 'utils/search.js'))
 
-  // ① 索引里的球队数必须等于「各赛事球队按 大类+id 去重」后的数量。
+  // ① 索引里的球队数必须等于「各赛事球队先按 大类+id 去重、再按 大类+显示名 合并」后的数量。
+  //    第二级是 2026-10-04 加的：女足球队在 ESPN 是**另一套 team id**，
+  //    只按 id 去重会让「阿森纳」出现两行一模一样的结果。
   //    这样写不依赖具体数字，赛季窗口里球队增减都不会假红。
   const expectTeams = (() => {
     const seen = {}
+    const byDisplay = {}
     dataMod.competitions().forEach((c) => {
-      dataMod.teamsOf(c.key).forEach((t) => { seen[c.cat + '/' + t.id] = 1 })
+      dataMod.teamsOf(c.key).forEach((t) => {
+        if (seen[c.cat + '/' + t.id]) return
+        seen[c.cat + '/' + t.id] = 1
+        byDisplay[c.cat + '/' + (t.zh || t.name || t.abbr || t.id)] = 1
+      })
     })
-    return Object.keys(seen).length
+    return Object.keys(byDisplay).length
   })()
   const sStats = searchMod.stats()
-  check('搜索：球队索引 = 各赛事按「大类+id」去重的数量（不重不漏）',
+  check('搜索：球队索引 = 各赛事按「大类+id」去重、再按显示名合并的数量（不重不漏）',
     sStats.teams === expectTeams && expectTeams > 0, `${sStats.teams} / 期望 ${expectTeams}`)
   check('搜索：赛事索引 = 全部赛事数',
     sStats.comps === dataMod.competitions().length, `${sStats.comps} / ${dataMod.competitions().length}`)
@@ -2106,8 +2113,10 @@ async function run() {
 
   // ③ 跨赛事重复的球队只出现一行，且标签用的是"主场赛事"
   const arsenalHits = searchMod.search('阿森纳')
-  check('搜索：同一支队横跨多个赛事只出现一行（阿森纳 ucl+epl）',
-    arsenalHits.length === 1 && arsenalHits[0].comps.length === 2,
+  // ⚠️ 不写死 comps.length：女足球队是另一套 ESPN team id，合并显示名后阿森纳是 ucl+epl+wucl 三档，
+  //    赛季窗口变化会让这个数字变。真正要守的是「只有一行」。
+  check('搜索：同一支队横跨多个赛事只出现一行（阿森纳 ucl+epl+wucl）',
+    arsenalHits.length === 1 && arsenalHits[0].comps.length >= 2,
     arsenalHits.map((x) => x.display + ':' + x.comps.join('+')).join(' , '))
   check('搜索：球队标签取"主场赛事"而不是赛事列表里的第一个（阿森纳 → 英超）',
     !!arsenalHits[0] && arsenalHits[0].comp === 'epl', arsenalHits[0] ? arsenalHits[0].comp : '未命中')

@@ -18,8 +18,12 @@ const { appInstance } = require('../../utils/app-instance')
  */
 // ⚠️ 欧战（欧冠/欧联/欧协联）不开放关注 —— 一支队的球队池横跨十几个国家联赛，
 //    跟「按联赛关注」的心智不符（2026-10-02 定的口径，欧协联沿用）
+// ⚠️ 亚冠精英与亚冠二级都有中超球队参加，开放关注（此前只开了中超本身）。
+// ⚠️ 注释只能写在数组**外面**：smoke 是**按行**从源码里抠这个数组的，
+//    写在里面会把注释文本当成赛事 key（2026-10-04 踩到，顺序断言直接 FAIL）。
 const SELECTABLE = [
   'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl',
+  'acl', 'acl2',
   'asiacup', 'u17', 'u17w', 'friendly', 'nba', 'cba', 'lpl', 'lck', 'kpl',
 ]
 

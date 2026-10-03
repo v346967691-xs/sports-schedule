@@ -26,6 +26,21 @@ const COMP_WEIGHT = {
   // 定 58 是为了让「豪门对决 +26」后能压过同期 LCK/LPL 常规赛（64+16=80），
   // 又不会高到盖过五大联赛豪门对决（74+26=100）。
   nations: 58,
+  // ── 2026-10-03 补全（此前这 10 项没有条目，只能吃兜底的默认值 30）────────────
+  // 后果不是「分数略低」这么轻：默认 30 让「德杯瑞士轮 BO1」压过了「KPL 擂台赛 BO5」，
+  // 于是头版成了连队名都写不出来的杯赛小组赛。默认值只该兜底，不该当主力。
+  // 补全后必须重跑 `node tools/brief-pick.js` 看排序有没有被翻掉。
+  asiacup: 70,   // 亚洲杯（国家队正赛，中国队参赛时再 +20）
+  acl: 56,       // 亚冠精英：低于欧联 66，与中国赛事同档（中国球队参赛有话题）
+  csl: 56,       // 中超
+  cba: 56,       // CBA：与中超同档，国内关注度相当
+  uecl: 54,      // 欧协联：明显低于欧联/欧冠
+  kpl: 52,       // 王者荣耀职业联赛：国内关注度不低，但低于 LPL/LCK 的 64
+  agames: 62,    // 亚运会电竞：国家队性质，高于常规联赛
+  friendly: 44,  // 国际友谊赛：练兵性质，除非中国队出战否则不该上头版
+  u17: 40,       // U17 世界杯（中国队参赛时再 +20）
+  u17w: 40,      // U17 女足世界杯
+  demacia: 38,   // 德杯：LPL 区域杯赛里的二线赛事，刻意压到所有正赛之下
 };
 
 // stage 字段形如「全球总决赛 · 瑞士轮」或「英超」：前半是赛事名，后半才是阶段
@@ -38,12 +53,16 @@ function parseStage(stage) {
 
 // 阶段加成：淘汰赛越靠后越值钱。顺序必须从具体到笼统，
 // 否则「四分之一决赛」会先被 /决赛/ 命中拿到决赛的分。
+// ⚠️ 「瑞士轮」必须单列在「小组赛」之前：两者分值一样，但**标签不同**，
+//    正文里会把「小组赛」写成「淘汰赛阶段，每一场都不能失手」——
+//    瑞士轮是积分循环制，根本不是淘汰赛（2026-10-03 用户截图里就是这么错的）。
 const STAGE_RULES = [
   { test: /四分之一|八强/, add: 24, label: '四分之一决赛' },
   { test: /半决赛|四强/, add: 32, label: '半决赛' },
   { test: /决赛|冠军赛/, add: 42, label: '决赛' },
   { test: /淘汰|附加赛|季后|资格赛|保级/, add: 18, label: '淘汰赛阶段' },
-  { test: /瑞士轮|小组赛|分组|循环/, add: 4, label: '小组赛' },
+  { test: /瑞士轮/, add: 4, label: '瑞士轮' },
+  { test: /小组赛|分组|循环/, add: 4, label: '小组赛' },
 ];
 
 function stageBonus(stageRaw) {
@@ -60,6 +79,10 @@ function score(m) {
   const comp = m.comp;
   const h = m.home || {};
   const a = m.away || {};
+  // 🔴 队名一律过显示口径（`zh || name`）—— 电竞俱乐部 `zh` 是空的，
+  //    直接取 `.zh` 会让 isStrong/isCn 全部返回 false（见 teams-tier.js 文件头）
+  const hz = T.disp(h);
+  const az = T.disp(a);
   const hs = Number(h.score) || 0;
   const as = Number(a.score) || 0;
   const diff = Math.abs(hs - as);
@@ -79,10 +102,10 @@ function score(m) {
   //   马德里德比 80+34+6 = 120  >  LEC 决赛 52+42+16+8 = 118   ← 要的效果
   //   LPL 决赛   64+42+16+8+6+20 = 156                        ← 不受影响，仍最高
   // 改这个值必须重跑回测：调到 26 时德比会被 LEC 决赛压过去（用户否决的排法）。
-  const hT1 = T.isT1(h.zh);
-  const aT1 = T.isT1(a.zh);
-  const hS = T.isStrong(h.zh);
-  const aS = T.isStrong(a.zh);
+  const hT1 = T.isT1(hz);
+  const aT1 = T.isT1(az);
+  const hS = T.isStrong(hz);
+  const aS = T.isStrong(az);
   if (hT1 && aT1) { s += 34; reasons.push('豪门对决'); }
   else if (hS && aS) { s += 16; reasons.push('强强对话'); }
   else if (hT1 || aT1) { s += 9; reasons.push('豪门出战'); }
@@ -101,8 +124,8 @@ function score(m) {
   // ⚠️ 悬殊比分必须看是谁赢谁 —— 强队大胜鱼腩是日常，弱队大胜强队才是地震
   const winner = hs > as ? h : (as > hs ? a : null);
   const loser = hs > as ? a : (as > hs ? h : null);
-  const wStrong = !!winner && T.isStrong(winner.zh);
-  const lStrong = !!loser && T.isStrong(loser.zh);
+  const wStrong = !!winner && T.isStrong(T.disp(winner));
+  const lStrong = !!loser && T.isStrong(T.disp(loser));
 
   if (T.isFootball(comp)) {
     if (diff >= 5) {
@@ -117,16 +140,19 @@ function score(m) {
       s += 6;
       reasons.push('一球之差');
     }
-  } else if (T.isLol(comp)) {
+  } else if (T.isEsports(comp)) {
+    // ⚠️ 电竞没有「球」，只有「局」。「1-0」在 BO1 里是赢下唯一一局，
+    //    绝不能说成「一球之差」（2026-10-03 用户截图里就是这么错的）。
+    // ✅ 用「赛制需要几局取胜」分档，别写死 3 —— KPL 决赛是 BO7，需要 4 胜。
     const best = Math.max(hs, as);
     const worst = Math.min(hs, as);
     const bo = Number(m.bo) || 1;
-    // 「BO5 打满」与「BO5」只显示一个，避免理由栏出现重复措辞
-    if (bo >= 5 && best === 3 && worst === 2) { s += 28; reasons.push('BO5 打满'); }
-    else if (bo >= 5 && best === 3 && worst <= 1) { s += 8; reasons.push('BO5 横扫'); }
-    else if (bo >= 3 && best === 2 && worst === 1) { s += 6; }
-    else if (bo >= 3) { reasons.push('BO' + bo); }
-  } else if (comp === 'nba') {
+    const need = Math.ceil(bo / 2); // 赢下系列赛所需局数：BO1→1、BO3→2、BO5→3、BO7→4
+    if (bo >= 5 && best === need && worst === need - 1) { s += 28; reasons.push('BO' + bo + ' 打满'); }
+    else if (bo >= 5 && best === need && worst <= 1) { s += 8; reasons.push('BO' + bo + ' 横扫'); }
+    else if (bo >= 3 && best === need && worst === need - 1) { s += 6; reasons.push('BO' + bo); }
+    else if (bo >= 3 && best === need) { reasons.push('BO' + bo); }
+  } else if (T.isBasketball(comp)) {
     if (diff >= 25) { s += 18; reasons.push('大比分'); }
     else if (diff <= 3) { s += 16; reasons.push('毫厘之差'); }
   }
@@ -136,18 +162,44 @@ function score(m) {
   // 20 的含义：中国队出战 ≈ 一场欧洲「强强对话」（+16），且同分时优先给中国（见 tieBreak）。
   // 调到 14 时，中国男足 0-3 新西兰 会被 德国 0-1 希腊 压过去 —— 中文体育报纸不会这么排。
   // 调到 26 以上，中国队打马尔代夫也会盖过豪门对决，同样失真。
-  if (comp === 'lpl' || comp === 'chn') { s += 6; reasons.push('中国赛事'); }
-  if (T.isCn(h.zh) || T.isCn(a.zh)) { s += 20; reasons.push('中国队伍出战'); }
+  // ⚠️ 2026-10-03 补了 kpl：KPL 是中国赛区的联赛，与 lpl 同等对待
+  //    （KPL 队名带中国城市前缀，但不在 CN_CLUBS 名单里，不补就永远拿不到中国关联分）。
+  if (comp === 'lpl' || comp === 'chn' || comp === 'kpl') { s += 6; reasons.push('中国赛事'); }
+  if (T.isCn(hz) || T.isCn(az)) { s += 20; reasons.push('中国队伍出战'); }
 
   return { score: Math.round(s), reasons };
 }
 
-// 同分时怎么排：局数多的优先，其次是中国关联，最后是分差与开赛时间
+/**
+ * 这场比赛够不够格上头版？
+ *
+ * ⚠️ 判据是「**能不能写成人话**」，不是新闻价值：
+ *    队名缺失时标题会退化成「战胜，比分1-0」这种没有主语的句子（2026-10-03 用户截图），
+ *    与其出一句空话，不如不出头条、改走前瞻分支。
+ *    实测 630 场已结束比赛里队名齐全率 100%（用显示口径统计），所以这道闸门平时不误伤，
+ *    只在数据源突然变脸时兜底。
+ */
+const PLACEHOLDER = /^(tbd|tba|待定|\?|-)+$/i;
+function headlineWorthy(m) {
+  const h = T.disp(m.home);
+  const a = T.disp(m.away);
+  if (!h || !a) return false;
+  if (PLACEHOLDER.test(h) || PLACEHOLDER.test(a)) return false;
+  return true;
+}
+
+// 同分时怎么排：足球优先 → 局数多的优先 → 中国关联 → 分差 → 开赛时间
+// ⚠️ 「足球优先」是 2026-10-03 用户口述的排序偏好（电竞当头条时措辞容易空）。
+//    放在**只在同分时生效**的位置是有意的：它不该推翻已经算好的权重
+//    —— 用户此前裁定过「LPL 决赛 156 分仍是最高」，那是权重问题不是同分问题。
 function tieBreak(x, y) {
+  const fx = T.isFootball(x.comp) ? 1 : 0;
+  const fy = T.isFootball(y.comp) ? 1 : 0;
+  if (fx !== fy) return fy - fx;
   const bo = (Number(y.bo) || 1) - (Number(x.bo) || 1);
   if (bo !== 0) return bo;
-  const cnX = (T.isCn(x.home && x.home.zh) || T.isCn(x.away && x.away.zh) || x.comp === 'lpl' || x.comp === 'chn') ? 1 : 0;
-  const cnY = (T.isCn(y.home && y.home.zh) || T.isCn(y.away && y.away.zh) || y.comp === 'lpl' || y.comp === 'chn') ? 1 : 0;
+  const cnX = (T.isCn(T.disp(x.home)) || T.isCn(T.disp(x.away)) || x.comp === 'lpl' || x.comp === 'chn' || x.comp === 'kpl') ? 1 : 0;
+  const cnY = (T.isCn(T.disp(y.home)) || T.isCn(T.disp(y.away)) || y.comp === 'lpl' || y.comp === 'chn' || y.comp === 'kpl') ? 1 : 0;
   if (cnX !== cnY) return cnY - cnX;
   const dX = Math.abs((Number(x.home.score) || 0) - (Number(x.away.score) || 0));
   const dY = Math.abs((Number(y.home.score) || 0) - (Number(y.away.score) || 0));
@@ -156,9 +208,13 @@ function tieBreak(x, y) {
 }
 
 // 在一个窗口内挑出头版与备选
+// ⚠️ 队名不全的比赛**直接剔掉**（见 headlineWorthy）：它们既写不出标题，
+//    在简讯里也只会显示成「demacia： 1-0 」这种半截行。
+//    全部候选都不够格时返回空数组 → brief-build 自动落到前瞻分支，宁可不设头条。
 function pick(list, topN) {
   return list
     .filter((m) => m.status === 'finished')
+    .filter(headlineWorthy)
     .map((m) => {
       const r = score(m);
       return Object.assign({}, m, { _score: r.score, _reasons: r.reasons });
@@ -167,4 +223,4 @@ function pick(list, topN) {
     .slice(0, topN || 5);
 }
 
-module.exports = { score, pick, COMP_WEIGHT, stageBonus };
+module.exports = { score, pick, headlineWorthy, tieBreak, COMP_WEIGHT, stageBonus };

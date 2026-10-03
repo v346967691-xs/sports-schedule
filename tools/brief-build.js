@@ -10,6 +10,8 @@ const W = require('./brief-window.js');
 const Wr = require('./brief-write.js');
 const Im = require('./brief-image.js');
 const Pv = require('./brief-preview.js');
+// 队名显示口径（zh || name）—— 电竞俱乐部 zh 是空的，见 teams-tier.js 文件头
+const T = require('./teams-tier.js');
 
 const HOUR = 3600000;
 
@@ -110,6 +112,8 @@ function build(dateStr, kind) {
   };
 
   // 简讯：同期其他比赛的一句话
+  // ⚠️ 队名必须走显示口径 `zh || name`（电竞俱乐部 z.h 是空的），
+  //    否则简讯行会变成「demacia： 1-0 」这种半截行（2026-10-03 用户截图）。
   out.briefs = res.top.slice(1).map((m) => {
     const nar = Wr.narrative(m);
     const comp = Wr.compZh(m.comp);
@@ -117,7 +121,7 @@ function build(dateStr, kind) {
       matchId: m.id,
       comp,
       stage: Wr.stageZh(m.stage),
-      line: comp + '：' + m.home.zh + ' ' + m.home.score + '-' + m.away.score + ' ' + m.away.zh,
+      line: comp + '：' + T.disp(m.home) + ' ' + m.home.score + '-' + m.away.score + ' ' + T.disp(m.away),
       narrative: nar.key,
       narrativeZh: nar.label,
       score: m._score,

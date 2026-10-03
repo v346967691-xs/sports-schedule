@@ -909,6 +909,93 @@ async function run() {
   check('4-1 的豪门对决不再说「一球制胜」',
     !/一球/.test(Wr.title(mkScore(4, 1), 0).text), Wr.title(mkScore(4, 1), 0).text)
 
+  /* ---------- 日报的「口径」守卫（2026-10-03 加） ----------
+     起因：用户真机截图 —— 德杯当头条，全文写成「战胜，比分1-0」「demacia瑞士轮，对阵。」
+     「双方仅一球之差，把握住机会，未能扳回。」。两个根因都不显眼、都容易再犯：
+       ① 取队名直接读 `home.zh`，而电竞俱乐部按用户 10-02 的要求是「zh 留空、name 放简码」，
+          显示口径是 `zh || name`（utils/data.js:179）。读 `.zh` 就整句没有主语了。
+       ② 赛事中文名表只写了 13/26 项，缺的那一半被 `|| comp` 把原始 key 漏进了正文。
+     下面把这两条钉住，顺带守「电竞不许出现足球措辞」。 */
+  const Tt = require(path.join(ROOT, 'tools/teams-tier.js'))
+  const compsAll = dataMod.competitions()
+  const zhMissing = compsAll.filter((c) => {
+    const v = Wr.COMP_ZH[c.key]
+    // 必须：有条目、不等于 key 本身（否则就是漏原始 key）、且像个中文名或品牌缩写
+    return !v || v === c.key || !/[A-Z\u4e00-\u9fff]/.test(v)
+  })
+  check('日报：赛事中文名表覆盖全部赛事，且不会漏出原始 key',
+    zhMissing.length === 0,
+    zhMissing.length ? '缺/坏：' + zhMissing.map((c) => c.key).join(' ') : `${compsAll.length} 个赛事全部有中文名`)
+
+  // 电竞俱乐部：zh 故意留空、name 放简码 —— 这正是踩坑的形状，直接照它造样本
+  const mkEsp = (comp, hs, as, bo, stage) => ({
+    comp, stage: stage || '德玛西亚杯 · 瑞士轮', date: '2026-10-03', time: '17:00', bo,
+    home: { zh: '', name: 'RED', abbr: 'RED', score: hs },
+    away: { zh: '', name: 'NAVI', abbr: 'NAVI', score: as },
+  })
+  const espCases = [['demacia', 1, 0, 1], ['demacia', 2, 1, 3], ['kpl', 3, 2, 5], ['kpl', 4, 3, 7], ['worlds', 3, 0, 5]]
+  const espBall = []
+  const espNoName = []
+  espCases.forEach(([c, hs, as, bo]) => {
+    const m = mkEsp(c, hs, as, bo)
+    const parts = [Wr.title(m, 0).text, Wr.lead(m)].concat(Wr.body(m))
+    const joined = parts.join('\n')
+    // 电竞没有「球」，只有「局」——出现足球措辞就是串了项目（德杯 1-0 曾写成「仅一球之差」）。
+    // ⚠️ 不能直接用 `/球/`：赛事名「全球总决赛」本身就带「球」字，会误伤（踩过）。
+    //    只认足球**措辞**：一球之差 / 打进 X 球 / 分差 X 球 / 扳回 / 九十分钟。
+    if (/一球|进球|打进|球门|扳回|九十分钟|[0-9]+\s*球/.test(joined)) espBall.push(`${c} ${hs}-${as}：${parts[2]}`)
+    if (!joined.includes('RED') || !joined.includes('NAVI')) espNoName.push(`${c} ${hs}-${as}：${parts[2]}`)
+  })
+  check('日报：电竞措辞只用「局」，不串足球的「球」（德杯 1-0 不再写「一球之差」）',
+    espBall.length === 0, espBall.length ? espBall[0] : `${espCases.length} 组电竞比分全扫`)
+  check('日报：电竞队名走显示口径（zh 为空时回落到 name，不许留空）',
+    espNoName.length === 0, espNoName.length ? espNoName[0] : 'BO1/BO3/BO5/BO7 都带上了队名')
+  // 赛制局数不能写死：KPL 决赛是 BO7，写死「五局」就会出现「七局四胜的比赛打满五局」
+  const bo7Title = Wr.title(mkEsp('kpl', 4, 3, 7), 0).text
+  check('日报：BO7 的结论不会被写成「五局」',
+    /七局/.test(bo7Title) && !/五局/.test(bo7Title), bo7Title)
+
+  // 「瑞士轮」是积分循环制，正文不许把它说成「淘汰赛」（用户截图里的原句就是这么错的）
+  const suisse = Wr.body(mkEsp('demacia', 1, 0, 1, '德玛西亚杯 · 瑞士轮')).join('')
+  check('日报：瑞士轮不会被写成「淘汰赛阶段」',
+    !/淘汰/.test(suisse) && !/一球/.test(suisse), suisse)
+
+  // 头条资格闸门：队名不全会写出没有主语的句子 → 直接不给上头版
+  const scMod = require(path.join(ROOT, 'tools/brief-score.js'))
+  check('日报：队名不全 / 占位符（TBD、待定）的比赛没有头条资格',
+    scMod.headlineWorthy({ comp: 'demacia', home: { zh: '', name: '', abbr: '' }, away: { zh: 'NAVI' } }) === false
+    && scMod.headlineWorthy({ comp: 'worlds', home: { name: 'TBD' }, away: { name: 'TBD' } }) === false
+    && scMod.headlineWorthy({ comp: 'demacia', home: { name: 'RED' }, away: { name: 'NAVI' } }) === true,
+    '空队名与 TBD 被拦下，简码队名放行')
+
+  // 全量回扫：所有够格的已结束比赛，正文都必须至少出现**两队的显示名**。
+  // 这条能一次抓住所有"漏了某个赛事/某个字段"的取名字口。
+  const allFinished = dataMod.matches().filter((m) => m.status === 'finished' && scMod.headlineWorthy(m))
+  const nameLost = allFinished.filter((m) => {
+    const t = [Wr.lead(m)].concat(Wr.body(m)).join('')
+    const h = Tt.disp(m.home)
+    const a = Tt.disp(m.away)
+    return !t.includes(h) || !t.includes(a)
+  })
+  check('日报：所有够格的已结束比赛，正文里两队队名都在（不会再写出「对阵。」）',
+    nameLost.length === 0,
+    nameLost.length ? `${nameLost.length} 场丢队名，例：${nameLost[0].comp} ${nameLost[0].id}` : `${allFinished.length} 场全扫`)
+
+  /* ---------- 日报页翻页控件（2026-10-03 用户真机反馈） ----------
+     ① 「更新」在中文里默认读作「刷新」，而这里表达的是「更新的期次」→ 两端改成「更早 / 较新」。
+     ② 原来两端是纯文字，可点与不可点只差一个颜色深浅，看起来像"渲染坏了"。
+        现在是有边框的胶囊，且不可点时边框/底色/文字一起淡掉。 */
+  check('日报页：翻页两端文案是「更早 / 较新」（不用有歧义的「更新」）',
+    /较新\s*→/.test(bWxml) && /←\s*更早/.test(bWxml) && !/更新\s*→/.test(bWxml))
+  check('日报页：翻页两端都有按下反馈（hover-class，不可点时挂 none）',
+    (bWxml.match(/pager-btn[\s\S]{0,160}?hover-class=/g) || []).length >= 2
+    && /pager-btn-hover/.test(bWxss),
+    '两个按钮都挂了 hover-class')
+  const offCss = (bWxss.match(/\.pager-btn\.off\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  check('日报页：不可点状态的边框与底色一起淡掉（不能只改文字颜色）',
+    /border-color/.test(offCss) && /background/.test(offCss) && /color/.test(offCss),
+    offCss ? '边框+底色+文字三样都覆盖' : '没找到 .pager-btn.off')
+
   const realFetchBriefs = briefApi.fetchBriefs
   // 走真实 normalize：列名映射（pub_at）出错的话，这里就会先炸
   briefApi.fetchBriefs = async (n) => ({ list: allIssues.slice(0, n || 10) })

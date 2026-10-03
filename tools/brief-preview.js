@@ -24,16 +24,18 @@ function previewScore(m, nowMs) {
   s += st.add * 1.2; // 前瞻阶段权重要比战报更重：还没打的决赛比已结束的更值得预告
   if (st.label) reasons.push(st.label);
 
-  const hT1 = T.isT1(m.home.zh);
-  const aT1 = T.isT1(m.away.zh);
-  const hS = T.isStrong(m.home.zh);
-  const aS = T.isStrong(m.away.zh);
+  // ⚠️ 队名一律走显示口径 disp（zh || name）—— 电竞俱乐部 zh 是空的，见 teams-tier.js 文件头
+  const hz = T.disp(m.home); const az = T.disp(m.away);
+  const hT1 = T.isT1(hz);
+  const aT1 = T.isT1(az);
+  const hS = T.isStrong(hz);
+  const aS = T.isStrong(az);
   if (hT1 && aT1) { s += 30; reasons.push('豪门对决'); }
   else if (hS && aS) { s += 16; reasons.push('强强对话'); }
   else if (hT1 || aT1) { s += 8; reasons.push('豪门出战'); }
 
-  if (T.isCn(m.home.zh) || T.isCn(m.away.zh)) { s += 20; reasons.push('中国队伍出战'); }
-  else if (comp === 'lpl' || comp === 'chn') { s += 6; reasons.push('中国赛事'); }
+  if (T.isCn(hz) || T.isCn(az)) { s += 20; reasons.push('中国队伍出战'); }
+  else if (comp === 'lpl' || comp === 'chn' || comp === 'kpl') { s += 6; reasons.push('中国赛事'); }
 
   // 临近度：越近的越值得预告
   const hours = (Date.parse(m.start) - nowMs) / HOUR;
@@ -73,9 +75,10 @@ function why(m) {
   else if (st.label === '半决赛') bits.push('胜者进决赛');
   else if (st.label === '四分之一决赛') bits.push('输球即止步');
   else if (st.label === '淘汰赛阶段') bits.push('淘汰赛，没有退路');
-  if (T.isT1(m.home.zh) && T.isT1(m.away.zh)) bits.push('两支顶级球队对话');
-  else if (T.isStrong(m.home.zh) && T.isStrong(m.away.zh) && st.label) bits.push('强队相遇');
-  if (T.isCn(m.home.zh) || T.isCn(m.away.zh)) bits.push('中国队伍出战');
+  const hz = T.disp(m.home); const az = T.disp(m.away);
+  if (T.isT1(hz) && T.isT1(az)) bits.push('两支顶级球队对话');
+  else if (T.isStrong(hz) && T.isStrong(az) && st.label) bits.push('强队相遇');
+  if (T.isCn(hz) || T.isCn(az)) bits.push('中国队伍出战');
   return bits.length ? bits.join('，') : null;
 }
 
@@ -138,7 +141,7 @@ function build(list, nowMs, perGroup, opts) {
         groupZh: GROUP_ZH[m._group],
         time: m.date + ' ' + (m.time || ''),
         venue: m.venue || '',
-        home: m.home.zh, away: m.away.zh,
+        home: T.disp(m.home), away: T.disp(m.away),
         why: why(m),
         relative: relative(m, nowMs),
         reasons: m._reasons,

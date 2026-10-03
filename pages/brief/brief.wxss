@@ -68,6 +68,8 @@
 }
 
 /* ── 期次翻阅 ── */
+/* 2026-10-03 用户真机反馈：右端「更新」灰掉后像坏掉的刷新按钮。
+   改成有边框的胶囊按钮 —— 可点/不可点靠**结构**（边框 + 底色）区分，不是只差颜色深浅。 */
 .pager {
   display: flex;
   align-items: center;
@@ -77,11 +79,24 @@
 }
 .pager-btn {
   font-size: 26rpx;
+  line-height: 1;
   color: #14235c;
-  padding: 8rpx 16rpx;
+  padding: 12rpx 24rpx;
+  border: 1rpx solid #c9d0e2;
+  border-radius: 999rpx;
+  background: #fff;
 }
+/* 按下反馈：只有「可点」的那一端才挂（wxml 里 off 时 hover-class="none"） */
+.pager-btn-hover {
+  background: #eef1f8;
+  border-color: #14235c;
+}
+/* 不可点：边框、底色、文字**三样一起**淡掉。
+   只改文字颜色的话看起来像"渲染出问题"，而不是"这个按钮此刻不可用"。 */
 .pager-btn.off {
-  color: #c3bdb1;
+  color: #bfb9ad;
+  border-color: #e6e1d6;
+  background: transparent;
 }
 .pager-pos {
   font-size: 24rpx;

@@ -18,10 +18,22 @@
   </view>
 
   <!-- 期次翻阅 -->
+  <!-- 2026-10-03 用户真机反馈：右端的「更新」灰掉之后看着像个坏掉的刷新按钮。
+       两处根因，都改了：
+       ① 措辞 —— 「更新」在中文里默认读作「刷新」（gēngxīn），而这里的意思是「更新的期次」（gèng xīn）。
+          换成与「更早」严格对称的「较新」，歧义消失。
+       ② 样式 —— 原来两端只是纯文字，可点/不可点**只差一个颜色深浅**，看起来像"文字没渲染好"。
+          改成有边框的胶囊按钮，不可点时边框/底色/文字**一起**淡下去，靠结构区分状态。 -->
   <view class="pager" wx:if="{{list.length > 1}}">
-    <view class="pager-btn {{idx >= list.length - 1 ? 'off' : ''}}" bindtap="onPrev">← 更早</view>
+    <view class="pager-btn {{idx >= list.length - 1 ? 'off' : ''}}"
+          hover-class="{{idx >= list.length - 1 ? 'none' : 'pager-btn-hover'}}"
+          hover-stay-time="80"
+          bindtap="onPrev">← 更早</view>
     <view class="pager-pos">{{idx + 1}} / {{list.length}}</view>
-    <view class="pager-btn {{idx <= 0 ? 'off' : ''}}" bindtap="onNext">更新 →</view>
+    <view class="pager-btn {{idx <= 0 ? 'off' : ''}}"
+          hover-class="{{idx <= 0 ? 'none' : 'pager-btn-hover'}}"
+          hover-stay-time="80"
+          bindtap="onNext">较新 →</view>
   </view>
 
   <view class="loading" wx:if="{{loading}}">正在取报…</view>

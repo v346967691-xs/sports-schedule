@@ -1834,6 +1834,102 @@ async function run() {
   check('首发阵容：存下来的每一场都能渲染出分组（不会存了却画不出来）',
     luRenderable === luStored, `${luRenderable}/${luStored}`)
 
+  /* ---------- 球员字典播种器（阵容球员池） ----------
+     2026-10-03：球员字典原本只从「射手榜/助攻榜」取输入，导致阵容里 87% 的人没有中文名
+     （后卫/门将永远上不了射手榜）。现在多了一个输入源：`tools/match-detail.js` 抓详情时
+     顺手把「还没有中文名」的球员写成 `tools/.lineup-players.json`（零额外上游请求）。
+     这里守三件事：池子记的东西对不对、并集会不会丢、播种器读不读得到。 */
+  const mdMod = require(path.join(ROOT, 'tools/match-detail.js'))
+  const pnMod = require(path.join(ROOT, 'tools/player-names.js'))
+  const zhNamesMod = require(path.join(ROOT, 'tools/zh-names.js'))
+  const os = require('os')
+
+  check('球员池：工具导出了池子相关的接口',
+    typeof mdMod.noteRosterPlayers === 'function'
+    && typeof mdMod.savePlayerPool === 'function'
+    && typeof mdMod.PLAYER_POOL_FILE === 'string')
+
+  // 找一个「已经有中文名」的 id 来验证跳过规则（这些人不该进池，白占体积）
+  const knownId = Object.keys(zhNamesMod.PLAYER_ZH || {})[0]
+  const fakeSummary = {
+    rosters: [
+      {
+        team: { id: '1' },
+        roster: [
+          { athlete: { id: '900001', displayName: 'Test Player One', shortName: 'T. One' }, jersey: '9', starter: true },
+          { athlete: { id: '900002', displayName: 'Test Player Two', shortName: 'T. Two' } },
+          { athlete: { id: '900002', displayName: 'Test Player Two', shortName: 'T. Two' } }, // 重复
+          { athlete: { id: knownId, displayName: 'Already Translated', shortName: 'A. T.' } },
+          { athlete: {} }, // 没有 id
+        ],
+      },
+      {
+        team: { id: '2' },
+        roster: [{ athlete: { id: '900003', displayName: 'Test Player Three' } }],
+      },
+    ],
+  }
+
+  const sink = new Map()
+  const sinkSize = mdMod.noteRosterPlayers(fakeSummary, sink, 'epl')
+  check('球员池：只收「没有中文名」的球员，且按 id 去重',
+    sinkSize === 3 && sink.has('900001') && sink.has('900002') && sink.has('900003')
+    && !sink.has(String(knownId)) && !sink.has('undefined'),
+    `收了 ${sinkSize} 人（期望 3；有中文名的 ${knownId} 应被跳过）`)
+  check('球员池：记下完整英文名（播种靠它检索）与所在赛事',
+    sink.get('900001').full === 'Test Player One' && sink.get('900001').short === 'T. One'
+    && JSON.stringify(sink.get('900001').c) === '["epl"]',
+    JSON.stringify(sink.get('900001')))
+  check('球员池：同一球员横跨多个赛事时赛事取并集',
+    mdMod.noteRosterPlayers(fakeSummary, sink, 'ucl') === 3
+    && JSON.stringify(sink.get('900001').c) === '["epl","ucl"]',
+    JSON.stringify(sink.get('900001').c))
+
+  // 落盘必须与旧池取**并集**：历史场次的球员不能因为这场没上就丢了
+  const tmpPool = path.join(os.tmpdir(), 'wb-lineup-pool-test.json')
+  fs.writeFileSync(tmpPool, JSON.stringify([{ id: 'old-1', full: 'Old One', short: 'O. One', c: ['liga'] }]), 'utf8')
+  // 把池子灌成 fakeSummary 的内容（不带 into → 写进模块级池子），再落盘到临时文件
+  mdMod.noteRosterPlayers(fakeSummary)
+  mdMod.savePlayerPool(tmpPool)
+  const mergedPool = JSON.parse(fs.readFileSync(tmpPool, 'utf8'))
+  const mergedIds = mergedPool.map((p) => p.id).sort()
+  check('球员池：落盘与旧池取并集（旧的不丢、新的进得来）',
+    mergedIds.join(',') === '900001,900002,900003,old-1', mergedIds.join(','))
+  fs.unlinkSync(tmpPool)
+
+  // 播种器侧
+  const readPoolResult = pnMod.readPool()
+  check('播种器：阵容池条目形状正确（id + 完整英文名）',
+    Array.isArray(readPoolResult)
+    && readPoolResult.every((p) => p.id && p.full && Array.isArray(p.comps)),
+    `${readPoolResult.length} 人`)
+  // 池子是现场产物，本机可能还没有（比如刚克隆）；有就必须是排好序的
+  if (readPoolResult.length) {
+    const rankOf = (p) => {
+      let best = pnMod.COMP_RANK.length
+      p.comps.forEach((c) => {
+        const i = pnMod.COMP_RANK.indexOf(c)
+        if (i > -1 && i < best) best = i
+      })
+      return best
+    }
+    const ranks = readPoolResult.map(rankOf)
+    check('播种器：池子按赛事优先级排序（--limit 切片才有意义）',
+      ranks.every((r, i) => i === 0 || ranks[i - 1] <= r),
+      `前 3 名赛事的 rank: ${ranks.slice(0, 3).join(',')} / 共 ${readPoolResult.length} 人`)
+  } else {
+    check('播种器：池子按赛事优先级排序（--limit 切片才有意义）', true, '跳过：池子为空')
+  }
+  // 读不到文件必须是「空源」而不是崩
+  check('播种器：读不到池子文件时按空源处理（不抛错）',
+    pnMod.readPool(path.join(os.tmpdir(), 'wb-no-such-pool.json')).length === 0)
+
+  check('播种器：默认输入源是 all（射手榜 ∪ 阵容池）', pnMod.SOURCE === 'all', pnMod.SOURCE)
+  check('播种器：赛事优先级表没有重复项，且都是真实赛事 key',
+    pnMod.COMP_RANK.length === new Set(pnMod.COMP_RANK).size
+    && pnMod.COMP_RANK.every((k) => !!dataMod.compOf(k).name && dataMod.compOf(k).name !== k),
+    `${pnMod.COMP_RANK.length} 项`)
+
   /* ---------- 全站搜索（球队 + 赛事，纯本地索引） ----------
      utils/search.js 是纯函数 + 内存索引，可以直接当模块测，不用起页面。
      这里守四件事：① 索引规模与数据层一致（没漏没重）；② 去重与"主场赛事"的挑法；

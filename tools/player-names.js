@@ -1,15 +1,32 @@
 /**
  * 球员中文名「种子」生成器
  * ============================================================
- * 用法： node tools/player-names.js [--dry] [--only=ucl,epl] [--limit=200] [--concurrency=1] [--sleep=6500]
+ * 用法： node tools/player-names.js [--dry] [--only=ucl,epl] [--limit=200] [--source=all|scorers|lineups]
+ *                                  [--concurrency=1] [--sleep=6500]
  *
  *   --limit=N   只处理本轮前 N 个「还没查过」的球员。
  *              每批结束都会落盘，比一把梭哈更抗中断。
+ *   --source=   取哪些球员当输入：
+ *                 scorers（默认之一）= 射手榜 / 助攻榜（上游有榜的 10 个赛事）
+ *                 lineups            = 比赛详情首发阵容里出现过的球员
+ *                 all（默认）        = 两者并集
  *
  * 为什么需要它：ESPN **全站不提供任何球员中文名**（`?lang=zh` 实测无效，
  * 见 tools/scorers.js 顶部的探测结论），所以球员汉化只能自建字典。
  * 而射手榜每个赛季都会冒出一两百个新名字，纯手工维护不现实 —— 这个脚本负责
  * 批量播种，人工只需在 `zh-names.js` 的 PLAYER_ZH 里纠错与改简称。
+ *
+ * ------------------------------------------------------------ 两个输入源
+ * ① **射手榜**（直连 ESPN `/statistics`）—— `collectFromScorers()`。
+ * ② **阵容球员池**（读 `tools/.lineup-players.json`）—— `readPool()`。
+ *    这份池子由 `tools/match-detail.js` 在同步时**顺手**写下（它手里已经有 summary 的
+ *    `rosters`，零额外请求），内容是「抓到了但还没有中文名」的球员 id + 全名。
+ *
+ *    ⚠️ 为什么必须有第二个源：阵容里 46 人里有一多半是后卫/门将，
+ *       **射手榜永远覆盖不到他们**。只靠 ① 时，阵容界面上会冒出 `W. Zhen` 这类英文
+ *       （实测覆盖率只有 13%）。②补上之后覆盖率才谈得上"够用"。
+ *    ⚠️ 池子是**累积**的，且 `tools/` 不进包不入 git，随时可重建：
+ *       一次性补齐用 `node tools/match-detail.js --force`（否则只靠新增场次慢慢长）。
  *
  * 优先级（高 → 低）：
  *   ① `zh-names.js` 的 PLAYER_ZH     —— 人工，权威，可覆盖任何自动结果
@@ -46,6 +63,8 @@ const ROOT = path.join(__dirname, '..')
 const OUT_FILE = path.join(__dirname, 'player-zh.js')
 /** 抓取阶段的候选结果缓存 —— 见 main() 里的说明，是「可续跑」的关键 */
 const CACHE_FILE = path.join(__dirname, '.player-names-cache.json')
+/** 阵容球员池（输入源 ②）—— 由 tools/match-detail.js 写，见那里的 noteRosterPlayers */
+const POOL_FILE = path.join(__dirname, '.lineup-players.json')
 /**
  * 缓存格式版本。**改了检索通道 / 闸门口径就必须 +1** ——
  * 版本对不上会整份作废重抓，避免拿旧口径的结果冒充新结果。
@@ -62,6 +81,11 @@ const args = process.argv.slice(2)
 const DRY = args.includes('--dry')
 const ONLY = (args.find((a) => a.startsWith('--only=')) || '').split('=')[1]
 const LIMIT = Math.max(0, Number((args.find((a) => a.startsWith('--limit=')) || '').split('=')[1]) || 0)
+/** 输入源：all（默认）| scorers | lineups —— 见文件顶部说明 */
+const SOURCE = (() => {
+  const v = ((args.find((a) => a.startsWith('--source=')) || '').split('=')[1] || 'all').trim()
+  return ['all', 'scorers', 'lineups'].includes(v) ? v : 'all'
+})()
 // 🔴 默认**串行**（CONC=1）。MediaWiki 的 API 礼仪明确要求「请求必须串行、每秒不超过 1 次」，
 //    并发请求本身就会触发限流 —— 踩过：并发 2 时约 22% 的请求吃 429，每次要退避 4~16 秒，
 //    实测吞吐掉到 ~5 秒/人，比串行（~1.3 秒/人）还慢 4 倍。**调大并发只会更慢。**
@@ -88,8 +112,23 @@ const TARGETS = [
   { key: 'acl', espn: 'afc.champions' },
 ]
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+/**
+ * 阵容球员的**赛事优先级**（越靠前越先补）。
+ *
+ * 依据是「用户真的会点开看的比赛」：俱乐部联赛与欧战 > 中国球队 > 杯赛 > 国字号/U17/友谊赛。
+ * ⚠️ **这是一张会影响成本的表**：`--limit=N` 是按池子排序切的，而池子按这张表排 ——
+ *    所以表的顺序直接决定「先花出去的 1 小时买到了什么」。
+ *    五大联赛/欧冠的阵容最值得汉化；欧国联与 U17 的大名单一半是观众不认识的替补，排后面。
+ * 没列到的赛事排最后（原始顺序）。
+ */
+const COMP_RANK = [
+  'ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'uel', 'uecl',
+  'csl', 'acl', 'chn', 'nba', 'cba',
+  'nations', 'asiacup', 'friendly', 'u17', 'u17w', 'worlds', 'demacia',
+  'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames',
+]
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 function log(...a) {
   console.log('[player-names]', ...a)
 }
@@ -266,7 +305,9 @@ function nameMatches(espnName, enNames) {
 
 /* ------------------------------------------------------ 第一步：待补的球员 */
 
-async function collectPlayers() {
+/* ------------------------------------------- 输入源 ①：射手榜 / 助攻榜 */
+
+async function collectFromScorers() {
   const keys = ONLY ? ONLY.split(',').map((s) => s.trim()) : null
   const out = new Map() // id -> { id, full, short }
   for (const t of TARGETS) {
@@ -288,6 +329,77 @@ async function collectPlayers() {
       })
     log(`${t.key} 累计待补 ${out.size} 人`)
   }
+  return [...out.values()]
+}
+
+/* --------------------------------------------- 输入源 ②：阵容球员池 */
+
+/**
+ * 读 `tools/.lineup-players.json`（由 tools/match-detail.js 写）。
+ * ⚠️ 池子里的 `full` 就是 ESPN 的 `displayName` —— 这是关键，
+ *    播种走的 `wbsearchentities` 只有拿到完整英文名才有 95%+ 命中率。
+ * 读不到不是错误（比如还没跑过 match-detail），只是这个源为空。
+ *
+ * ⚠️ **排序即优先级**：`--limit=N` 是按这个顺序切的，所以这里按赛事价值排序 ——
+ *    用户会点开的比赛（欧冠/五大联赛/中超/亚冠）排前面，
+ *    欧国联/U17/友谊赛的大名单排后面。不然 `--limit` 切到的是抓取顺序，纯看运气。
+ * @param {string} [file] 池子路径（默认 POOL_FILE；参数是给 smoke 测「读不到」用的）
+ */
+function readPool(file) {
+  let raw
+  try {
+    raw = JSON.parse(fs.readFileSync(file || POOL_FILE, 'utf8'))
+  } catch (e) {
+    log('⚠️ 没有阵容球员池（tools/.lineup-players.json），这个源为空。')
+    log('   要补齐：node tools/match-detail.js --force')
+    return []
+  }
+  // ⚠️ 这里读的是**映射之后**的字段名 `comps`。写成 `p.c` 的话 rank 恒为「最后一档」，
+  //    sort 会变成静默的空操作 —— 池子看着有序、其实完全是抓取顺序。
+  //    （smoke 有一条「池子按赛事优先级排序」专门守这个。）
+  const rank = (p) => {
+    const cs = (p && (p.comps || p.c)) || []
+    let best = COMP_RANK.length
+    cs.forEach((c) => {
+      const i = COMP_RANK.indexOf(c)
+      if (i > -1 && i < best) best = i
+    })
+    return best
+  }
+  return (Array.isArray(raw) ? raw : [])
+    .map((p) => {
+      const id = String((p && p.id) || '')
+      const full = String((p && p.full) || '').trim()
+      const short = String((p && p.short) || '').trim()
+      return { id, full: full || short, short: short || full, comps: (p && p.c) || [] }
+    })
+    .filter((p) => p.id && p.full)
+    .sort((a, b) => rank(a) - rank(b))
+}
+
+/** 合并两个源；同 id 以**先加入的**为准（射手榜在前：那边的 displayName 更完整） */
+async function collectPlayers() {
+  const out = new Map()
+  const add = (list, tag) => {
+    let n = 0
+    list.forEach((p) => {
+      if (out.has(p.id)) return
+      out.set(p.id, p)
+      n += 1
+    })
+    log(`源「${tag}」${list.length} 人，净增 ${n} 人`)
+  }
+  const keys = ONLY ? ONLY.split(',').map((s) => s.trim()) : null
+  // 阵容池同样支持 --only 过滤（池子里记了赛事），这样「只补五大联赛」对两个源都成立
+  let pool = readPool()
+  if (keys) {
+    const before = pool.length
+    pool = pool.filter((p) => (p.comps || []).some((c) => keys.includes(c)))
+    log(`阵容池按 --only=${ONLY} 过滤：${before} → ${pool.length} 人`)
+  }
+  if (SOURCE !== 'lineups') add(await collectFromScorers(), '射手榜 / 助攻榜')
+  if (SOURCE !== 'scorers') add(pool, '阵容球员池')
+  log(`两源合并后共 ${out.size} 人`)
   return [...out.values()]
 }
 
@@ -511,17 +623,27 @@ async function main() {
 
   // 保留上一轮里本轮没拿到的（射手上下榜会掉出集合，不该因此丢字典）
   //
+  // ⚠️ **必须遍历 `prev` 的全部 key，不能只遍历本轮的 `players`。**
+  //    踩过的坑：`--only=ucl,epl`（只重建两个联赛）或 `--source=lineups` 会**缩小输入集合**，
+  //    而结转如果只看本轮集合，集合外那些早就查好的名字会被**整批丢掉** ——
+  //    字典是只增不减的资产，不该因为一次「只重建两个联赛」就缩水。
   // ⚠️ **但只结转「看着像简体」的名字**：上一版用中文维基全文检索时留下一批港式译名
   //    （「安祖·罗拔臣」「伊斯高」「尼曼查·马迪」），面对大陆读者比英文短名更困惑。
   //    不带这道守卫，新通道查不到的那一刻就会被旧值顶住，永远换不掉。
+  // ⚠️ 结转要放在匹配循环**之后**：`result` 里已有的名字不该被旧值覆盖。
   let carried = 0
-  players.forEach((p) => {
-    if (!result[p.id] && prev[p.id] && !manual[p.id] && !looksTraditional(prev[p.id])) {
-      result[p.id] = prev[p.id]
-      cache.seenZh[prev[p.id]] = 1
-      carried += 1
-    }
+  let carriedOutside = 0
+  const inInput = {}
+  players.forEach((p) => { inInput[p.id] = 1 })
+  Object.keys(prev).forEach((id) => {
+    if (!prev[id] || result[id] || manual[id]) return
+    if (looksTraditional(prev[id])) return
+    result[id] = prev[id]
+    cache.seenZh[prev[id]] = 1
+    carried += 1
+    if (!inInput[id]) carriedOutside += 1
   })
+  if (carriedOutside) log(`其中 ${carriedOutside} 人来自本轮输入集合之外（保住字典不缩水）`)
   if (carried) log(`另有 ${carried} 人沿用上一轮的名字（本轮没查到的）`)
 
   const ids = Object.keys(result).sort((a, b) => Number(a) - Number(b))
@@ -536,6 +658,11 @@ async function main() {
     ' * 怎么重建：`node tools/player-names.js`；只重建某几个赛事：',
     ' *    `node tools/player-names.js --only=ucl,epl`',
     ' * 看生成结果而不落盘：`node tools/player-names.js --dry`',
+    ' *',
+    ' * 输入源：射手榜 / 助攻榜 + 比赛详情里的阵容球员池（tools/.lineup-players.json）。',
+    ' * 生成后要把中文名烘焙进数据文件才有用：',
+    ' *    `node tools/scorers.js`        → data/scorers.js（射手榜）',
+    ' *    `node tools/match-detail.js`   → data/match-details.js（首发阵容）',
     ' */',
     '',
     'const AUTO_PLAYER_ZH = {',
@@ -554,7 +681,8 @@ async function main() {
   } else {
     fs.writeFileSync(OUT_FILE, body.join('\n'))
     log(`写入 tools/player-zh.js：${ids.length} 名球员 / ${Math.round(fs.statSync(OUT_FILE).size / 1024)} KB`)
-    log('⚠️ 记得重跑 `node tools/scorers.js` 把中文名烘焙进 data/scorers.js')
+    log('⚠️ 记得把中文名烘焙进数据文件：node tools/scorers.js 与 node tools/match-detail.js')
+    log('   （前者管射手榜，后者管首发阵容；不改页面逻辑，推 GitHub 即可生效，不用发版）')
   }
 
   // 把没命中的列出来，方便人工判断「值得补」的那几个
@@ -578,14 +706,19 @@ if (require.main === module) {
 // 供诊断脚本 / smoke 复用的纯函数与单步能力
 module.exports = {
   TARGETS,
+  COMP_RANK,
   CACHE_FILE,
+  POOL_FILE,
   CACHE_VERSION,
+  SOURCE,
   sleep,
   getJSON,
   searchEntities,
   titlesToSimplified,
   zhwikiTitleOf,
   qidsToEntities,
+  collectFromScorers,
+  readPool,
   collectPlayers,
   isFootballer,
   enNamesOf,

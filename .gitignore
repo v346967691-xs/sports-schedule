@@ -10,6 +10,10 @@ data/brief/
 # 缓存是「中断后重跑只补没抓到的那些」的关键。内容可随时重建，不必入库。
 tools/.player-names-cache.json
 
+# 阵容球员池：同步任务抓比赛详情时顺手攒下的「还没有中文名的球员」，
+# 是球员字典播种器的输入。同样是可随时重建的中间产物。
+tools/.lineup-players.json
+
 # AI 体检报告等一次性产物：只有本地查阅价值，且 .workbuddy/ 已被 packOptions 排除、不进包。
 # 不提交，免得公开仓库里堆一堆过期的体检存档。
 .workbuddy/reports/

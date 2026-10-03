@@ -8,7 +8,10 @@
  *   ④ 技术统计    boxscore     —— 控球率 / 射门 / 射正 / 角球 / 犯规 / 传球成功率
  *   ⑤ 首发阵容    rosters      —— 两队首发 11 人 + 替补席（号码 / 位置），仅足球
  *
- * ⚠️ 三个硬约束（改这个文件前先读）：
+ * 用法：node tools/match-detail.js [--force]
+ *   --force  连已结束的比赛也重抓一次。平常常规运行**不需要**它（已结束的抓一次就够）；
+ *            改过 SCHEMA 或想一次性把「阵容球员池」补齐时才用。
+ * * ⚠️ 三个硬约束（改这个文件前先读）：
  *   1. **小程序不能直连 ESPN**，必须由本脚本预抓、抽取字段后落云表；
  *      绝不能把原文存下来 —— 单场 390KB，上千场会直接把云表和流量打爆。
  *   2. **必须增量抓**。已结束的比赛抓一次就够（事件不会变），只有进行中的
@@ -29,6 +32,9 @@ const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
+
+/** 见文件顶部的 --force 说明 */
+const FORCE = process.argv.slice(2).includes('--force')
 /** 只有 ESPN 源的赛事有 summary 端点；LoL / CBA / KPL 没有 */
 const SLUG = {
   ucl: 'uefa.champions',
@@ -73,6 +79,96 @@ const KEEP_DAYS = 7 // 云端保留天数（与 RLS 的 DELETE 策略一致）
  *    超出窗口的桶在写文件前会把 lineups 摘掉（见主流程的 lineups 裁剪）。
  */
 const LINEUP_KEEP_DAYS = 1
+
+/* ------------------------- 阵容球员池（给球员字典播种） -------------------------
+ *
+ * 这里抓 summary 时，手里那份 `rosters` 已经含**每位球员的 id + 全名 + 短名**，
+ * 而球员汉化字典（tools/zh-names.js）的自动播种器需要「ESPN athlete id + 完整英文名」才能干活
+ * ——完整英文名是关键：Wikidata 的 `wbsearchentities` 对 `W. Zhen` 这种缩写几乎搜不到，
+ * 对 `Wang Zhen` 才有效（结论见 tools/player-names.js 顶部）。
+ *
+ * 所以顺手把「还没中文名的球员」攒进一份侧产物，**零额外上游请求**。
+ * 为什么不在播种器里自己抓：那要重新下载 80+ 份 390KB 的 summary，纯属浪费；
+ * 而同步任务本来就每 15 分钟跑一次，池子自然越跑越全。
+ *
+ * ⚠️ 这是**构建期侧产物**：`tools/` 与它一起不进小程序包，也不入 git（见 .gitignore）。
+ *    它只是播种器的输入，随时可以重建。
+ * ⚠️ **`--force` 才会重抓已结束的比赛**（见 needsFetch）—— 平时池子只靠新增场次长；
+ *    想一次性把池子补齐，用 `node tools/match-detail.js --force`。
+ */
+const PLAYER_POOL_FILE = path.join(__dirname, '.lineup-players.json')
+
+/** 本轮见到的「还没中文名」的球员：id → { id, full, short } */
+const playerPool = new Map()
+
+/**
+ * 把 summary 里两队名单的球员记进池子。
+ * @param {Object} j  ESPN summary 原文
+ * @param {Map} [into] 目标容器（默认模块内的池子）。**留出这个参数是为了 smoke 能测** ——
+ *                     否则测它就得污染真实池子。
+ * @param {string} [comp] 这场属于哪个赛事。**要记下来**，播种器才能按赛事排优先级：
+ *                     五大联赛/欧冠的球员值得先补，欧国联/U17 的替补席排在后面。
+ * @returns {number} 容器当前大小
+ */
+function noteRosterPlayers(j, into, comp) {
+  const sink = into || playerPool
+  const rs = Array.isArray(j && j.rosters) ? j.rosters : []
+  rs.forEach((r) => {
+    ((r && r.roster) || []).forEach((p) => {
+      const a = (p && p.athlete) || {}
+      const id = String(a.id || '')
+      if (!id) return
+      const hit = sink.get(id)
+      if (hit) {
+        // 同一个球员会横跨多个赛事（俱乐部 + 国家队），把赛事并起来
+        if (comp && hit.c.indexOf(comp) === -1) hit.c.push(comp)
+        return
+      }
+      const full = String(a.displayName || '').trim()
+      const short = String(a.shortName || '').trim()
+      if (!full && !short) return
+      // 已经有中文名的不用进池 —— 播种器不需要，池子也能小一半
+      if (zhNames.playerZh(id)) return
+      sink.set(id, { id, full: full || short, short: short || full, c: comp ? [comp] : [] })
+    })
+  })
+  return sink.size
+}
+
+/**
+ * 把本轮池子并进磁盘上的旧池（**并集**，不覆盖）：历史场次的球员不该因为这场没上而丢掉。
+ * ⚠️ 赛事列表也要取并集 —— 否则这轮没碰到的那支队会把赛事标签弄丢，优先级就排错了。
+ * @param {string} [file] 目标路径（默认 PLAYER_POOL_FILE；参数是给 smoke 测并集用的）
+ */
+function savePlayerPool(file) {
+  const target = file || PLAYER_POOL_FILE
+  if (!playerPool.size) {
+    console.log('[match-detail] 本轮没有新增待汉化球员')
+    return 0
+  }
+  const merged = new Map()
+  try {
+    const prev = JSON.parse(fs.readFileSync(target, 'utf8'))
+    ;(Array.isArray(prev) ? prev : []).forEach((p) => {
+      const id = String((p && p.id) || '')
+      if (id) merged.set(id, p)
+    })
+  } catch (e) { /* 首次运行：没有旧池 */ }
+  playerPool.forEach((v, k) => {
+    const old = merged.get(k)
+    if (!old) { merged.set(k, v); return }
+    const c = Array.isArray(old.c) ? old.c.slice() : []
+    ;(v.c || []).forEach((x) => { if (c.indexOf(x) === -1) c.push(x) })
+    merged.set(k, Object.assign({}, old, v, { c }))
+  })
+  try {
+    fs.writeFileSync(target, JSON.stringify([...merged.values()]), 'utf8')
+    console.log(`[match-detail] 阵容球员池：本轮新增 ${playerPool.size} 人 → 池内共 ${merged.size} 人（${path.basename(target)}）`)
+  } catch (e) {
+    console.warn('[match-detail] 球员池写盘失败（不影响详情）', e && e.message)
+  }
+  return merged.size
+}
 
 /* ---------------------------- 事件：过滤与汉化 ---------------------------- */
 
@@ -386,6 +482,10 @@ async function fetchDetail(m) {
   const sport = BASKETBALL[m.comp] ? 'basketball' : 'soccer'
   const eid = String(m.id).split('-').pop()
   const j = await getJSON(`${ESPN}/${sport}/${slug}/summary?event=${eid}`)
+  // 顺手把阵容里「还没中文名」的球员攒进池子（**零额外上游请求**），给 tools/player-names.js 播种用。
+  // 副作用写在这里是因为只有这个函数手里有原始 summary；失败（null）时它是空操作。
+  // 带上 m.comp：播种器据此按赛事排优先级（联赛/欧冠的球员比欧国联替补席值得先补）。
+  noteRosterPlayers(j, null, m.comp)
   const homeId = m.home && m.home.id
   const awayId = m.away && m.away.id
   const form = pickForm(j)
@@ -473,6 +573,8 @@ function dayKey(iso) {
  *   未开赛：12 小时一次（近况/交锋变化慢，而且赛前 ESPN 也没更多东西可给）
  */
 function needsFetch(m, captured) {
+  // --force：连已结束的比赛也重抓（改过 SCHEMA 或要补齐阵容球员池时用）
+  if (FORCE) return true
   if (m.status === 'live' || m.status === 'inprogress') return true
   const prev = captured[m.id]
   if (!prev) return true
@@ -562,6 +664,7 @@ async function main() {
   )
   const size = Math.round(fs.statSync(file).size / 1024)
   console.log(`[match-detail] 抓取成功 ${ok} 场，失败 ${failed.length} 场，${touched.length} 个日桶 / 阵容 ${lineups} 场 / ${size}KB`)
+  savePlayerPool()
   if (failed.length) console.warn('[match-detail] 失败场次：', failed.slice(0, 6).join(' | '))
   if (!ok) {
     console.warn('[match-detail] ⚠ 本轮没有抓到任何详情，不覆盖已有数据')
@@ -578,4 +681,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, LINEUP_KEEP_DAYS, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh }
+module.exports = { SCHEMA, LINEUP_KEEP_DAYS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

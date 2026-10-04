@@ -2158,6 +2158,20 @@ async function run() {
     pnMod.readPool(path.join(os.tmpdir(), 'wb-no-such-pool.json')).length === 0)
 
   check('播种器：默认输入源是 all（射手榜 ∪ 阵容池）', pnMod.SOURCE === 'all', pnMod.SOURCE)
+  /* 🔴 名单源（云表 team_roster）默认**必须不参与**：它有约 1.2 万人，
+     按 6.5 秒/人算要 17+ 小时。混进默认跑会让「顺手跑一次」变成一场灾难，
+     所以它只能靠显式 `--source=roster` 启用（2026-10-04）。 */
+  check('播种器：名单源（team_roster）默认不参与（1 万人会拖成 17 小时）',
+    pnMod.SOURCES.indexOf('roster') === -1
+    && pnMod.SOURCES.indexOf('scorers') > -1
+    && pnMod.SOURCES.indexOf('lineups') > -1,
+    pnMod.SOURCES.join(','))
+  check('播种器：名单源是独立的第三个输入源（不与前两个源耦合）',
+    typeof pnMod.collectFromRoster === 'function')
+  check('播种器：compRank 对表里赛事按位置排、对未知赛事排最后',
+    pnMod.compRank(['ucl']) === 0
+    && pnMod.compRank(['csl']) < pnMod.compRank(['u17'])
+    && pnMod.compRank(['nope']) === pnMod.COMP_RANK.length)
   check('播种器：赛事优先级表没有重复项，且都是真实赛事 key',
     pnMod.COMP_RANK.length === new Set(pnMod.COMP_RANK).size
     && pnMod.COMP_RANK.every((k) => !!dataMod.compOf(k).name && dataMod.compOf(k).name !== k),

@@ -1,15 +1,17 @@
 /**
  * 球员中文名「种子」生成器
  * ============================================================
- * 用法： node tools/player-names.js [--dry] [--only=ucl,epl] [--limit=200] [--source=all|scorers|lineups]
+ * 用法： node tools/player-names.js [--dry] [--only=ucl,epl] [--limit=200]
+ *                                  [--source=all|scorers|lineups|roster]
  *                                  [--channel=a|b|both] [--concurrency=1] [--sleep=6500]
  *
  *   --limit=N   只处理本轮前 N 个「还没查过」的球员。
  *              每批结束都会落盘，比一把梭哈更抗中断。
- *   --source=   取哪些球员当输入：
- *                 scorers（默认之一）= 射手榜 / 助攻榜（上游有榜的 10 个赛事）
+ *   --source=   取哪些球员当输入（可逗号组合，如 `--source=scorers,roster`）：
+ *                 scorers（默认之一）= 射手榜 / 助攻榜（上游有榜的赛事）
  *                 lineups            = 比赛详情首发阵容里出现过的球员
- *                 all（默认）        = 两者并集
+ *                 roster             = 云表 `team_roster` 的球队名单（**门将/后卫全在里面**）
+ *                 all（默认）        = scorers ∪ lineups（🔴 **不含 roster**，见下）
  *   --channel=  用哪条检索通道：
  *                 a（默认） = Wikidata `wbsearchentities`，按知名度返回前 10
  *                 b         = 服务端足员过滤（`haswbstatement:P106=Q937857`），
@@ -24,7 +26,7 @@
  * 而射手榜每个赛季都会冒出一两百个新名字，纯手工维护不现实 —— 这个脚本负责
  * 批量播种，人工只需在 `zh-names.js` 的 PLAYER_ZH 里纠错与改简称。
  *
- * ------------------------------------------------------------ 两个输入源
+ * ------------------------------------------------------------ 三个输入源
  * ① **射手榜**（直连 ESPN `/statistics`）—— `collectFromScorers()`。
  * ② **阵容球员池**（读 `tools/.lineup-players.json`）—— `readPool()`。
  *    这份池子由 `tools/match-detail.js` 在同步时**顺手**写下（它手里已经有 summary 的
@@ -35,6 +37,16 @@
  *       （实测覆盖率只有 13%）。②补上之后覆盖率才谈得上"够用"。
  *    ⚠️ 池子是**累积**的，且 `tools/` 不进包不入 git，随时可重建：
  *       一次性补齐用 `node tools/match-detail.js --force`（否则只靠新增场次慢慢长）。
+ * ③ **球队名单**（读云表 `team_roster`）—— `collectFromRoster()`，`--source=roster`。
+ *    🔴 **为什么 ①②之外还得有它**（2026-10-04 用户用巴塞罗那的例子指出来的）：
+ *       ①②都依赖「这场比赛被抓过详情」，而**俱乐部赛事的历史比赛不回头抓** ——
+ *       实测阵容池里 `liga` / `ucl` / `epl` 全是 **0 人**。于是罗德里（金球奖得主）、
+ *       加维、德容、库巴西这些人**从来没被检索过**，自然没有中文名。
+ *       射手榜又只收有进球/助攻的人，门将与后卫永远进不去 —— **位置盲区**。
+ *       ③ 一次把 447 支球队的全量名单（门将/后卫一个不漏）纳入候选，
+ *       **零新增上游请求**（`team_roster` 是 `tools/team-roster.js` 已经抓好的现成数据）。
+ *    🔴 **默认不进 `all`**：全量约 1.2 万人，按 6.5 秒/人算要 20+ 小时。
+ *       必须显式 `--source=roster`，并配合 `--only=liga` 之类按赛事分批跑。
  *
  * 优先级（高 → 低）：
  *   ① `zh-names.js` 的 PLAYER_ZH     —— 人工，权威，可覆盖任何自动结果
@@ -105,10 +117,23 @@ const args = process.argv.slice(2)
 const DRY = args.includes('--dry')
 const ONLY = (args.find((a) => a.startsWith('--only=')) || '').split('=')[1]
 const LIMIT = Math.max(0, Number((args.find((a) => a.startsWith('--limit=')) || '').split('=')[1]) || 0)
-/** 输入源：all（默认）| scorers | lineups —— 见文件顶部说明 */
+/**
+ * 输入源：all（默认）| scorers | lineups | roster，或它们的逗号组合。
+ *
+ * 🔴 `all` = scorers ∪ lineups，**故意不含 roster**：名单源有约 1.2 万人，
+ *    按 6.5 秒/人算要 20+ 小时，混进默认值会让「顺手跑一次」变成一场灾难。
+ *    要用它必须显式写 `--source=roster`（建议配 `--only=` 按赛事分批）。
+ * 见文件顶部「三个输入源」。
+ */
+const VALID_SOURCES = ['scorers', 'lineups', 'roster']
 const SOURCE = (() => {
   const v = ((args.find((a) => a.startsWith('--source=')) || '').split('=')[1] || 'all').trim()
-  return ['all', 'scorers', 'lineups'].includes(v) ? v : 'all'
+  return v.split(',').every((s) => s === 'all' || VALID_SOURCES.includes(s)) ? v : 'all'
+})()
+/** 展开成集合：`all` → scorers + lineups；其余按逗号拆 */
+const SOURCES = (() => {
+  if (SOURCE === 'all') return ['scorers', 'lineups']
+  return SOURCE.split(',').map((s) => s.trim()).filter((s) => VALID_SOURCES.includes(s))
 })()
 /**
  * 检索通道：`a`（默认，`wbsearchentities`）| `b`（服务端足员过滤）| `both`。
@@ -158,8 +183,8 @@ const TARGETS = [
  */
 const COMP_RANK = [
   'ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'uel', 'uecl',
-  'csl', 'acl', 'chn', 'nba', 'cba',
-  'nations', 'asiacup', 'friendly', 'u17', 'u17w', 'worlds', 'demacia',
+  'csl', 'acl', 'acl2', 'mls', 'lib', 'wucl', 'chn', 'nba', 'cba',
+  'nations', 'asiacup', 'friendly', 'u17', 'u17w', 'cnl', 'worlds', 'demacia',
   'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames',
 ]
 
@@ -303,6 +328,9 @@ const TRAD_ONLY = new RegExp(
   '湯凱寧邁嚴區單團園圖壓聲職聽讀語調談請諾講識議護譯豐趙躍軌載軟較輔輕輛輝輩輪輸轉' +
   '辦農適選遺鄉鄭鐘鋼錢鎮鏈鐵門閉開關陽階際隨隱難雲靜韓頂項順須預領頭題顏願類顧' +
   '風飛飯飲飾養館駐驗體麗麥黃點齒龜' +
+  // 2026-10-04 西甲首批复核补：喬恩·古里迪（Jon Guridi）／烏戈·索特洛（Hugo Sotelo）／
+  // 艾亨·穆尼茲（Aihen Muñoz）—— 三个字都是繁体专用（简体分别作 乔 / 乌 / 兹），老字表漏了。
+  '喬烏茲' +
   ']'
 )
 const looksTraditional = (s) => TRAD_ONLY.test(String(s || ''))
@@ -355,6 +383,54 @@ const MANUAL_REJECT = new Map([
 /** 手工复核通过的样本，用来在日志里对照「什么才算能用的译名」。 */
 const REVIEW_SAMPLE_OK = ['陈蒲', '魏震', '刘洋', '程进', '钟义浩', '岳鑫', '林创益', '戴伟浚', '黄晟豪']
 
+/* 🔴🔴 港台译名识别 —— 两道，都是「宁可回落英文」的取向。
+ *
+ * 为什么必须要有它（2026-10-04 西甲首批 189 条里人工复核出 18 条，占 10%）：
+ *   艾历·加西亚（Eric García）／荷西·玛利亚·基文尼斯（José María Giménez）／
+ *   甸恩·侯辛（Dean Huijsen）／希陀·科特（Héctor Fort）／卢根·哥斯达（Logan Costa）／
+ *   阿当马·查奥尔（Adama Traoré）／柏保·马菲奥（Pablo Maffeo）……
+ *   这些**字符全是简体**（港译经过 `varianttitles` 转成简体后），`looksTraditional()`
+ *   一个也抓不到，但对大陆读者等于不认识。用户红线：**错的比英文更糟**。
+ *
+ * ① `isHkTwWriting()`：中文维基标题 == 该实体的 `zh-hk`/`zh-tw`/`zh-hant`/`zh-mo` 标签
+ *    → 说明 Wikidata 上只有港台写法。⚠️ 实测只覆盖少数（多数条目根本没标 zh-hk）。
+ * ② `looksHongKong()`：**港译用词表**。港译与大陆译的差异在**音译选字**（José 荷西 vs 何塞、
+ *    Juan 祖安 vs 胡安、Pablo 柏保 vs 巴勃罗），同一批字会在很多球员身上重复出现，
+ *    所以一张几十条的词表就能挡住大部分 —— 这是**滚动积累**的：每批复核出的港译
+ *    把特征词补进来，后面的批次自动受益（与 `MANUAL_REJECT` 同构，但覆盖面大得多）。
+ *
+ * ⚠️ `zh-hk` 等标签要和 `en|zh|zh-hans|zh-cn` 在**同一次** `wbgetentities` 里取回
+ *    （`qidsToEntities` 的 `languages`），**零额外请求**。
+ * ⚠️ 词表只放**港译专用的音译词**，别放单字（「斯」「度」「拿」会误伤大陆译名）。
+ */
+const HK_TW_KEYS = ['zh-hk', 'zh-tw', 'zh-hant', 'zh-mo']
+
+/**
+ * 港译特征词（2026-10-04 从西甲首批 189 条复核里提炼，后续批次继续补）。
+ * ⚠️ 每加一个词都要确认「大陆译法一定不是这么写」，否则会误杀正常译名。
+ */
+const HK_SPELLINGS = [
+  // José / Juan / Pablo 等西语名的港译定式
+  '荷西', '祖安', '祖瑟', '柏保', '艾历', '艾斯帕斯', '基文尼斯', '奥古斯度', '巴达拿',
+  // 英语/法语名的港译定式
+  '甸恩', '希陀', '哥斯达', '哥斯達', '卢根', '盧根', '科夫', '侯辛', '尼图', '艾亨',
+  // 其他（来自通道 B 首轮复核出的港译样本）
+  '查奥尔', '法连拿斯', '马菲奥', '馬菲奧', '干沙', '班夫韦迪', '贝治斯特朗', '梅里路',
+  '戴雅高', '盎尼', '瓦拉卡里', '艾沙苏利', '安斯·', '汤·京治', '凱里寧', '邁赫邁蒂',
+]
+const HK_SPELLING_RE = new RegExp(HK_SPELLINGS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'))
+const looksHongKong = (s) => HK_SPELLING_RE.test(String(s || ''))
+
+/** 中文维基标题与 Wikidata 的港台标签一致 → 这个标题就是港台写法 */
+function isHkTwWriting(ent, title) {
+  if (!title) return false
+  const L = (ent && ent.labels) || {}
+  return HK_TW_KEYS.some((k) => {
+    const v = L[k] && L[k].value
+    return v && stripParen(v) === title
+  })
+}
+
 /**
  * 挑中文译名 —— **优先级：Wikidata `zh-cn` → `zh-hans` → 中文维基条目标题**。
  *
@@ -364,7 +440,17 @@ const REVIEW_SAMPLE_OK = ['陈蒲', '魏震', '刘洋', '程进', '钟义浩', '
  *    没有 zh-cn/zh-hans 时回落中文维基标题（已过 `varianttitles` 转简体），最后才用 `zh`。
  *
  * 🔴 **四个候选里如果都带繁体专用字，返回空串**（宁可回落英文）—— 见 looksTraditional。
+ * 🔴 **港台写法也返回空串** —— 见 `isHkTwWriting`（宁可英文，别给大陆读者看港译）。
  */
+function isHkTwWriting(ent, title) {
+  if (!title) return false
+  const L = (ent && ent.labels) || {}
+  return HK_TW_KEYS.some((k) => {
+    const v = L[k] && L[k].value
+    return v && stripParen(v) === title
+  })
+}
+
 function zhNameOf(ent, wikiTitle) {
   const L = (ent && ent.labels) || {}
   const cands = [
@@ -428,6 +514,23 @@ async function collectFromScorers() {
   return [...out.values()]
 }
 
+/**
+ * 一名球员的**赛事优先级序号**（越小越优先）。
+ *
+ * ⚠️ 三个输入源共用这一份排序：`--limit=N` 是按池子顺序切的，排序即「先花出去的时间
+ *    买到什么」。没列在 COMP_RANK 里的赛事排最后。
+ * @param {string[]} comps 该球员所属的赛事 key
+ */
+function compRank(comps) {
+  const cs = comps || []
+  let best = COMP_RANK.length
+  cs.forEach((c) => {
+    const i = COMP_RANK.indexOf(c)
+    if (i > -1 && i < best) best = i
+  })
+  return best
+}
+
 /* --------------------------------------------- 输入源 ②：阵容球员池 */
 
 /**
@@ -453,15 +556,7 @@ function readPool(file) {
   // ⚠️ 这里读的是**映射之后**的字段名 `comps`。写成 `p.c` 的话 rank 恒为「最后一档」，
   //    sort 会变成静默的空操作 —— 池子看着有序、其实完全是抓取顺序。
   //    （smoke 有一条「池子按赛事优先级排序」专门守这个。）
-  const rank = (p) => {
-    const cs = (p && (p.comps || p.c)) || []
-    let best = COMP_RANK.length
-    cs.forEach((c) => {
-      const i = COMP_RANK.indexOf(c)
-      if (i > -1 && i < best) best = i
-    })
-    return best
-  }
+  const rank = (p) => compRank((p && p.comps) || [])
   return (Array.isArray(raw) ? raw : [])
     .map((p) => {
       const id = String((p && p.id) || '')
@@ -473,7 +568,79 @@ function readPool(file) {
     .sort((a, b) => rank(a) - rank(b))
 }
 
-/** 合并两个源；同 id 以**先加入的**为准（射手榜在前：那边的 displayName 更完整） */
+/* --------------------------------------------- 输入源 ③：云表 team_roster 的球队名单 */
+
+/**
+ * 读云表 `team_roster`（由 `tools/team-roster.js` 抓好的 447 支球队全量名单）。
+ *
+ * 🎯 **它专门补前两个源补不到的「位置盲区」**：射手榜只收有进球/助攻的人，
+ *    阵容池只收「被抓过详情的比赛里出现过」的人——而俱乐部赛事的历史比赛不回头抓，
+ *    所以 `liga`/`ucl`/`epl` 在池子里是 **0 人**（罗德里、加维、库巴西这些人从没被检索过）。
+ *    名单里门将与后卫一个不漏，**零新增上游请求**。
+ *
+ * 🔴 **跳过已经有中文名的**（名单行自带 `z` 字段，再核一遍手工表与上一轮字典）：
+ *    去重后全量约 1.2 万人，按 6.5 秒/人算要 20+ 小时 —— 每省一个都是实打实的时间。
+ *    ⚠️ 所以**必须配 `--only=` 按赛事分批跑**，别一把梭。
+ *
+ * @returns {Promise<Array<{id:string, full:string, short:string, comps:string[]}>>}
+ */
+async function collectFromRoster() {
+  const keys = ONLY ? ONLY.split(',').map((s) => s.trim()) : null
+  // ⚠️ 云 SDK 与公开配置只在用到这个源时才 require —— 让 `--source=scorers` 的老用法
+  //    完全不碰网络（也避免没有 SDK 的环境在 require 阶段就崩）。
+  const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
+  const publicConfig = require('../utils/cloud-config')
+  const cloud = createWorkBuddyCloud({
+    endpoint: publicConfig.endpoint,
+    publishableKey: publicConfig.publishableKey,
+  })
+  const { data, error } = await cloud.database
+    .from('team_roster')
+    .select('comp, payload')
+    .limit(2000)
+  if (error || !data || !data.length) {
+    log('⚠️ 读不到云表 team_roster，这个源为空。要先跑一次：node tools/team-roster.js')
+    if (error) log('   云端返回：', JSON.stringify(error).slice(0, 160))
+    return []
+  }
+
+  const zhNames = require('./zh-names')
+  const manual = zhNames.PLAYER_ZH || {}
+  let prev = {}
+  try {
+    prev = require('./player-zh').AUTO_PLAYER_ZH || {}
+  } catch (e) {
+    prev = {}
+  }
+
+  const out = new Map()
+  const perComp = {}
+  const skippedKnown = {}
+  ;(data || []).forEach((row) => {
+    const comp = String(row.comp || '')
+    if (keys && !keys.includes(comp)) return
+    const players = ((row.payload || {}).players) || []
+    perComp[comp] = (perComp[comp] || 0) + 1
+    players.forEach((p) => {
+      const id = String((p && p.i) || '')
+      if (!id || out.has(id)) return
+      // 🔴 已经有中文名的不再查一遍（名单行自带 z，另核手工表与上一轮字典）
+      if (p.z || manual[id] || prev[id]) { skippedKnown[id] = 1; return }
+      const full = String((p && p.n) || '').trim()
+      const short = String((p && p.s) || '').trim()
+      if (!full && !short) return
+      out.set(id, { id, full: full || short, short: short || full, comps: [comp] })
+    })
+  })
+
+  const compSummary = Object.keys(perComp).sort((a, b) => compRank([a]) - compRank([b]))
+    .map((k) => `${k} ${perComp[k]}队`)
+    .join(' / ')
+  log(`名单源：${compSummary}；去重后 ${Object.keys(skippedKnown).length} 人已有中文名（跳过）`)
+  return [...out.values()].sort((a, b) => compRank(a.comps) - compRank(b.comps))
+}
+
+/** 合并各输入源；同 id 以**先加入的**为准（射手榜在前：那边的 displayName 更完整） */
 async function collectPlayers() {
   const out = new Map()
   const add = (list, tag) => {
@@ -486,16 +653,18 @@ async function collectPlayers() {
     log(`源「${tag}」${list.length} 人，净增 ${n} 人`)
   }
   const keys = ONLY ? ONLY.split(',').map((s) => s.trim()) : null
-  // 阵容池同样支持 --only 过滤（池子里记了赛事），这样「只补五大联赛」对两个源都成立
+  // 阵容池同样支持 --only 过滤（池子里记了赛事），这样「只补五大联赛」对各个源都成立
   let pool = readPool()
   if (keys) {
     const before = pool.length
     pool = pool.filter((p) => (p.comps || []).some((c) => keys.includes(c)))
     log(`阵容池按 --only=${ONLY} 过滤：${before} → ${pool.length} 人`)
   }
-  if (SOURCE !== 'lineups') add(await collectFromScorers(), '射手榜 / 助攻榜')
-  if (SOURCE !== 'scorers') add(pool, '阵容球员池')
-  log(`两源合并后共 ${out.size} 人`)
+  if (SOURCES.includes('scorers')) add(await collectFromScorers(), '射手榜 / 助攻榜')
+  if (SOURCES.includes('lineups')) add(pool, '阵容球员池')
+  // ⚠️ 名单源最后加：它是「全量兜底」，前面两个源里的同 id 用更完整的射手榜条目
+  if (SOURCES.includes('roster')) add(await collectFromRoster(), '球队名单（team_roster）')
+  log(`${SOURCES.length} 源合并后共 ${out.size} 人`)
   return [...out.values()]
 }
 
@@ -564,7 +733,9 @@ async function qidsToEntities(qids) {
     const chunk = uniq.slice(i, i + 50)
     const url = `${WD_API}?action=wbgetentities&ids=${chunk.join('|')}` +
       '&props=labels|aliases|claims|sitelinks&sitefilter=zhwiki' +
-      '&languages=en|zh|zh-hans|zh-cn&format=json'
+      // ⚠️ `zh-hk|zh-tw|zh-hant|zh-mo` 是给 `isHkTwWriting` 用的判据（识别港台译名），
+      //    与 zh-cn 在**同一次请求**里取回，**零额外请求**。见 zhNameOf 的注释。
+      '&languages=en|zh|zh-hans|zh-cn|zh-hk|zh-tw|zh-hant|zh-mo&format=json'
     const j = await getJSON(url)
     Object.assign(map, (j && j.entities) || {})
     await sleep(300)
@@ -775,6 +946,7 @@ async function main() {
   let hit = 0
   let miss = 0
   let tradOnly = 0
+  let hkOnly = 0
   let notFoot = 0
   let nameBad = 0
   let rejected = 0
@@ -795,12 +967,21 @@ async function main() {
       if (!isFootballer(ent)) { notFoot += 1; continue }
       if (!nameMatches(p.full, enNamesOf(ent))) { nameBad += 1; continue }
       const raw = zhwikiTitleOf(ent)
+      const simpTitle = simp[raw] || raw
+      // 🔴 港台写法：标题 == Wikidata 的港台标签，或命中港译用词表（见 HK_SPELLINGS 的注释）
+      //    —— 挡在 `zhNameOf` 之前，因为它的候选里 wikiTitle 排在 `zh` 前面，
+      //       不先挡就会用港译顶掉 `zh` 标签上那条（常常是）正确的大陆译法。
+      if (simpTitle && hasCJK(simpTitle) && (isHkTwWriting(ent, simpTitle) || looksHongKong(simpTitle))) {
+        hkOnly += 1
+        continue
+      }
       // 译名：Wikidata 的 zh-cn/zh-hans 优先（大陆译法），回落中文维基条目（已转简体）
-      const zh = zhNameOf(ent, simp[raw] || raw)
+      const zh = zhNameOf(ent, simpTitle)
       if (!zh || !hasCJK(zh)) continue
       // 仍然带繁体专用字 → 这个条目没有简体写法（多半是港台译名）。
       // 面对大陆读者的界面，港台译名比英文短名更让人困惑，**宁可回落英文**。
       if (looksTraditional(zh)) { tradOnly += 1; continue }
+      if (looksHongKong(zh)) { hkOnly += 1; continue }
       if (cache.seenZh[zh]) continue
       picked = zh
       if (bOnlyQids[q]) {
@@ -820,7 +1001,8 @@ async function main() {
   })
 
   log(`命中 ${hit} 人 / 未命中 ${miss} 人（命中率 ${Math.round((hit / Math.max(1, all.length)) * 100)}%）`)
-  log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜港台译名回落英文 ${tradOnly}｜人工复核否决 ${rejected}`)
+  log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜` +
+    `繁体回落英文 ${tradOnly}｜港译回落英文 ${hkOnly}｜人工复核否决 ${rejected}`)
   if (fromB) {
     log(`其中 ${fromB} 人是靠通道 B（服务端足员过滤）捞回来的 —— 抽查这 30 条：`)
     fromBSample.forEach((l) => console.log('  ' + l))
@@ -832,8 +1014,8 @@ async function main() {
   //    踩过的坑：`--only=ucl,epl`（只重建两个联赛）或 `--source=lineups` 会**缩小输入集合**，
   //    而结转如果只看本轮集合，集合外那些早就查好的名字会被**整批丢掉** ——
   //    字典是只增不减的资产，不该因为一次「只重建两个联赛」就缩水。
-  // ⚠️ **但只结转「看着像简体」的名字**：上一版用中文维基全文检索时留下一批港式译名
-  //    （「安祖·罗拔臣」「伊斯高」「尼曼查·马迪」），面对大陆读者比英文短名更困惑。
+  // ⚠️ **但只结转「看着像简体、也不是港译」的名字**：上一版用中文维基全文检索时留下
+  //    一批港式译名（「安祖·罗拔臣」「伊斯高」「尼曼查·马迪」），面对大陆读者比英文短名更困惑。
   //    不带这道守卫，新通道查不到的那一刻就会被旧值顶住，永远换不掉。
   // ⚠️ 结转要放在匹配循环**之后**：`result` 里已有的名字不该被旧值覆盖。
   let carried = 0
@@ -845,6 +1027,9 @@ async function main() {
     // 人工否决的 id 也不许结转回来（它可能已经在上一轮写进了字典）
     if (MANUAL_REJECT.has(id)) return
     if (looksTraditional(prev[id])) return
+    // 港译同样不结转（`looksHongKong` 见 HK_SPELLINGS 的注释）—— 字典里历史遗留的港译
+    // 会在下一次重跑时被自动清掉，不必逐条写进 MANUAL_REJECT。
+    if (looksHongKong(prev[id])) return
     result[id] = prev[id]
     cache.seenZh[prev[id]] = 1
     carried += 1
@@ -870,9 +1055,12 @@ async function main() {
     ' *    这类人要用通道 B 单独补一轮（只查还没有中文名的人，有独立缓存可续跑）：',
     ' *    `node tools/player-names.js --channel=b`',
     ' *',
-    ' * 输入源：射手榜 / 助攻榜 + 比赛详情里的阵容球员池（tools/.lineup-players.json）。',
+    ' * 输入源：① 射手榜 / 助攻榜；② 比赛详情里的阵容球员池（tools/.lineup-players.json）；',
+    ' *    ③ 云表 `team_roster` 的球队名单（`--source=roster`，补门将/后卫这些上不了射手榜的人）。',
     ' * ⚠️ 顺序：**先 `node tools/match-detail.js --force` 把阵容池填满，再跑这个脚本**，',
     ' *    反过来的话那一轮的池子成员全都还没被查过，等于白跑一轮。',
+    ' * ⚠️ ③ 有约 1.2 万人，默认不参与；要按赛事分批跑，例如：',
+    ' *    `node tools/player-names.js --source=roster --only=liga --limit=600`',
     ' * 生成后要把中文名烘焙进数据文件才有用：',
     ' *    `node tools/scorers.js`        → data/scorers.js（射手榜）',
     ' *    `node tools/match-detail.js`   → data/match-details.js（首发阵容）',
@@ -927,6 +1115,7 @@ module.exports = {
   CACHE_VERSION,
   B_CACHE_VERSION,
   SOURCE,
+  SOURCES,
   CHANNEL,
   sleep,
   getJSON,
@@ -937,6 +1126,8 @@ module.exports = {
   qidsToEntities,
   collectFromScorers,
   readPool,
+  collectFromRoster,
+  compRank,
   collectPlayers,
   isFootballer,
   enNamesOf,

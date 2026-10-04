@@ -83,6 +83,9 @@ const ESPN_ZH = {
   134478: '伦敦雄狮',
   // 亚足联俱乐部赛事：ESPN 的 /statistics 端点不给 team 对象，只能按 id 兜底（2026-10-04）
   7129: '加拉法',
+  // 20912 = Al-Quwa Al-Jawiya（伊拉克「空军俱乐部」，中文媒体惯称「巴格达空军」）。
+  // ⚠️ 它的 displayName 是全大写 `Al-QUWA AL-JAWIYA`，nameZh 的词典匹配不上，只能按 id 兜底。
+  20912: '巴格达空军',
 }
 
 const LOL_ZH = {

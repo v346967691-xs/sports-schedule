@@ -60,6 +60,82 @@ let lastRefreshAt = 0
 let inflight = null // 并发刷新共享同一个请求，避免 onLaunch 与 onShow 重复打接口
 let dataSource = 'bundle' // 'bundle' 本地兜底包 | 'cloud' 云端快照
 
+/* ------------------------------------------------------------------ 实时比分
+ *
+ * 🔴 为什么需要这一层：`schedule_cache` 一行 **891KB**，云端只能 15 分钟刷一次
+ *    （再密就是 790MB/天的流量）。而篮球一节才 12 分钟 —— 9.5 分钟的平均延迟
+ *    等于「实时看比分」这个功能不存在。
+ *    所以把**进行中的比赛**单独拆到云表 `live_scores`（约 2KB，60 秒刷一次），
+ *    这里按 id 在内存里给比赛对象打补丁。
+ *
+ * ⚠️ 打补丁而不是替换：小表只有比分/状态/节次，队名和赛程信息都在大表里。
+ *    小表里没有的比赛一律不动 —— 大表仍是唯一的事实来源。
+ */
+const LIVE_THROTTLE_MS = 45 * 1000 // 实时表很小（~2KB），可以比大表刷得勤得多
+let liveMap = {} // id -> { st, stt, hs, as, ls }
+let liveInflight = null
+let lastLiveAt = 0
+
+/** 把实时补丁盖到内存里的比赛对象上（原地改，页面重新 query 就能看到） */
+function applyLive() {
+  const ids = Object.keys(liveMap)
+  if (!ids.length) return 0
+  let n = 0
+  matches().forEach((m) => {
+    const p = liveMap[m.id]
+    if (!p) return
+    if (p.st) m.status = p.st
+    if (p.stt != null) m.statusText = p.stt
+    if (p.hs != null && m.home) m.home.score = p.hs
+    if (p.as != null && m.away) m.away.score = p.as
+    if (p.ls) m.linescores = p.ls
+    n += 1
+  })
+  return n
+}
+
+/** 当前有没有进行中的比赛（页面据此决定要不要起轮询定时器） */
+function hasLive() {
+  return matches().some((m) => m.status === 'live')
+}
+
+/**
+ * 只拉实时小表并打补丁。赛程页 / 详情页在有 live 比赛时定时调它。
+ * ⚠️ 与 refresh() 用**各自独立**的节流窗口：大表 5 分钟、小表 45 秒。
+ * @returns {Promise<{updated:boolean, patched:number, reason?:string}>}
+ */
+async function refreshLive(force) {
+  if (!cloudClient.isReady()) return { updated: false, patched: 0, reason: 'no-cloud' }
+  const now = Date.now()
+  if (!force && now - lastLiveAt < LIVE_THROTTLE_MS) {
+    return { updated: false, patched: 0, reason: 'throttled' }
+  }
+  if (liveInflight) return liveInflight
+  lastLiveAt = now
+  liveInflight = (async () => {
+    try {
+      const { data, error } = await cloudClient.cloud.database
+        .from('live_scores')
+        .select('data, generated_at')
+        .eq('id', 'latest')
+        .maybeSingle()
+      if (error || !data || !data.data || !Array.isArray(data.data.rows)) {
+        return { updated: false, patched: 0, reason: 'invalid' }
+      }
+      const map = {}
+      data.data.rows.forEach((r) => {
+        if (r && r.id) map[r.id] = r
+      })
+      liveMap = map
+      return { updated: true, patched: applyLive(), at: data.generated_at }
+    } catch (err) {
+      console.warn('[赛程助手] 实时比分读取失败，沿用上一次数据', err)
+      return { updated: false, patched: 0, reason: 'error' }
+    }
+  })().finally(() => { liveInflight = null })
+  return liveInflight
+}
+
 /**
  * ⚠️ data/matches.js 存的是**紧凑格式**（球队共享字典 + 短键名），
  *    直接读会拿到 `{v, teams, matches}` 而不是比赛数组 —— 必须过 decodeSnapshot。
@@ -439,6 +515,9 @@ function applyCloudSnapshot(snapList, snapMeta) {
   cache = snapList
   meta = snapMeta
   dataSource = 'cloud'
+  // ⚠️ 云端大表最多落后 15 分钟，而实时小表 60 秒刷一次 ——
+  //    换上新快照后必须**立刻**把实时补丁盖回去，否则比分会往回跳。
+  applyLive()
 }
 
 /**
@@ -680,6 +759,10 @@ module.exports = {
   teamRoster,
   playerProfile,
   refresh,
+  // 实时比分
+  refreshLive,
+  hasLive,
+  applyLive,
   source,
   generatedAt,
   staleInfo,

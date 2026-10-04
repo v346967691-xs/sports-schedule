@@ -9,6 +9,9 @@ const { appInstance } = require('../../utils/app-instance')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
+/** 实时比分轮询间隔（与赛程页同值，服务端 live_scores 也是 60 秒刷一次） */
+const LIVE_POLL_MS = 60 * 1000
+
 /** 首发阵容的位置归组与中文标签。顺序就是首发列表的展示顺序。 */
 const LINEUP_POS = [['G', '门将'], ['D', '后卫'], ['M', '中场'], ['F', '前锋']]
 
@@ -88,6 +91,33 @@ function buildBox(d, sideName) {
 }
 
 /**
+ * 篮球分节比分：`utils/data.js` 的实时补丁会把上游的 linescores 挂到比赛对象的
+ * `linescores` 上（`{h:[...], a:[...]}`）。这里整理成「表头 + 两队两行」。
+ *
+ * ⚠️ 列数不写死：常规赛 4 节，加时会多出 1~2 列，直接按最长那队的节数生成表头。
+ * ⚠️ 只认篮球 —— 足球没有 linescores，`hasQuarters` 为 false 时整块隐藏。
+ */
+function buildQuarters(match, sideName) {
+  const ls = match && match.linescores
+  if (!ls || !(ls.h || []).length || !(ls.a || []).length) return null
+  const n = Math.max(ls.h.length, ls.a.length)
+  const cols = []
+  for (let i = 0; i < n; i += 1) cols.push(i < 4 ? `第${i + 1}节` : `加时${i - 3}`)
+  const pad = (arr) => {
+    const out = []
+    for (let i = 0; i < n; i += 1) out.push(i < arr.length ? String(arr[i]) : '-')
+    return out
+  }
+  return {
+    cols,
+    rows: [
+      { side: sideName('home'), scores: pad(ls.h) },
+      { side: sideName('away'), scores: pad(ls.a) },
+    ],
+  }
+}
+
+/**
  * 把云端详情整理成页面直接可用的形状。
  *
  * 两处需要算而不能直出：
@@ -149,6 +179,7 @@ function decorateDetail(d, match) {
     : null
   const lineups = buildLineups(d, sideName)
   const box = buildBox(d, sideName)
+  const quarters = buildQuarters(match, sideName)
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -164,6 +195,8 @@ function decorateDetail(d, match) {
     hasLineups: !!lineups,
     box,
     hasBox: !!box,
+    quarters,
+    hasQuarters: !!quarters,
     formRows,
     hasForm: formRows.length > 0,
     h2h,
@@ -302,12 +335,52 @@ Page({
         const m2 = data.findMatch(this.matchId)
         if (m2 && m2 !== this.data.match) this.applyMatch(m2)
       })
+      // 🔴 大表 15 分钟才刷一次，进行中的比赛得靠实时小表（60 秒）才跟得上
+      data.refreshLive().then((r) => {
+        if (!r || !r.patched) return
+        const m2 = data.findMatch(this.matchId)
+        if (m2 && m2 !== this.data.match) this.applyMatch(m2)
+      })
     }
     if (!this.data.match) return
     this.setData({
       isFav: app.isFav(this.data.match.id),
       authState: app.globalData.authState,
     })
+    this.syncLivePoll()
+  },
+
+  onHide() { this.stopLivePoll() },
+  onUnload() { this.stopLivePoll() },
+
+  /**
+   * 详情页的比分轮询：**只有这场比赛正在进行中才起**定时器。
+   * 用户点进一场 live 比赛就是想盯着看，60 秒一轮；比赛一结束（status 变 finished）就停。
+   */
+  syncLivePoll() {
+    const m = this.data.match
+    if (!m || m.status !== 'live') { this.stopLivePoll(); return }
+    if (this.liveTimer) return
+    this.startLivePoll()
+  },
+
+  startLivePoll() {
+    if (this.liveTimer) return
+    this.liveTimer = setInterval(() => {
+      data.refreshLive(true).then((r) => {
+        if (!r || !r.patched) return
+        const m2 = data.findMatch(this.matchId)
+        if (!m2) return
+        this.applyMatch(m2)
+        if (m2.status !== 'live') this.stopLivePoll()
+      })
+    }, LIVE_POLL_MS)
+  },
+
+  stopLivePoll() {
+    if (!this.liveTimer) return
+    clearInterval(this.liveTimer)
+    this.liveTimer = null
   },
 
   async onFavTap() {
@@ -420,4 +493,4 @@ Page({
   },
 })
 
-module.exports = { decorateDetail, buildLineups, buildBox, BASKET_COLS }
+module.exports = { decorateDetail, buildLineups, buildBox, buildQuarters, BASKET_COLS }

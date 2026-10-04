@@ -2191,6 +2191,29 @@ async function run() {
   check('单场球员数据：行的数字按列名取，不按下标写死（得分在前、分钟在后）',
     !!boxOut && boxOut.blocks[0].rows[0].cells.join('|') === '15|3|1|3-9|2-4|17',
     boxOut ? boxOut.blocks[0].rows[0].cells.join('|') : '')
+  const qm = { home: { zhName: '主队' }, away: { zhName: '客队' } }
+  const qSide = (s) => (s === 'home' ? '主队' : '客队')
+  const qOut = detMod.buildQuarters({ linescores: { h: [28, 25, 30, 22], a: [30, 22, 25, 28] } }, qSide)
+  check('篮球分节比分：打满 4 节出「第1节…第4节」',
+    !!qOut && qOut.cols.join('/') === '第1节/第2节/第3节/第4节'
+    && qOut.rows[0].scores.join('/') === '28/25/30/22'
+    && qOut.rows[1].scores.join('/') === '30/22/25/28',
+    qOut ? qOut.cols.join('/') : '为 null')
+  // 进行中的比赛只出「已经打完的节」，不给未来的节留空列
+  check('篮球分节比分：只列已经打完的节（进行中不会冒出空的第3/4节）',
+    detMod.buildQuarters({ linescores: { h: [28, 25], a: [30, 22] } }, qSide)
+      .cols.join('/') === '第1节/第2节')
+  check('篮球分节比分：两队节数不等时短的那队补 -，不对位',
+    detMod.buildQuarters({ linescores: { h: [28, 25, 30], a: [30, 22] } }, qSide)
+      .rows[1].scores.join('/') === '30/22/-')
+  check('篮球分节比分：加时多出来的列叫「加时1」，不是「第5节」',
+    detMod.buildQuarters({ linescores: { h: [1, 2, 3, 4, 5, 6], a: [1, 2, 3, 4, 5] } }, () => '队')
+      .cols.slice(4).join('/') === '加时1/加时2')
+  check('篮球分节比分：足球没有 linescores → 返回 null（wxml 整块隐藏）',
+    detMod.buildQuarters({}, () => '队') === null
+    && detMod.buildQuarters(null, () => '队') === null
+    && detMod.buildQuarters({ linescores: { h: [], a: [] } }, () => '队') === null)
+
   check('单场球员数据：列缺失时给出 -，不会渲染成空白格',
     !!boxOut
     && detMod.buildBox({ box: { l: ['MIN'], home: boxPicked.home, away: boxPicked.away } }, () => '主') === null)
@@ -2212,6 +2235,62 @@ async function run() {
     `存了 ${boxStored} 场，非篮球 ${boxWrongComp} 场`)
   check('单场球员数据：存下来的每一场都能渲染（不会存了却画不出来）',
     boxStored === 0 || boxRenderable === boxStored, `${boxRenderable}/${boxStored}`)
+
+  /* ---------- 实时比分（live 快通道，2026-10-04 新增） ----------
+     🔴 起因：`schedule_cache` 一行 **891KB**，云端只能 15 分钟刷一次，
+        平均延迟 9.5 分钟 —— 篮球一节才 12 分钟，等于「实时看比分」不存在。
+        解法：把进行中的比赛拆到小表 `live_scores`（约 2KB），60 秒刷一次，客户端按 id 打补丁。
+     三条红线：① 状态要中文化；② 循环必须能自己退出（不白占 Actions）；
+        ③ 页面定时器必须在 onHide/onUnload 清掉（后台偷跑会耗电）。 */
+  {
+    const lw = require(path.join(ROOT, 'tools/live-watch.js'))
+    check('实时比分：篮球节次时钟中文化（上游给的是 Q3 5:23 这种英文）',
+      lw.zhLiveStatus('basketball', 'in', 'Q3 5:23') === '第3节 5:23'
+      && lw.zhLiveStatus('basketball', 'in', 'OT 2:11') === '加时 2:11'
+      && lw.zhLiveStatus('basketball', 'in', 'Halftime') === '中场休息',
+      `${lw.zhLiveStatus('basketball', 'in', 'Q3 5:23')} / ${lw.zhLiveStatus('basketball', 'in', 'OT 2:11')}`)
+    check('实时比分：足球分钟数中文化，已结束/未开始各就各位',
+      lw.zhLiveStatus('soccer', 'in', "45'") === '45分钟'
+      && lw.zhLiveStatus('soccer', 'in', "90+2'") === '90分钟+2'
+      && lw.zhLiveStatus('soccer', 'post', 'FT') === '已结束'
+      && lw.zhLiveStatus('soccer', 'pre', '') === '',
+      lw.zhLiveStatus('soccer', 'in', "90+2'"))
+    check('实时比分：认不出格式时回落上游原文，绝不返回空串（页面会显示「未开始」就穿帮了）',
+      lw.zhLiveStatus('basketball', 'in', 'Weird Status') === 'Weird Status'
+      && lw.zhLiveStatus('soccer', 'in', '') === '进行中')
+    check('实时比分：ESPN 的 dates 用 UTC，取昨天/今天/明天三天（覆盖所有时区）',
+      Array.isArray(lw.espnDates()) && lw.espnDates().length === 3
+      && lw.espnDates().every((d) => /^\d{8}$/.test(d)), lw.espnDates().join(','))
+
+    const dataMod = require(path.join(ROOT, 'utils/data.js'))
+    check('实时比分：数据层导出 refreshLive / hasLive / applyLive（页面要能起停轮询）',
+      typeof dataMod.refreshLive === 'function'
+      && typeof dataMod.hasLive === 'function'
+      && typeof dataMod.applyLive === 'function')
+
+    // 🔴 定时器泄漏守卫：三个看比分的页面都必须清。漏一个 = 用户切到别的 tab 还在后台轮询。
+    ;['pages/index/index.js', 'pages/schedule/schedule.js', 'pages/detail/detail.js'].forEach((rel) => {
+      const src = fs.readFileSync(path.join(ROOT, rel), 'utf8')
+      check(`实时比分：${rel.split('/')[1]} 页在 onHide 与 onUnload 都清掉轮询定时器`,
+        /onHide\(\)\s*\{\s*this\.stopLivePoll\(\)/.test(src)
+        && /onUnload\(\)\s*\{\s*this\.stopLivePoll\(\)/.test(src))
+      // ⚠️ 首页/赛程页看的是**列表**（有任意一场 live 就轮询），详情页只看**这一场**
+      //    （`m.status !== 'live'`）—— 所以两处的判定写法不同，别写成一样的断言。
+      const page = rel.split('/')[1]
+      const guarded = page === 'detail'
+        ? /m\.status !== 'live'/.test(src)
+        : /data\.hasLive\(\)/.test(src)
+      check(`实时比分：${page} 页只在有进行中比赛时才起定时器`,
+        /startLivePoll/.test(src) && guarded,
+        page === 'detail' ? '详情页按「这一场」判定' : '列表页按 hasLive() 判定')
+    })
+
+    const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
+    check('实时比分：盯场挂在已有 15 分钟任务末尾（不新增外部定时任务）',
+      /tools\/live-watch\.js/.test(wf) && /continue-on-error:\s*true/.test(wf))
+    check('实时比分：timeout 给到 20 分钟（主同步 2 分钟 + 盯场 11 分钟）',
+      /timeout-minutes:\s*20/.test(wf))
+  }
 
   /* ---------- 球员字典播种器（阵容球员池） ----------
      2026-10-03：球员字典原本只从「射手榜/助攻榜」取输入，导致阵容里 87% 的人没有中文名

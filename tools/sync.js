@@ -863,7 +863,13 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+// ⚠️ 必须守卫：`tools/live-watch.js` 会 require 本文件拿 COMPETITIONS（赛事表的唯一来源）。
+//    不守卫的话 require 一次就跑一遍全量抓取，还会 process.exit(1)。
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
+
+module.exports = { COMPETITIONS, beijingDay, beijingTime }

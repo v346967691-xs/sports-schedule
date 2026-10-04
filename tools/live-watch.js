@@ -1,0 +1,244 @@
+/**
+ * 进行中比赛的实时比分（live 快通道）
+ * ============================================================
+ * 用途：只抓「正在打的比赛」的比分/状态，推到云表 `live_scores`（约 10KB），
+ *       供小程序在 `schedule_cache` 之上打补丁 —— 让比分延迟从 ~9 分钟降到 ~1 分钟。
+ *
+ * 用法： node tools/live-watch.js [--once] [--minutes=11] [--every=60] [--dry] [--only=epl,nba]
+ *
+ * 🔴 为什么不能靠「把主同步加密到 2 分钟」来解决：
+ *    `schedule_cache` 一行 **891KB**（2322 场解码后的扁平数组），
+ *    2 分钟一次 = 720 次/天 × 1.1MB ≈ 790MB/天，而其中 90% 的内容（未来 45 天赛程、
+ *    积分榜、射手榜）压根没变。所以主同步保持 15 分钟，**只把进行中的比赛拆出来高频刷**。
+ *
+ * 🔴 为什么是「循环」而不是「独立的高频定时任务」：
+ *    GitHub 原生 cron 在本仓库实测 2.5~5 小时才投递一次（改频率无效），
+ *    可靠触发只能靠外部 cron-job.org POST `workflow_dispatch`。
+ *    为了**不新增外部配置**，这里把 live 循环挂在**已有的** 15 分钟任务末尾：
+ *    一次 Actions 运行 ≈ 2 分钟（主同步）+ 11 分钟（本循环），几乎连续覆盖，
+ *    等效粒度 = `--every`（默认 60 秒）。详见 .github/workflows/sync-schedule.yml。
+ *
+ * 设计要点：
+ *   1) **只推变化的部分**，客户端按 id 在内存里打补丁（`utils/data.js: applyLive()`）。
+ *      小表同时收录「今天已结束」的比赛，这样终场哨响的瞬间最终比分也能立刻同步
+ *      （否则比赛一结束就从 live 列表消失，客户端要等下一次 15 分钟全量）。
+ *   2) **候选赛事集合在进程内收敛**：第一次全量扫所有 ESPN 赛事，
+ *      之后只扫上一轮有 live 比赛的赛事（通常 <10 个），每 `DISCOVER_EVERY` 轮再全量一次
+ *      —— 否则每 60 秒打 31 个赛事 × 3 个日期，上游请求量是主同步的 5 倍。
+ *   3) **没有 live 比赛就立刻退出**（`--once` 或循环里连续 N 轮为空），
+ *      凌晨没比赛时不白占 Actions 分钟数。
+ */
+const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
+const publicConfig = require('../utils/cloud-config')
+
+const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
+const COMPETITIONS = require('../data/meta.js').competitions
+// 复用 sync.js 的赛事表（它才有 `sport` 字段；data/meta.js 只有 `cat`）
+const SYNC_COMPS = require('./sync.js').COMPETITIONS
+
+const DAY = 86400000
+const DISCOVER_EVERY = 5 // 每 5 轮做一次全量发现（防止漏掉刚开赛的联赛）
+const IDLE_EXIT_ROUNDS = 3 // 连续 N 轮没有 live 比赛就退出（省 Actions 分钟数）
+
+function arg(name, def) {
+  const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))
+  return hit ? hit.split('=')[1] : def
+}
+const onlyArg = arg('only', '')
+const minutes = Number(arg('minutes', 11))
+const everySec = Number(arg('every', 60))
+const once = process.argv.includes('--once')
+const dry = process.argv.includes('--dry')
+
+const pad = (n) => String(n).padStart(2, '0')
+
+/** ESPN 的 `dates=YYYYMMDD` 用的是 UTC 日期；取昨天/今天/明天三天，覆盖所有时区 */
+function espnDates() {
+  const now = Date.now()
+  const out = []
+  for (let i = -1; i <= 1; i += 1) {
+    const d = new Date(now + i * DAY)
+    out.push(`${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`)
+  }
+  return out
+}
+
+async function getJSON(url) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 12000)
+      const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0' } })
+      clearTimeout(timer)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json()
+    } catch (err) {
+      if (attempt === 1) return null
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  }
+  return null
+}
+
+/**
+ * 进行中 / 刚结束的状态文案中文化。
+ * 🔴 上游对 `state === 'in'` 给的是英文原文：篮球 `Q3 5:23`、足球 `45'`。
+ *    直接显示英文不是不行，但「第3节 5:23」更符合中文阅读。
+ */
+function zhLiveStatus(sport, state, shortDetail) {
+  const s = String(shortDetail || '')
+  if (state === 'post') return '已结束'
+  if (state === 'pre') return ''
+  if (/halftime/i.test(s)) return '中场休息'
+  if (sport === 'basketball') {
+    let m = s.match(/^Q(\d+)\s*([\d:]+)?/)
+    if (m) return m[2] ? `第${m[1]}节 ${m[2]}` : `第${m[1]}节`
+    m = s.match(/^(\d+)(?:st|nd|rd|th)?\s*Qtr\s*([\d:]+)?/i)
+    if (m) return m[2] ? `第${m[1]}节 ${m[2]}` : `第${m[1]}节`
+    if (/^OT/i.test(s)) {
+      const t = s.replace(/^OT\s*/i, '')
+      return t ? `加时 ${t}` : '加时'
+    }
+    m = s.match(/End of (\d+)/i)
+    if (m) return `第${m[1]}节结束`
+    return s || '进行中'
+  }
+  // 足球：`45'` / `90+2'` / HT
+  const fm = s.match(/^(\d+)(?:\+(\d+))?'/)
+  if (fm) return fm[2] ? `${fm[1]}分钟+${fm[2]}` : `${fm[1]}分钟`
+  return s || '进行中'
+}
+
+/** 赛事 → {sport, league}。只处理 ESPN 来源（LoL / CBA 走各自的抓取器） */
+const TARGETS = (() => {
+  const keys = new Set(COMPETITIONS.map((c) => c.key))
+  return SYNC_COMPS
+    .filter((c) => c.source === 'espn' && c.sport && c.espn && keys.has(c.key))
+    .filter((c) => (onlyArg ? onlyArg.split(',').indexOf(c.key) > -1 : true))
+    .map((c) => ({ key: c.key, sport: c.sport, league: c.espn }))
+})()
+
+/** 扫一轮：抓候选赛事的 scoreboard，抽出 live + 今天已结束的比赛 */
+async function scan(comps) {
+  const dates = espnDates()
+  const rows = []
+  const found = {}
+  for (const c of comps) {
+    let hit = 0
+    for (const d of dates) {
+      const j = await getJSON(`${ESPN}/${c.sport}/${c.league}/scoreboard?dates=${d}`)
+      const evs = (j && j.events) || []
+      for (const ev of evs) {
+        const st = ev.status && ev.status.type && ev.status.type.state
+        if (st !== 'in' && st !== 'post') continue
+        const comp = (ev.competitions && ev.competitions[0]) || null
+        if (!comp) continue
+        const cs = comp.competitors || []
+        const h = cs.find((x) => x.homeAway === 'home') || cs[0]
+        const a = cs.find((x) => x.homeAway === 'away') || cs[1]
+        if (!h || !a) continue
+        const row = {
+          id: `${c.key}-${ev.id}`,
+          st: st === 'in' ? 'live' : 'finished',
+          stt: zhLiveStatus(c.sport, st, ev.status && ev.status.type && ev.status.type.shortDetail),
+          hs: Number(h.score) || 0,
+          as: Number(a.score) || 0,
+        }
+        // 篮球的节次比分（足球没有 linescores）
+        const ls = { h: [], a: [] }
+        ;[h, a].forEach((side, i) => {
+          ((side.linescores) || []).forEach((l) => {
+            const v = Number(l.value != null ? l.value : l.displayValue)
+            if (Number.isFinite(v)) ls[i ? 'a' : 'h'].push(v)
+          })
+        })
+        if (ls.h.length || ls.a.length) row.ls = ls
+        rows.push(row)
+        hit += 1
+        if (st === 'in') found[c.key] = 1
+      }
+    }
+    if (hit) found[c.key] = found[c.key] || 0
+  }
+  return { rows, liveComps: Object.keys(found).filter((k) => found[k] === 1) }
+}
+
+async function push(cloud, rows) {
+  const nowIso = new Date().toISOString()
+  const row = {
+    id: 'latest',
+    data: { v: 1, rows, generatedAt: nowIso },
+    generated_at: nowIso,
+    created_at: nowIso,
+  }
+  if (dry) {
+    console.log('[live-watch] --dry：不写云端。样例：', JSON.stringify(rows[0] || {}))
+    return true
+  }
+  const { error } = await cloud.database.from('live_scores').upsert(row, { onConflict: 'id' })
+  if (error) {
+    console.error('[live-watch] 推送失败：', JSON.stringify(error).slice(0, 200))
+    return false
+  }
+  return true
+}
+
+async function main() {
+  const cloud = createWorkBuddyCloud({
+    endpoint: publicConfig.endpoint,
+    publishableKey: publicConfig.publishableKey,
+  })
+  console.log(`[live-watch] 候选赛事 ${TARGETS.length} 个，间隔 ${everySec}s${once ? '（单次）' : `，最长 ${minutes} 分钟`}`)
+
+  const deadline = Date.now() + minutes * 60 * 1000
+  let round = 0
+  let idle = 0
+  let comps = TARGETS
+  let total = 0
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    round += 1
+    // 每 DISCOVER_EVERY 轮全量发现一次，防止漏掉「刚开赛、上一轮还是 upcoming」的联赛
+    const useAll = round === 1 || round % DISCOVER_EVERY === 1
+    const t0 = Date.now()
+    const { rows, liveComps } = await scan(useAll ? TARGETS : comps)
+    const live = rows.filter((r) => r.st === 'live').length
+    console.log(
+      `[live-watch] 第 ${round} 轮 ${useAll ? '全量' : `收敛(${comps.length})`}：${rows.length} 场（进行中 ${live}），耗时 ${Date.now() - t0}ms`
+    )
+    if (rows.length) await push(cloud, rows)
+    total += rows.length
+
+    if (live) {
+      idle = 0
+      comps = TARGETS.filter((c) => liveComps.indexOf(c.key) > -1)
+      if (!comps.length) comps = TARGETS
+    } else {
+      idle += 1
+      comps = TARGETS
+    }
+
+    if (once) break
+    // 连续几轮都没有进行中的比赛（比如深夜）→ 没必要继续占着 Actions
+    if (idle >= IDLE_EXIT_ROUNDS) {
+      console.log(`[live-watch] 连续 ${idle} 轮没有进行中的比赛，提前退出`)
+      break
+    }
+    if (Date.now() + everySec * 1000 > deadline) {
+      console.log(`[live-watch] 到达 ${minutes} 分钟上限，退出（本轮共推 ${total} 场）`)
+      break
+    }
+    await new Promise((r) => setTimeout(r, everySec * 1000))
+  }
+  console.log(`[live-watch] 完成：${round} 轮，共 ${total} 场`)
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[live-watch] 未预期错误：', err && err.stack ? err.stack : err)
+    process.exit(1)
+  })
+}
+
+module.exports = { zhLiveStatus, scan, espnDates, TARGETS }

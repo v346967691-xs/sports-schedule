@@ -31,7 +31,8 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # ⚠️ 15 → 20：末尾挂了「实时比分盯场」最长 11 分钟，加上主同步约 2 分钟。
+    timeout-minutes: 20
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -60,6 +61,21 @@ jobs:
       - name: 生成日报并推送到云端
         continue-on-error: true
         run: node tools/brief-push.js
+
+      # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。
+      #
+      # 🔴 为什么这样做，而不是「再建一个每 2 分钟的高频定时任务」：
+      #    ① 本仓库的 GitHub 原生 cron 实测 2.5~5 小时才投递一次（改频率无效），
+      #       可靠触发只能靠外部 cron-job.org POST —— 每多加一条就要多配一次外部服务；
+      #    ② 挂在这里则**零外部配置**：一次运行 ≈ 2 分钟（主同步）+ 11 分钟（盯场），
+      #       几乎连续覆盖，等效粒度就是 60 秒；
+      #    ③ `schedule_cache` 一行 891KB，2 分钟刷一次 = 790MB/天 —— 只有把它拆成
+      #       只含进行中比赛的小表（~2KB）才刷得起。
+      # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
+      # ⚠️ continue-on-error：实时比分是增强，它的成败不该污染主链路的红绿信号。
+      - name: 盯进行中的比赛（实时比分）
+        continue-on-error: true
+        run: node tools/live-watch.js --minutes=11 --every=60
 
 # 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），
 # 避免它跟着这里每 15 分钟白跑一次检出。

@@ -12,6 +12,8 @@ const CATS = [
 ]
 
 const PAGE_SIZE = 3
+/** 实时比分轮询间隔。服务端 live_scores 60 秒刷一次，客户端也按 60 秒拉，不多打接口 */
+const LIVE_POLL_MS = 60 * 1000
 
 Page({
   data: {
@@ -78,11 +80,53 @@ Page({
     }
     if (this.data.totalGroups) this.reload()
     this.cloudRefresh()
+    this.syncLivePoll()
+  },
+
+  onHide() { this.stopLivePoll() },
+  onUnload() { this.stopLivePoll() },
+
+  /* ------------------------------------------------------------ 实时比分轮询
+   *
+   * 🔴 为什么页面要自己起定时器：`schedule_cache` 15 分钟才刷一次，篮球一节才 12 分钟，
+   *    光靠 onShow 拉云端，用户盯着页面看比分是**不动**的。
+   *    实时表 `live_scores` 只有 ~2KB（服务端 60 秒刷一次），所以这里 60 秒轮询一次很便宜。
+   * ⚠️ 没有进行中的比赛就**不起**定时器（凌晨没比赛时不白耗电）；
+   *    页面切走（onHide/onUnload）必须清掉，否则后台还在跑。
+   */
+  syncLivePoll() {
+    data.refreshLive().then((r) => {
+      if (r.patched) this.reload()
+      if (data.hasLive()) this.startLivePoll()
+      else this.stopLivePoll()
+    })
+  },
+
+  startLivePoll() {
+    if (this.liveTimer) return
+    this.liveTimer = setInterval(() => {
+      // force：轮询是用户主动盯着看的场景，不该被 45 秒节流挡住
+      data.refreshLive(true).then((r) => {
+        if (r.patched) this.reload()
+        if (!data.hasLive()) this.stopLivePoll()
+      })
+    }, LIVE_POLL_MS)
+  },
+
+  stopLivePoll() {
+    if (!this.liveTimer) return
+    clearInterval(this.liveTimer)
+    this.liveTimer = null
   },
 
   /** 拉云端赛程缓存，若比本地新则重建列表 */
   cloudRefresh() {
-    data.refresh().then((r) => { if (r.updated) this.reload() })
+    data.refresh().then((r) => {
+      if (r.updated) {
+        this.reload()
+        this.syncLivePoll()
+      }
+    })
   },
 
   applyCat(cat) {

@@ -557,6 +557,43 @@
   text-overflow: ellipsis;
 }
 
+/* 篮球分节比分：球队名一列 + 每节一列，数字右对齐 */
+.q-card {
+  margin: 24rpx 32rpx 0;
+  padding: 20rpx 24rpx;
+  border-radius: var(--border-radius-lg, 12rpx);
+  background: var(--bg-card, #fff);
+  box-shadow: 0 2rpx 12rpx rgba(15, 23, 42, 0.06);
+}
+
+.q-row {
+  display: flex;
+  align-items: center;
+  padding: 6rpx 0;
+  font-size: 24rpx;
+  color: var(--text);
+}
+
+.q-head {
+  color: var(--muted);
+  font-size: 21rpx;
+}
+
+.q-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.q-n {
+  flex: none;
+  width: 76rpx;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 单场球员数据（篮球）：一行一名球员，右侧 6 列数字右对齐 */
 .bx-block {
   padding: 14rpx 0;

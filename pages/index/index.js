@@ -9,6 +9,9 @@ const nav = require('../../utils/nav')
 /** 关注球队的「未来赛程」最多往前看几天 */
 const TEAM_FUTURE_DAYS = 7
 
+/** 实时比分轮询间隔（与赛程页/详情页同值，服务端 live_scores 也是 60 秒刷一次） */
+const LIVE_POLL_MS = 60 * 1000
+
 /**
  * 某个赛事积分榜的领头羊：「成都蓉城 52分」/「曼城 15分」。
  * 给首页赛事入口一个额外的点击理由 —— 光看「3 场待开赛」太平了。
@@ -58,6 +61,38 @@ Page({
     this.build()
     this.loadBrief()
     data.refresh().then((r) => { if (r.updated) this.build() })
+    this.syncLivePoll()
+  },
+
+  onHide() { this.stopLivePoll() },
+  onUnload() { this.stopLivePoll() },
+
+  /**
+   * 实时比分轮询：首页是看比分的主入口，进行中的比赛必须自己动。
+   * ⚠️ 没有进行中的比赛就不起定时器，页面切走必须清掉。
+   */
+  syncLivePoll() {
+    data.refreshLive().then((r) => {
+      if (r.patched) this.build()
+      if (data.hasLive()) this.startLivePoll()
+      else this.stopLivePoll()
+    })
+  },
+
+  startLivePoll() {
+    if (this.liveTimer) return
+    this.liveTimer = setInterval(() => {
+      data.refreshLive(true).then((r) => {
+        if (r.patched) this.build()
+        if (!data.hasLive()) this.stopLivePoll()
+      })
+    }, LIVE_POLL_MS)
+  },
+
+  stopLivePoll() {
+    if (!this.liveTimer) return
+    clearInterval(this.liveTimer)
+    this.liveTimer = null
   },
 
   /**

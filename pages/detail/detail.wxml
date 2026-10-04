@@ -38,6 +38,18 @@
     </view>
   </view>
 
+  <!-- 篮球分节比分：只有上游给了 linescores 才显示（足球没有分节） -->
+  <view class="q-card" wx:if="{{detail.hasQuarters}}">
+    <view class="q-row q-head">
+      <view class="q-t">球队</view>
+      <view class="q-n" wx:for="{{detail.quarters.cols}}" wx:for-item="c" wx:key="*this">{{c}}</view>
+    </view>
+    <view class="q-row" wx:for="{{detail.quarters.rows}}" wx:for-item="r" wx:key="side">
+      <view class="q-t">{{r.side}}</view>
+      <view class="q-n" wx:for="{{r.scores}}" wx:for-item="v" wx:key="*this">{{v}}</view>
+    </view>
+  </view>
+
   <view class="status-bar">
     <view class="status-pill status-{{match.status}}">{{match._statusLabel}}</view>
     <view class="status-hint" wx:if="{{match._statusHint}}">{{match._statusHint}}</view>

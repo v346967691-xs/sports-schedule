@@ -1632,6 +1632,28 @@ async function run() {
     `${grps[1].list[0].name} / "${grps[1].list[0].enName}"`)
   check('球队名单：空名单不出组（避免渲染出空分组头）',
     rosterViewMod.groupByPos([]).length === 0 && rosterViewMod.groupByPos(null).length === 0)
+  // 🔴 语法门：**所有 tools/*.js 必须能被解析**。
+  //    起因是 2026-10-04 改 tools/team-roster.js 时留了个重复 const（`SyntaxError`），
+  //    smoke 不 require 这个文件就放行了，一路提交到 GitHub —— 到 Actions 里才炸。
+  //    ⚠️ 别用 `execFileSync(node --check)`：本机沙箱里起子进程会 EBUSY（踩过）。
+  //    用 `vm.Script` 只做**语法编译**，不执行、不起进程。
+  {
+    const vm = require('vm')
+    const broken = []
+    fsMod.readdirSync(path.join(ROOT, 'tools'))
+      .filter((f) => f.endsWith('.js'))
+      .forEach((f) => {
+        const full = path.join(ROOT, 'tools', f)
+        try {
+          // eslint-disable-next-line no-new
+          new vm.Script(fsMod.readFileSync(full, 'utf8'), { filename: full })
+        } catch (err) {
+          broken.push(`${f}(${err && err.message ? err.message.slice(0, 60) : '?'})`)
+        }
+      })
+    check('工程：tools/ 下所有脚本语法可解析（防止提交 SyntaxError）', broken.length === 0, broken.join(' , '))
+  }
+
   // 上游只给英制，写成英制等于没给
   const rosterSrc = fsMod.readFileSync(path.join(ROOT, 'tools/team-roster.js'), 'utf8')
   check('球队名单：身高体重已转公制（上游只有英寸/磅）',

@@ -110,7 +110,6 @@ function rowOf(a) {
 }
 
 /** 阵容按位置分组顺序排：门将 → 后卫 → 中场 → 前锋，同位置按球衣号 */
-const POS_ORDER = { G: 0, D: 1, M: 2, F: 3 }
 function sortPlayers(list) {
   return list.slice().sort((a, b) => {
     const d = (POS_ORDER[a.p] == null ? 9 : POS_ORDER[a.p]) - (POS_ORDER[b.p] == null ? 9 : POS_ORDER[b.p])

@@ -119,6 +119,26 @@
     <view class="foot-note tight">阵容为赛前公布的名单，临场调整请以官方发布为准。</view>
   </view>
 
+  <!-- ③b 单场球员数据（只有篮球有。足球的 boxscore.players 是空的；未开赛上游不给；超出 48 小时窗口会被裁掉 → 整块隐藏） -->
+  <view class="section card" wx:if="{{detail.hasBox}}">
+    <view class="sec-title">球员数据</view>
+    <view class="bx-block" wx:for="{{detail.box.blocks}}" wx:for-item="b" wx:key="key">
+      <view class="bx-side">{{b.side}}</view>
+      <view class="bx-row bx-head">
+        <view class="bx-nm">球员</view>
+        <view class="bx-c" wx:for="{{detail.box.cols}}" wx:for-item="c" wx:key="*this">{{c}}</view>
+      </view>
+      <view class="bx-row" wx:for="{{b.rows}}" wx:for-item="p" wx:key="i">
+        <view class="bx-nm">
+          <text class="bx-no" wx:if="{{p.j}}">{{p.j}}</text>
+          <text class="bx-name {{p.st ? 'st' : ''}}">{{p.n}}</text>
+        </view>
+        <view class="bx-c" wx:for="{{p.cells}}" wx:for-item="v" wx:key="*this">{{v}}</view>
+      </view>
+    </view>
+    <view class="foot-note tight">数据来自 ESPN 官方技术统计，未出场球员不列入。</view>
+  </view>
+
   <!-- ④ 双方近况 -->
   <view class="section card" wx:if="{{detail.hasForm}}">
     <view class="sec-title">双方近况</view>

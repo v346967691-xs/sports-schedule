@@ -13,6 +13,20 @@ const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 const LINEUP_POS = [['G', '门将'], ['D', '后卫'], ['M', '中场'], ['F', '前锋']]
 
 /**
+ * 篮球单场球员数据要展示的列（上游给了 14 列，手机放不下那么多）。
+ * ⚠️ 左侧是**上游的英文列名**，靠它在 `box.l` 里查下标 —— 不能直接写死下标，
+ *    上游一改列顺序数字就全错位了（比缺数据严重得多）。
+ */
+const BASKET_COLS = [
+  ['PTS', '得分'],
+  ['REB', '篮板'],
+  ['AST', '助攻'],
+  ['FG', '投篮'],
+  ['3PT', '三分'],
+  ['MIN', '分钟'],
+]
+
+/**
  * 首发阵容：payload 里是 `{home:[{n,j,p,st}], away:[...]}`（见 tools/match-detail.js 的 pickLineups），
  * 这里整理成「按位置分组 + 替补席」的可渲染结构。
  *
@@ -43,6 +57,34 @@ function buildLineups(d, sideName) {
   }
   const rows = [side('home', d.lineups.home), side('away', d.lineups.away)].filter(Boolean)
   return rows.length ? rows : null
+}
+
+/**
+ * 篮球单场球员数据：payload 里是 `{l:[列名], home:[{n,j,p,s}], away:[...]}`
+ * （见 tools/match-detail.js 的 pickBasketballPlayers）。
+ *
+ * ⚠️ 只有篮球有这份数据：足球的 `boxscore.players` 是空的（足球的球员维度数据在
+ *    `rosters` 里，已经由 `lineups` 覆盖）。`box` 为 null 是常态 → 整块隐藏。
+ * ⚠️ 列按需 `box.l` 里查下标，查不到（上游改了列）就**整块返回 null**，绝不错位显示。
+ */
+function buildBox(d, sideName) {
+  if (!d || !d.box || !d.box.home || !d.box.away) return null
+  const labels = d.box.l || []
+  const idx = BASKET_COLS.map(([k]) => labels.indexOf(k))
+  if (idx.some((i) => i < 0)) return null
+  const side = (key, list) => {
+    const rows = (list || [])
+      .map((p, i) => {
+        const s = String(p.s || '').split('|')
+        return { i, j: p.j || '', n: p.n || '', st: p.t ? 1 : 0, cells: idx.map((x) => s[x] || '-') }
+      })
+      .filter((r) => r.n)
+    if (!rows.length) return null
+    return { key, side: sideName(key), rows }
+  }
+  const blocks = [side('home', d.box.home), side('away', d.box.away)].filter(Boolean)
+  if (!blocks.length) return null
+  return { cols: BASKET_COLS.map(([, zh]) => zh), blocks }
 }
 
 /**
@@ -106,6 +148,7 @@ function decorateDetail(d, match) {
       })
     : null
   const lineups = buildLineups(d, sideName)
+  const box = buildBox(d, sideName)
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -119,6 +162,8 @@ function decorateDetail(d, match) {
     hasStats: stats.length > 0,
     lineups,
     hasLineups: !!lineups,
+    box,
+    hasBox: !!box,
     formRows,
     hasForm: formRows.length > 0,
     h2h,
@@ -375,4 +420,4 @@ Page({
   },
 })
 
-module.exports = { decorateDetail, buildLineups }
+module.exports = { decorateDetail, buildLineups, buildBox, BASKET_COLS }

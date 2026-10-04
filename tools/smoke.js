@@ -1632,6 +1632,56 @@ async function run() {
     `${grps[1].list[0].name} / "${grps[1].list[0].enName}"`)
   check('球队名单：空名单不出组（避免渲染出空分组头）',
     rosterViewMod.groupByPos([]).length === 0 && rosterViewMod.groupByPos(null).length === 0)
+
+  /* ---------- 篮球位置（2026-10-04 新增，NBA 名单接入） ----------
+     🔴 最容易踩的坑：ESPN 的足球和篮球都用 `G`/`F` 这种单字母，但**意思完全不同**
+        （足球 G=门将、篮球 G=后卫）。篮球必须另起一组缩写 BG/BF/BC，否则
+        NBA 的瓜分到「门将」组里。 */
+  check('篮球位置：G/F/C 映射成 BG/BF/BC，不会和足球的「门将/前锋」抢同一个键',
+    rosterViewMod.basketPos({ abbreviation: 'G' }) === 'BG'
+    && rosterViewMod.basketPos({ abbreviation: 'F' }) === 'BF'
+    && rosterViewMod.basketPos({ abbreviation: 'C' }) === 'BC'
+    && rosterViewMod.POS_ZH.G === '门将' && rosterViewMod.POS_ZH.BG === '后卫',
+    `BG=${rosterViewMod.POS_ZH.BG} 门将=${rosterViewMod.POS_ZH.G}`)
+  check('篮球位置：复合位置（G-F / F-C）取第一个字母，认不出来回落空串',
+    rosterViewMod.basketPos({ abbreviation: 'G-F' }) === 'BG'
+    && rosterViewMod.basketPos({ abbreviation: 'F-C' }) === 'BF'
+    && rosterViewMod.basketPos({}) === '' && rosterViewMod.basketPos(null) === '')
+  check('篮球位置：分组顺序是 后卫→前锋→中锋，且排在足球四档之后不串台',
+    rosterViewMod.POS_ORDER.BG < rosterViewMod.POS_ORDER.BF
+    && rosterViewMod.POS_ORDER.BF < rosterViewMod.POS_ORDER.BC
+    && rosterViewMod.POS_ORDER.BG > rosterViewMod.POS_ORDER.F,
+    `BG=${rosterViewMod.POS_ORDER.BG} BF=${rosterViewMod.POS_ORDER.BF} BC=${rosterViewMod.POS_ORDER.BC}`)
+  check('篮球位置：篮球名单走 groupByPos 能出「后卫/前锋/中锋」三组',
+    rosterViewMod.groupByPos([
+      { i: '1', n: 'A', s: 'A', p: 'BG', j: '1' },
+      { i: '2', n: 'B', s: 'B', p: 'BF', j: '2' },
+      { i: '3', n: 'C', s: 'C', p: 'BC', j: '3' },
+    ]).map((g) => g.title).join('/') === '后卫/前锋/中锋')
+
+  {
+    const trSrc = fs.readFileSync(path.join(ROOT, 'tools/team-roster.js'), 'utf8')
+    check('球队名单：抓名单时篮球也放行（曾经被 cat!==football 一刀切掉）',
+      !/cat\s*!==\s*['"]football['"]\s*\)\s*return false/.test(trSrc)
+      && /football:\s*['"]soccer['"]/.test(trSrc) && /basketball:\s*['"]basketball['"]/.test(trSrc))
+    check('球队名单：URL 的 sport 段按项目走，不再写死 soccer',
+      /\$\{sport\}\//.test(trSrc) && !/\/soccer\/\$\{slug\}\/teams/.test(trSrc))
+  }
+
+  /* ---------- NBA 赛季标签（季前赛 / 常规赛 / 季后赛） ----------
+     🔴 起因：ESPN 的 NBA `event.season` 是 `{"year":2027,"type":1,"slug":"preseason"}`
+        —— `type` 是**数字**，`ev.season?.type?.name` 恒为 undefined，
+        于是季前赛和常规赛在界面上完全分不出来，200 场全显示成光秃秃的「NBA」。 */
+  {
+    const syncSrc = fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')
+    check('赛季标签：认的是 season.slug（NBA 的 season.type 是数字，取不到 name）',
+      /SEASON_TYPE_ZH\[/.test(syncSrc) && /ev\.season\s*&&\s*ev\.season\.slug/.test(syncSrc))
+    check('赛季标签：三种赛季都给了中文，且只对篮球生效（足球一行不受影响）',
+      /preseason:\s*'季前赛'/.test(syncSrc)
+      && /['"]regular-season['"]:\s*'常规赛'/.test(syncSrc)
+      && /['"]post-season['"]:\s*'季后赛'/.test(syncSrc)
+      && /comp\.sport === 'basketball'/.test(syncSrc))
+  }
   // 🔴 语法门：**所有 tools/*.js 必须能被解析**。
   //    起因是 2026-10-04 改 tools/team-roster.js 时留了个重复 const（`SyntaxError`），
   //    smoke 不 require 这个文件就放行了，一路提交到 GitHub —— 到 Actions 里才炸。
@@ -1999,6 +2049,9 @@ async function run() {
       ① 先按 st 分首发/替补，再按位置分组（替补的位置上游给的是 Substitute，抽出来是空）；
       ② 位置缺失的首发要进兜底组，不能丢人。 */
   const detMod = require(path.join(ROOT, 'pages/detail/detail.js'))
+  // ⚠️ 这一节的断言要用它，声明必须在**最前面** —— 它原先在「球员字典播种器」那一节里，
+  //    而那一节在本节之后（`const` 有 TDZ，提前引用会直接 ReferenceError）。
+  const mdMod = require(path.join(ROOT, 'tools/match-detail.js'))
 
   check('首发阵容：上游没给阵容时返回 null（页面据整块隐藏，不留白壳）',
     detMod.buildLineups(null, () => '主') === null
@@ -2067,12 +2120,104 @@ async function run() {
   check('首发阵容：存下来的每一场都能渲染出分组（不会存了却画不出来）',
     luRenderable === luStored, `${luRenderable}/${luStored}`)
 
+  /* ---------- NBA 单场球员数据（2026-10-04 新增） ----------
+     足球的 `pickStats` 用的是足球字段（控球率/射门/角球…），NBA 的 `boxscore.teams`
+     只有 streak / avgPointsAgainst 两项 → 一项都匹配不上 → NBA 详情页技术统计恒为空。
+     球员维度的数据在 `boxscore.players`，是另一棵树，所以单独抽一份。
+     两条红线：① 上游改列顺序必须整块隐藏，绝不错位；② 没上场的球员不占体积。 */
+  const L14 = mdMod.BASKET_STAT_LABELS
+  check('单场球员数据：列名表是 14 列且含得分/篮板/助攻',
+    Array.isArray(L14) && L14.length === 14 && L14.indexOf('PTS') > -1
+    && L14.indexOf('REB') > -1 && L14.indexOf('AST') > -1, (L14 || []).join(','))
+
+  const boxOk = {
+    boxscore: {
+      players: [
+        {
+          team: { id: '28' },
+          statistics: [{
+            labels: L14,
+            athletes: [
+              { athlete: { id: '1', displayName: 'Alpha One', shortName: 'A. One', jersey: '9', position: { abbreviation: 'F' } }, starter: true, didNotPlay: false, stats: ['17', '15', '3-9', '2-4', '7-8', '3', '1', '1', '1', '0', '0', '3', '1', '+7'] },
+              { athlete: { id: '2', displayName: 'Bravo Two', shortName: 'B. Two', jersey: '4', position: { abbreviation: 'G' } }, starter: false, didNotPlay: true, stats: ['0'] },
+              { athlete: { id: '3', displayName: 'Charlie Three', shortName: 'C. Three', jersey: '5', position: { abbreviation: 'C' } }, starter: false, didNotPlay: false, stats: ['0', '0', '0-0', '0-0', '0-0', '0', '0', '0', '0', '0', '0', '0', '0', '0'] },
+            ],
+          }],
+        },
+        {
+          team: { id: '13' },
+          statistics: [{
+            labels: L14,
+            athletes: [
+              { athlete: { id: '4', displayName: 'Delta Four', shortName: 'D. Four', jersey: '2', position: { abbreviation: 'G' } }, starter: true, didNotPlay: false, stats: ['20', '8', '3-9', '2-4', '0-0', '5', '6', '1', '1', '0', '1', '4', '2', '-3'] },
+            ],
+          }],
+        },
+      ],
+    },
+  }
+  const boxPicked = mdMod.pickBasketballPlayers(boxOk, '28')
+  check('单场球员数据：按队伍 id 认主客（不靠 ESPN 的数组顺序）',
+    !!boxPicked && boxPicked.home.length === 1 && boxPicked.away.length === 1,
+    boxPicked ? `主 ${boxPicked.home.length} / 客 ${boxPicked.away.length}` : '为 null')
+  check('单场球员数据：没上场的球员不存（didNotPlay 与 MIN=0 都剔除）',
+    !!boxPicked && boxPicked.home.length === 1 && boxPicked.home[0].n === 'A. One',
+    boxPicked ? boxPicked.home.map((p) => p.n).join(',') : '')
+  check('单场球员数据：14 列压成一个 | 分隔的字符串（省一半字节）',
+    !!boxPicked && boxPicked.home[0].s.split('|').length === 14
+    && boxPicked.home[0].s.indexOf('15') === 3,
+    boxPicked ? boxPicked.home[0].s : '')
+  check('单场球员数据：位置走篮球那一套（BF/BG/BC，不是足球的 F/G）',
+    !!boxPicked && boxPicked.home[0].p === 'BF' && boxPicked.away[0].p === 'BG',
+    boxPicked ? boxPicked.home[0].p + '/' + boxPicked.away[0].p : '')
+  check('单场球员数据：未开赛的比赛上游没有 boxscore.players → 返回 null（整块隐藏）',
+    mdMod.pickBasketballPlayers({ boxscore: { teams: [] } }, '28') === null
+    && mdMod.pickBasketballPlayers({}, '28') === null)
+  const boxBad = JSON.parse(JSON.stringify(boxOk))
+  boxBad.boxscore.players[0].statistics[0].labels = L14.slice().reverse()
+  check('单场球员数据：上游列顺序变了就返回 null（错位显示比没有更糟）',
+    mdMod.pickBasketballPlayers(boxBad, '28') === null)
+
+  check('单场球员数据：没有这份数据时 buildBox 返回 null（wxml 据此隐藏整块）',
+    detMod.buildBox(null, () => '主') === null
+    && detMod.buildBox({}, () => '主') === null
+    && detMod.buildBox({ box: { l: L14, home: [], away: [] } }, () => '主') === null)
+  const boxOut = detMod.buildBox({ box: boxPicked }, (s) => (s === 'home' ? '多伦多猛龙' : '迈阿密热火'))
+  check('单场球员数据：主客两块都出，表头是中文',
+    !!boxOut && boxOut.blocks.length === 2
+    && boxOut.blocks[0].side === '多伦多猛龙'
+    && boxOut.cols.join('/') === '得分/篮板/助攻/投篮/三分/分钟',
+    boxOut ? boxOut.cols.join('/') : '为 null')
+  check('单场球员数据：行的数字按列名取，不按下标写死（得分在前、分钟在后）',
+    !!boxOut && boxOut.blocks[0].rows[0].cells.join('|') === '15|3|1|3-9|2-4|17',
+    boxOut ? boxOut.blocks[0].rows[0].cells.join('|') : '')
+  check('单场球员数据：列缺失时给出 -，不会渲染成空白格',
+    !!boxOut
+    && detMod.buildBox({ box: { l: ['MIN'], home: boxPicked.home, away: boxPicked.away } }, () => '主') === null)
+
+  // 落到真实数据上：**box 只可能出现在篮球赛事**（足球的 boxscore.players 是空的）
+  let boxStored = 0
+  let boxWrongComp = 0
+  let boxRenderable = 0
+  ;(detailBundle.buckets || []).forEach((bk) => {
+    Object.keys(bk.payload || {}).forEach((id) => {
+      const d = bk.payload[id]
+      if (!d || !d.box) return
+      boxStored += 1
+      if (String(id).indexOf('nba-') !== 0) boxWrongComp += 1
+      if (detMod.buildBox(d, () => '主')) boxRenderable += 1
+    })
+  })
+  check('单场球员数据：只出现在篮球赛事（足球不会存进来）', boxWrongComp === 0,
+    `存了 ${boxStored} 场，非篮球 ${boxWrongComp} 场`)
+  check('单场球员数据：存下来的每一场都能渲染（不会存了却画不出来）',
+    boxStored === 0 || boxRenderable === boxStored, `${boxRenderable}/${boxStored}`)
+
   /* ---------- 球员字典播种器（阵容球员池） ----------
      2026-10-03：球员字典原本只从「射手榜/助攻榜」取输入，导致阵容里 87% 的人没有中文名
      （后卫/门将永远上不了射手榜）。现在多了一个输入源：`tools/match-detail.js` 抓详情时
      顺手把「还没有中文名」的球员写成 `tools/.lineup-players.json`（零额外上游请求）。
      这里守三件事：池子记的东西对不对、并集会不会丢、播种器读不读得到。 */
-  const mdMod = require(path.join(ROOT, 'tools/match-detail.js'))
   const pnMod = require(path.join(ROOT, 'tools/player-names.js'))
   const zhNamesMod = require(path.join(ROOT, 'tools/zh-names.js'))
   const os = require('os')

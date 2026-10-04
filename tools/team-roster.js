@@ -44,10 +44,17 @@ const FRESH_DAYS = 7
 const COMPETITIONS = require('../data/meta.js').competitions
 const SLUG = md.SLUG
 
-/** 位置 abbreviation → 中文（ESPN 给 G/D/M/F 四档） */
+/** 位置 abbreviation → 中文（足球 G/D/M/F 四档 + 篮球 BG/BF/BC 三档） */
 // 位置表在 utils/roster.js（与页面侧同一份），这里只是取个别名方便写
 const POS_ZH = rosterView.POS_ZH
 const POS_ORDER = rosterView.POS_ORDER
+
+/**
+ * 项目 → ESPN 路径里的 sport 段。
+ * ⚠️ `data/meta.js` 里只有 `cat`（football/basketball/esports），没有 sport，
+ *    而 ESPN 的 URL 是 `/soccer/...` 不是 `/football/...` —— 这张表是唯一转换点。
+ */
+const SPORT_OF = { football: 'soccer', basketball: 'basketball' }
 
 function arg(name, def) {
   const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))
@@ -80,10 +87,12 @@ async function getJSON(url) {
  *    270 支球队里每次只拉 1 支，字节数关系不大 —— 单字母主要是为了和
  *    data/scorers.js 的行结构保持一致，页面层不用写两套解析。
  */
-function rowOf(a) {
+function rowOf(a, sport) {
   const id = String(a.id || '')
   if (!id) return null
-  const pos = (a.position && a.position.abbreviation) || ''
+  // 🔴 篮球走 `rosterView.basketPos()`：ESPN 给的同样是 `G`/`F`/`C`，但意思完全不同
+  //    （足球 G=门将、篮球 G=后卫），必须换成 BG/BF/BC 才不会和足球那张表打架。
+  const pos = sport === 'basketball' ? rosterView.basketPos(a.position) : (a.position && a.position.abbreviation) || ''
   const city = a.citizenship || ''
   // ⚠️ birthPlace 是个**对象**（`{}` 或 `{displayText}`），不能直接 String() —— 会落 "[object Object]"
   const bpRaw = a.birthPlace
@@ -121,8 +130,11 @@ function sortPlayers(list) {
 }
 
 async function main() {
+  // ⚠️ 电竞没有 roster 端点（走的是另一套赛程接口），只做 football / basketball。
+  //    2026-10-04 前这里写着「NBA 的 roster 端点结构不同，暂不做」—— 实测 `/basketball/nba/teams/{id}/roster`
+  //    返回 21 人、字段齐全（含 position/jersey/height/weight/age/contracts），**是能做的**。
   const comps = COMPETITIONS.filter((c) => {
-    if (c.cat !== 'football') return false // NBA 的 roster 端点结构不同，暂不做
+    if (!SPORT_OF[c.cat]) return false
     if (!SLUG[c.key]) return false
     if (only && only.split(',').indexOf(c.key) === -1) return false
     return true
@@ -154,14 +166,15 @@ async function main() {
   for (const comp of comps) {
     const teams = dataMod.teamsOf(comp.key)
     const slug = SLUG[comp.key]
+    const sport = SPORT_OF[comp.cat]
     if (!teams.length) continue
     console.log(`[team-roster] ${comp.key.padEnd(11)} ${teams.length} 队 …`)
 
     for (const t of teams) {
       const id = `${comp.key}:${t.id}`
       if (fresh[id]) { skipped += 1; continue }
-      const j = await getJSON(`${ESPN}/soccer/${slug}/teams/${t.id}/roster`)
-      const players = sortPlayers(((j && j.athletes) || []).map(rowOf).filter(Boolean))
+      const j = await getJSON(`${ESPN}/${sport}/${slug}/teams/${t.id}/roster`)
+      const players = sortPlayers(((j && j.athletes) || []).map((a) => rowOf(a, sport)).filter(Boolean))
       if (!players.length) { failed += 1; continue }
       rows.push({
         id,

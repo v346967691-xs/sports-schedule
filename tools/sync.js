@@ -247,6 +247,22 @@ function normTeam(raw, fallbackName, fallbackColor) {
 
 const STATE_MAP = { pre: 'upcoming', in: 'live', post: 'finished' }
 
+/**
+ * 篮球赛季类型 → 中文
+ * 🔴 为什么非要这张表：NBA 的 `ev.season` 是 `{"year":2027,"type":1,"slug":"preseason"}`
+ *    —— `type` 是**数字**不是对象，所以 `ev.season?.type?.name` 恒为 undefined
+ *    （足球那边 `type` 才是 `{id,type,name}`，而且还有 `competition.round.displayName`）。
+ *    结果就是季前赛和常规赛在界面上完全分不出来，全显示成光秃秃的「NBA」。
+ * ⚠️ 只对篮球生效（下面按 `comp.sport` 收口），别顺手套到足球上。
+ */
+const SEASON_TYPE_ZH = {
+  preseason: '季前赛',
+  'regular-season': '常规赛',
+  'post-season': '季后赛',
+  postseason: '季后赛',
+  'all-star': '全明星',
+}
+
 /** 把 ESPN 的英文状态短描述换成中文 */
 function zhStatus(state, shortDetail) {
   if (state === 'in') return shortDetail || '进行中'
@@ -299,7 +315,17 @@ async function fetchEspn(comp) {
 
         const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
         const round = competition.round?.displayName || ev.season?.type?.name || ''
-        const stage = src.label ? (round ? `${src.label} · ${round}` : src.label) : (round || comp.name)
+        // 🔴 篮球没有 competition.round，只能靠 season.slug 区分季前赛/常规赛/季后赛。
+        //    收口到 `comp.sport === 'basketball'` —— 足球一行都不受影响。
+        const seasonZh =
+          comp.sport === 'basketball' ? SEASON_TYPE_ZH[ev.season && ev.season.slug] || '' : ''
+        const stage = src.label
+          ? round
+            ? `${src.label} · ${round}`
+            : src.label
+          : seasonZh
+            ? `${comp.name} · ${seasonZh}`
+            : round || comp.name
 
         seen.set(`${comp.key}-${ev.id}`, {
           id: `${comp.key}-${ev.id}`,

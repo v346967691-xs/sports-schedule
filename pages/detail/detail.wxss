@@ -557,6 +557,72 @@
   text-overflow: ellipsis;
 }
 
+/* 单场球员数据（篮球）：一行一名球员，右侧 6 列数字右对齐 */
+.bx-block {
+  padding: 14rpx 0;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.bx-block:last-of-type {
+  border-bottom: 0;
+}
+
+.bx-side {
+  margin-bottom: 8rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.bx-row {
+  display: flex;
+  align-items: center;
+  padding: 7rpx 0;
+  font-size: 22rpx;
+  color: var(--text);
+}
+
+.bx-head {
+  padding-bottom: 4rpx;
+  color: var(--muted);
+  font-size: 20rpx;
+}
+
+.bx-nm {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bx-no {
+  flex: none;
+  min-width: 32rpx;
+  margin-right: 8rpx;
+  color: var(--brand);
+  font-size: 20rpx;
+}
+
+.bx-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bx-name.st {
+  font-weight: 500;
+}
+
+.bx-c {
+  flex: none;
+  width: 78rpx;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 双方近况 */
 .form-block {
   padding: 14rpx 0;

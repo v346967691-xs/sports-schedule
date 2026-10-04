@@ -30,6 +30,8 @@ const https = require('https')
 const zhNames = require('./zh-names')
 const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
+// 位置分组规则的唯一来源（`basketPos` 就在里面，工具侧与页面侧共用一份）
+const rosterView = require('../utils/roster.js')
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 
@@ -74,7 +76,7 @@ const BASKETBALL = { nba: true }
  *    已结束的比赛只抓一次、之后永不刷新，光改代码老数据不会变。
  *    needsFetch 见到版本号不同会强制重抓一次，老数据自动淘汰。
  */
-const SCHEMA = 4
+const SCHEMA = 5 // 5 = 新增 NBA 单场球员数据（pickBasketballPlayers）
 
 const FINISHED_MS = 48 * 3600 * 1000 // 已结束：只补最近 48 小时
 const UPCOMING_MS = 7 * 24 * 3600 * 1000 // 赛前预览：未来 7 天内开赛的也抓
@@ -88,6 +90,15 @@ const KEEP_DAYS = 7 // 云端保留天数（与 RLS 的 DELETE 策略一致）
  *    超出窗口的桶在写文件前会把 lineups 摘掉（见主流程的 lineups 裁剪）。
  */
 const LINEUP_KEEP_DAYS = 1
+
+/**
+ * NBA 单场球员数据的列名（顺序 = `stats` 数组顺序，实测 14 列）。
+ * ⚠️ 存进 payload 的 `l` 字段，页面渲染前**必须**先比对这份列表 —— 上游一旦调整
+ *    列顺序，值和表头就会错位（比缺数据严重得多），比对不上就整块隐藏。
+ */
+const BASKET_STAT_LABELS = [
+  'MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF', '+/-',
+]
 
 /* ------------------------- 阵容球员池（给球员字典播种） -------------------------
  *
@@ -465,6 +476,57 @@ function pickLineups(j, homeId) {
 }
 
 /**
+ * NBA 单场球员数据：`summary.boxscore.players`。
+ *
+ * 🔴 为什么非得单独抽一份：足球那套 `pickStats` 用的是**足球字段**
+ *    （控球率/射门/角球…），而 NBA 的 `boxscore.teams[].statistics` 只有
+ *    `streak` / `avgPointsAgainst` 两项 → 一项都匹配不上 → **NBA 详情页技术统计恒为空**。
+ *    球员维度的数据在 `boxscore.players` 里，是另一棵树。
+ *
+ * ⚠️ 三个刻意的取舍（都是包体积/正确性实测出来的）：
+ *  1. **未开赛的比赛没有 `boxscore.players`**（上游只给 `boxscore.teams`）→ 返回 null，
+ *     页面整块隐藏。所以这个功能天然只覆盖**已结束**的比赛。
+ *  2. **没上场的球员不存**（`didNotPlay` 或 MIN=0）。一场 NBA 报名 19 人、实际出场 13 人左右，
+ *     剔除 DNP 能省掉三分之一体积，而「谁没上场」对读者没有价值。
+ *  3. **14 列合成一个 `|` 分隔的字符串**。JSON 里 14 个数组元素要带 14 组引号和逗号，
+ *     压成一行能省一半字节 —— 页面 split('|') 就能还原。
+ *  4. 位置走 `utils/roster.js` 的 `basketPos()`（G/F/C → BG/BF/BC），
+ *     **不复用足球的 posGroup** —— 足球的 `G` 是门将、篮球的 `G` 是后卫。
+ */
+function pickBasketballPlayers(j, homeId) {
+  const ps = (j && j.boxscore && j.boxscore.players) || []
+  if (ps.length < 2) return null
+  const one = (p) => {
+    const seg = ((p && p.statistics) || [])[0] || {}
+    const labels = seg.labels || []
+    if (labels.join(',') !== BASKET_STAT_LABELS.join(',')) return null
+    return (seg.athletes || [])
+      .map((a) => {
+        if (!a || a.didNotPlay) return null
+        const st = (a.stats || []).map((v) => String(v == null ? '' : v))
+        if (st.length !== BASKET_STAT_LABELS.length) return null
+        if (!st[0] || st[0] === '0') return null // MIN = 0，没上场
+        const ath = a.athlete || {}
+        const name = zhNames.playerZh(ath.id) || String(ath.shortName || ath.displayName || '')
+        if (!name) return null
+        const row = { n: name, s: st.join('|') }
+        if (ath.jersey) row.j = String(ath.jersey)
+        const pos = rosterView.basketPos(ath.position)
+        if (pos) row.p = pos
+        if (a.starter) row.t = 1
+        return row
+      })
+      .filter(Boolean)
+  }
+  const home = ps.find((p) => String((p.team && p.team.id) || '') === String(homeId)) || ps[0]
+  const away = ps.find((p) => p !== home) || ps[1]
+  const H = one(home)
+  const A = one(away)
+  if (!H || !A || (!H.length && !A.length)) return null
+  return { l: BASKET_STAT_LABELS, home: H, away: A }
+}
+
+/**
  * 定位 ESPN 端点用的联赛 slug。
  * 单一来源赛事（五大联赛/欧冠/中超/NBA）直接查 SLUG 表；
  * 多来源赛事（中国国字号）没有固定 slug，由 sync.js 在抓取时写进比赛对象。
@@ -533,6 +595,8 @@ async function fetchDetail(m) {
     h2h,
     stats: pickStats(j, homeId),
     lineups: pickLineups(j, homeId),
+    // 🔴 只有篮球有（足球的球员维度数据在 `rosters` 里，已由 lineups 覆盖）
+    box: BASKETBALL[m.comp] ? pickBasketballPlayers(j, homeId) : null,
   }
 }
 
@@ -636,13 +700,14 @@ async function main() {
     return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
   }
   const cutoff = cutoffOf(KEEP_DAYS)
-  // ⚠️ 阵容的窗口比整桶的保留期短得多（包体积红线，见 LINEUP_KEEP_DAYS）。
-  //    超过窗口的桶把 lineups 摘掉再推 —— 已结束的比赛不会被重抓，
+  // ⚠️ 阵容 / 单场球员数据的窗口比整桶的保留期短得多（包体积红线，见 LINEUP_KEEP_DAYS）。
+  //    超过窗口的桶把 lineups / box 摘掉再推 —— 已结束的比赛不会被重抓，
   //    不主动裁的话它会一直躺在桶里占着包体积。
   const lineupCutoff = cutoffOf(LINEUP_KEEP_DAYS)
 
   const touched = []
   let lineups = 0
+  let boxes = 0
   Object.keys(buckets).forEach((id) => {
     const day = String(id).slice(2)
     if (day < cutoff) return // 过期桶整行丢掉，不再推送（云端的旧行由 cloud-sync 清理）
@@ -654,7 +719,9 @@ async function main() {
       const d = payload[k]
       if (!detailCapable(d && d.comp)) { delete payload[k]; return }
       if (staleLineups && d && d.lineups) d.lineups = null
+      if (staleLineups && d && d.box) d.box = null
       if (d && d.lineups) lineups += 1
+      if (d && d.box) boxes += 1
     })
     if (!Object.keys(payload).length) return
     touched.push({ id, day, payload })
@@ -663,7 +730,14 @@ async function main() {
   const out = {
     generatedAt: new Date().toISOString(),
     buckets: touched,
-    stats: { targets: targets.length, fetched: ok, failed: failed.length, buckets: touched.length, lineups },
+    stats: {
+      targets: targets.length,
+      fetched: ok,
+      failed: failed.length,
+      buckets: touched.length,
+      lineups,
+      boxes,
+    },
   }
   const file = path.join(__dirname, '..', 'data', 'match-details.js')
   fs.writeFileSync(
@@ -690,4 +764,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

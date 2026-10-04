@@ -9,11 +9,30 @@
  *    远比「两边顺序不一致」这种隐性 bug 便宜。
  */
 
-/** 位置缩写 → 中文（ESPN 给 G/D/M/F 四档） */
-const POS_ZH = { G: '门将', D: '后卫', M: '中场', F: '前锋' }
+/**
+ * 位置缩写 → 中文
+ * 足球四档（ESPN 给 G/D/M/F）；篮球三档用 **BG/BF/BC**。
+ * 🔴 为什么篮球不直接复用 G/F：足球的 `G` 是**门将**、篮球的 `G` 是**后卫**，
+ *    同一个字母两种意思，混在一张表里必然打架 —— 所以篮球另起一组缩写。
+ */
+const POS_ZH = { G: '门将', D: '后卫', M: '中场', F: '前锋', BG: '后卫', BF: '前锋', BC: '中锋' }
 
-/** 分组排列顺序 */
-const POS_ORDER = { G: 0, D: 1, M: 2, F: 3 }
+/**
+ * 分组排列顺序：足球 门将→后卫→中场→前锋，篮球 后卫→前锋→中锋。
+ * 两组编号不重叠，同一份名单里不可能混（一支队只属于一个项目）。
+ */
+const POS_ORDER = { G: 0, D: 1, M: 2, F: 3, BG: 4, BF: 5, BC: 6 }
+
+/**
+ * 篮球位置缩写 → 名单用的分组缩写。
+ * ESPN 给 `position.abbreviation`，值是 `G` / `F` / `C`，也有复合的 `G-F` / `F-C`
+ * （取第一个字母）。取不到就回落空串（页面归到「其他」）。
+ */
+const BASKET_POS = { G: 'BG', F: 'BF', C: 'BC' }
+function basketPos(raw) {
+  const s = String((raw && raw.abbreviation) || raw || '').trim().toUpperCase()
+  return BASKET_POS[s.charAt(0)] || ''
+}
 
 /**
  * 名单按位置分组，返回可直接喂给 WXML 的结构。
@@ -50,4 +69,4 @@ function groupByPos(players) {
   return groups.sort((a, b) => a.order - b.order)
 }
 
-module.exports = { POS_ZH, POS_ORDER, groupByPos }
+module.exports = { POS_ZH, POS_ORDER, groupByPos, basketPos, BASKET_POS }

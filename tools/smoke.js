@@ -2258,6 +2258,24 @@ async function run() {
     check('实时比分：认不出格式时回落上游原文，绝不返回空串（页面会显示「未开始」就穿帮了）',
       lw.zhLiveStatus('basketball', 'in', 'Weird Status') === 'Weird Status'
       && lw.zhLiveStatus('soccer', 'in', '') === '进行中')
+    // 🔴 覆盖度守卫：加新赛事时如果忘了进 live 通道，这条会红
+    const lwKeys = [...new Set(lw.TARGETS.map((t) => t.key))]
+    const syncKeys = require(path.join(ROOT, 'tools/sync.js')).COMPETITIONS
+      .filter((c) => c.source === 'espn')
+      .map((c) => c.key)
+    const missing = syncKeys.filter((k) => lwKeys.indexOf(k) === -1)
+    check('实时比分：所有 ESPN 赛事都进了 live 通道（含多来源的中国国字号 chn）',
+      missing.length === 0 && lwKeys.indexOf('chn') > -1 && lwKeys.indexOf('nba') > -1,
+      missing.length ? '漏了：' + missing.join(',') : `${lwKeys.length} 个赛事`)
+    check('实时比分：CBA 走官方接口单独一路（不走 ESPN，但必须有人管）',
+      /scanCba/.test(fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8'))
+      && /cbaleague\.com/.test(fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')))
+    // ⚠️ 电竞（LoL/KPL）**故意不做**：比分是 BO 局分，一局 30~40 分钟才变一次，
+    //    15 分钟粒度够用，不值得为此多打 8 个赛事的请求。要改这里先把这条断言改掉。
+    check('实时比分：电竞暂不进 live 通道（局分变化慢，15 分钟够用；改主意时先改这条）',
+      ['worlds', 'lpl', 'lck', 'lec', 'msi', 'kpl', 'demacia', 'agames']
+        .every((k) => lwKeys.indexOf(k) === -1))
+
     check('实时比分：ESPN 的 dates 用 UTC，取昨天/今天/明天三天（覆盖所有时区）',
       Array.isArray(lw.espnDates()) && lw.espnDates().length === 3
       && lw.espnDates().every((d) => /^\d{8}$/.test(d)), lw.espnDates().join(','))

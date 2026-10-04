@@ -109,13 +109,24 @@ function zhLiveStatus(sport, state, shortDetail) {
   return s || '进行中'
 }
 
-/** 赛事 → {sport, league}。只处理 ESPN 来源（LoL / CBA 走各自的抓取器） */
+/**
+ * 赛事 → {key, sport, league}。只处理 ESPN 来源（LoL / KPL / CBA 走各自的抓取器）。
+ * ⚠️ 中国国字号（`chn`）**没有单一联赛**，横跨 4 个国际赛事（友谊赛/世预赛/亚洲杯/奥运会），
+ *    所以一个 key 要展开成多条 league —— 漏了它的话，国足的比赛就没有实时比分。
+ */
 const TARGETS = (() => {
   const keys = new Set(COMPETITIONS.map((c) => c.key))
-  return SYNC_COMPS
-    .filter((c) => c.source === 'espn' && c.sport && c.espn && keys.has(c.key))
-    .filter((c) => (onlyArg ? onlyArg.split(',').indexOf(c.key) > -1 : true))
-    .map((c) => ({ key: c.key, sport: c.sport, league: c.espn }))
+  const out = []
+  SYNC_COMPS.forEach((c) => {
+    if (c.source !== 'espn' || !c.sport || !keys.has(c.key)) return
+    if (onlyArg && onlyArg.split(',').indexOf(c.key) === -1) return
+    const slugs = (c.espns || []).map((s) => s.slug)
+    if (!c.espn && !slugs.length) return
+    ;(slugs.length ? slugs : [c.espn]).forEach((league) => {
+      if (league) out.push({ key: c.key, sport: c.sport, league })
+    })
+  })
+  return out
 })()
 
 /** 扫一轮：抓候选赛事的 scoreboard，抽出 live + 今天已结束的比赛 */
@@ -123,6 +134,17 @@ async function scan(comps) {
   const dates = espnDates()
   const rows = []
   const found = {}
+  // ⚠️ 候选赛事要按「时间窗」判定，不能只看有没有 live：
+  //    一个赛事今天第一场还没开打时，如果因为「没有 live」就被收敛掉，
+  //    那这场开赛最多要等下一次全量发现（5 轮 = 5 分钟）才被扫到 ——
+  //    用户会看到「比赛已经开打 4 分钟了，比分还是 0-0 未开始」。
+  //    所以「3 小时内开赛 / 2 小时内结束」的赛事都要留在候选里。
+  const now = Date.now()
+  const near = (iso) => {
+    const t = Date.parse(iso || '')
+    return Number.isFinite(t) && t > now - 2 * 3600000 && t < now + 3 * 3600000
+  }
+
   for (const c of comps) {
     let hit = 0
     for (const d of dates) {
@@ -130,8 +152,10 @@ async function scan(comps) {
       const evs = (j && j.events) || []
       for (const ev of evs) {
         const st = ev.status && ev.status.type && ev.status.type.state
-        if (st !== 'in' && st !== 'post') continue
         const comp = (ev.competitions && ev.competitions[0]) || null
+        // 只保留时间窗内的赛事做候选（不论它现在是未开始/进行中/已结束）
+        if (comp && near(comp.date || ev.date)) found[c.key] = 1
+        if (st !== 'in' && st !== 'post') continue
         if (!comp) continue
         const cs = comp.competitors || []
         const h = cs.find((x) => x.homeAway === 'home') || cs[0]
@@ -155,12 +179,55 @@ async function scan(comps) {
         if (ls.h.length || ls.a.length) row.ls = ls
         rows.push(row)
         hit += 1
-        if (st === 'in') found[c.key] = 1
       }
     }
     if (hit) found[c.key] = found[c.key] || 0
   }
   return { rows, liveComps: Object.keys(found).filter((k) => found[k] === 1) }
+}
+
+/**
+ * CBA：官方接口 `home_schedules` **一个请求**就给全部赛程 + 比分 + 节次时钟，
+ *    不像 ESPN 要按联赛逐个打。所以加它几乎零成本。
+ * ⚠️ 状态语义照搬 `sync.js`：`Status === 1` 未开始；其余看 `Quarter` ——
+ *    有节次就是进行中，没有就是已结束（否则会误判成「进行中但比分 0-0」）。
+ * ⚠️ 2026-10-05 加的时候CBA新赛季还没开打（全是 Status=1），
+ *    `Minutes` / `Seconds` 的**具体格式没能实测**，所以时钟文案做了兜底：
+ *    拼不出来就只说「第N节」，绝不显示成 "undefined:undefined"。
+ */
+const CBA = 'https://portal-server.cbaleague.com'
+
+function cbaStatusText(ev) {
+  const q = Number(ev.Quarter)
+  if (!Number.isFinite(q) || q <= 0) return '已结束'
+  const mm = ev.Minutes == null ? '' : String(ev.Minutes).padStart(2, '0')
+  const ss = ev.Seconds == null ? '' : String(ev.Seconds).padStart(2, '0')
+  return mm && ss ? `第${q}节 ${mm}:${ss}` : `第${q}节`
+}
+
+async function scanCba() {
+  const j = await getJSON(`${CBA}/home/home_schedules`)
+  const arr = Object.values((j && j.data) || {})
+  const now = Date.now()
+  const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+  const rows = []
+  arr.forEach((ev) => {
+    if (Number(ev.Status) === 1) return // 未开始
+    const start = Date.parse(`${ev.dates}T${ev.time || '00:00'}:00+08:00`)
+    // 只保留时间窗内的（2 小时前 ~ 3 小时后），别把几个月前的老比赛也推上去
+    if (Number.isFinite(start) && (start < now - 2 * 3600000 || start > now + 3 * 3600000)) return
+    const q = num(ev.Quarter)
+    const hs = num(ev.HomeTeamScore)
+    const as = num(ev.VisitingTeamScore)
+    rows.push({
+      id: `cba-${ev.ScheduleID}`,
+      st: q != null ? 'live' : 'finished',
+      stt: cbaStatusText(ev),
+      hs: hs || 0,
+      as: as || 0,
+    })
+  })
+  return rows
 }
 
 async function push(cloud, rows) {
@@ -195,6 +262,7 @@ async function main() {
   let idle = 0
   let comps = TARGETS
   let total = 0
+  let cbaActive = false // CBA 上一轮有没有扫到比赛（有就继续扫，省得每轮都白打）
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -203,6 +271,17 @@ async function main() {
     const useAll = round === 1 || round % DISCOVER_EVERY === 1
     const t0 = Date.now()
     const { rows, liveComps } = await scan(useAll ? TARGETS : comps)
+    // CBA 不在 TARGETS 里（它不走 ESPN），单独一路 —— 只要上一轮扫到过就继续扫，
+    // 否则只在全量轮扫（那就变成 5 分钟粒度了，失去意义）
+    const cbaOn = cbaActive || useAll
+    if (cbaOn) {
+      const cbaRows = await scanCba()
+      if (cbaRows.length) {
+        rows.push(...cbaRows)
+        liveComps.push('cba')
+      }
+      cbaActive = cbaRows.length > 0
+    }
     const live = rows.filter((r) => r.st === 'live').length
     console.log(
       `[live-watch] 第 ${round} 轮 ${useAll ? '全量' : `收敛(${comps.length})`}：${rows.length} 场（进行中 ${live}），耗时 ${Date.now() - t0}ms`

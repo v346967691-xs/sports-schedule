@@ -232,3 +232,81 @@
   margin-right: 0;
   margin-bottom: 20rpx;
 }
+
+/* ------------------------------------------------------------------ 球队名单 */
+
+.rp-head {
+  padding: 18rpx 28rpx;
+  border-bottom: 2rpx solid var(--line);
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 1rpx;
+}
+
+.rp-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 28rpx;
+}
+
+.rp-row.br {
+  border-top: 2rpx solid var(--line);
+}
+
+/* 球衣号：定宽右对齐，个位数与两位数才不会把名字推得一前一后 */
+.rp-jersey {
+  flex: none;
+  width: 56rpx;
+  margin-right: 20rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 800;
+  color: var(--sub);
+}
+
+.rp-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.rp-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-sub {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rp-meta {
+  flex: none;
+  margin-left: 16rpx;
+  text-align: right;
+}
+
+.rp-nation {
+  font-size: 22rpx;
+  color: var(--sub);
+}
+
+.rp-age {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+.rp-go {
+  flex: none;
+  margin-left: 12rpx;
+  font-size: 26rpx;
+  color: var(--muted);
+}

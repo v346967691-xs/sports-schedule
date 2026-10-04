@@ -1,0 +1,65 @@
+<view class="page player">
+  <view class="empty" wx:if="{{loadError}}">
+    <view class="empty-title">打不开这名球员</view>
+    <view class="empty-desc">{{loadError}}</view>
+  </view>
+
+  <block wx:if="{{!loadError}}">
+    <view class="hero" style="background: linear-gradient(135deg, {{accent}} 0%, #14235c 100%);">
+      <view class="hero-top">
+        <view class="avatar" style="background: rgba(255,255,255,0.18);">{{jersey || '·'}}</view>
+        <view class="hero-id">
+          <view class="hero-name">{{name}}</view>
+          <view class="hero-sub">
+            <text wx:if="{{enName}}">{{enName}}</text>
+            <text wx:if="{{enName && posZh}}">　</text>
+            <text wx:if="{{posZh}}">{{posZh}}</text>
+          </view>
+          <view class="hero-comp">{{teamName || compName}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 档案：一条查不到就整块隐藏，不留半张空表 -->
+    <view class="section" wx:if="{{profile.length}}">
+      <view class="section-head">
+        <view class="section-title">球员档案</view>
+      </view>
+      <view class="card">
+        <view class="pf-row {{index ? 'br' : ''}}" wx:for="{{profile}}" wx:key="k">
+          <view class="pf-k">{{item.k}}</view>
+          <view class="pf-v">{{item.v}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 赛季数据：只有进了射手榜/助攻榜的人才有，没有很正常 -->
+    <view class="section" wx:if="{{hasStats}}">
+      <view class="section-head">
+        <view class="section-title">赛季数据</view>
+        <view class="section-more" wx:if="{{season}}">{{season}}</view>
+      </view>
+      <view class="card stat-card">
+        <view class="st-item" wx:for="{{stats}}" wx:key="k">
+          <view class="st-num">{{item.v}}</view>
+          <view class="st-label">{{item.k}}</view>
+        </view>
+      </view>
+      <view class="form-note">数据取自该赛事官方射手榜 / 助攻榜，只统计上榜球员。</view>
+    </view>
+
+    <view class="empty small" wx:if="{{loading}}">
+      <view class="empty-desc">正在读取球员资料…</view>
+    </view>
+
+    <view class="empty small" wx:elif="{{_noProfile}}">
+      <view class="empty-desc">暂未收录这名球员的档案，下拉可重试。</view>
+    </view>
+
+    <view class="foot-link" wx:if="{{teamId}}" bindtap="goTeam" hover-class="row-hover">
+      查看所属球队 ›
+    </view>
+  </block>
+
+  <view class="safe-bottom"></view>
+</view>

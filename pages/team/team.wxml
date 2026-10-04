@@ -117,6 +117,51 @@
         </view>
       </view>
     </view>
+    <!-- 球队名单：数据只在云端，读不到就整块不显示（不留空卡片）；
+         放在赛程之后 —— 它是补充内容，不该把更常用的赛程挤下去 -->
+    <view class="section" wx:if="{{rosterGroups.length}}">
+      <view class="section-head">
+        <view class="section-title">球队名单</view>
+        <view class="section-more">{{rosterSize}} 人 · 点击查看球员</view>
+      </view>
+
+      <view class="card" wx:for="{{rosterGroups}}" wx:for-item="group" wx:key="key">
+        <view class="rp-head">{{group.title}}　{{group.list.length}}</view>
+        <view
+          wx:for="{{group.list}}"
+          wx:for-item="p"
+          wx:key="pid"
+          class="rp-row {{index ? 'br' : ''}}"
+          data-pid="{{p.pid}}"
+          bindtap="onPlayerTap"
+          hover-class="row-hover"
+        >
+          <view class="rp-jersey">{{p.jersey}}</view>
+          <view class="rp-main">
+            <view class="rp-name">{{p.name}}</view>
+            <view class="rp-sub" wx:if="{{p.enName}}">{{p.enName}}</view>
+          </view>
+          <view class="rp-meta">
+            <view class="rp-nation" wx:if="{{p.nation}}">{{p.nation}}</view>
+            <view class="rp-age" wx:if="{{p.age}}">{{p.age}}</view>
+          </view>
+          <view class="rp-go">›</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 加载中不要先闪一句「暂未收录」，所以三态分开 -->
+    <view class="section" wx:elif="{{rosterLoading}}">
+      <view class="empty small">
+        <view class="empty-desc">正在读取名单…</view>
+      </view>
+    </view>
+
+    <view class="section" wx:else>
+      <view class="empty small">
+        <view class="empty-desc">暂未收录这支球队的名单，可下拉重试。</view>
+      </view>
+    </view>
   </block>
 
   <view class="safe-bottom"></view>

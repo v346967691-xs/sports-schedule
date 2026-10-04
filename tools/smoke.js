@@ -1589,6 +1589,95 @@ async function run() {
     ctxTeam2.data.form.every((f) => f.result === 'W' || f.result === 'L' || f.result === 'D' || f.result === 'U'),
     ctxTeam2.data.form.map((f) => f.resultZh).join(''))
 
+  /* ---------- 球队名单 + 球员详情（2026-10-04 新增） ---------- */
+  const teamWxml = fsMod.readFileSync(path.join(ROOT, 'pages/team/team.wxml'), 'utf8')
+  const teamJsSrc = fsMod.readFileSync(path.join(ROOT, 'pages/team/team.js'), 'utf8')
+
+  check('球队名单：区块已接线（rosterGroups / rp-row / data-pid）',
+    teamWxml.indexOf('rosterGroups') > -1 && teamWxml.indexOf('data-pid="{{p.pid}}"') > -1
+    && teamWxml.indexOf('bindtap="onPlayerTap"') > -1 && teamWxml.indexOf('class="rp-row') > -1)
+  // 三态：有名单 / 加载中 / 没有——不能出现「一片空白」或「空卡片」
+  check('球队名单：三态齐全（有名单 wx:if / 加载中 wx:elif / 无名单 wx:else）',
+    teamWxml.indexOf('wx:if="{{rosterGroups.length}}"') > -1
+    && teamWxml.indexOf('wx:elif="{{rosterLoading}}"') > -1
+    && /wx:else[\s\S]{0,200}暂未收录/.test(teamWxml))
+  check('球队名单：下拉刷新会重读名单（换阵容后用户能刷到）',
+    /onPullDownRefresh[\s\S]{0,400}loadRoster\(\)/.test(teamJsSrc))
+
+  // 点球员 → 球员页，且三个参数都得带上（少一个球员页就只能兜底）
+  const ctxTeamPlayer = makeCtx(teamOpts)
+  ctxTeamPlayer.setData({ comp: 'epl', id: '359' })
+  teamOpts.onPlayerTap.call(ctxTeamPlayer, { currentTarget: { dataset: { pid: '169532' } } })
+  const playerUrl = collected.navigateTo || ''
+  check('球队名单：点球员跳球员页并带齐 comp / team / id',
+    /\/pages\/player\/player\?comp=epl&team=359&id=169532/.test(playerUrl), playerUrl)
+
+  // 分组顺序 / 位置中文：工具侧与页面侧**共用** utils/roster.js 这一份，
+  // 这里不再断言「两边字符串相等」，而是直接用真实 payload 结构验证分组结果。
+  const rosterViewMod = require(path.join(ROOT, 'utils/roster.js'))
+  const fakePlayers = [
+    { i: '1', p: 'F', pn: '前锋', j: '9', s: 'A. Nine', z: '' },
+    { i: '2', p: 'G', pn: '门将', j: '1', s: 'B. One', z: '乙一', ag: 28, cz: '西班牙' },
+    { i: '3', p: 'D', pn: '后卫', j: '4', s: 'C. Four', z: '' },
+    { i: '4', p: 'M', pn: '中场', j: '8', s: 'D. Eight', z: '' },
+  ]
+  const grps = rosterViewMod.groupByPos(fakePlayers)
+  check('球队名单：按 G→D→M→F 分组（工具与页面共用一份规则）',
+    grps.map((g) => g.key).join('') === 'GDMF', grps.map((g) => g.title).join('/'))
+  check('球队名单：有中文名时显示中文、英文短名降为副标题',
+    grps[0].list[0].name === '乙一' && grps[0].list[0].enName === 'B. One',
+    `${grps[0].list[0].name} / ${grps[0].list[0].enName}`)
+  check('球队名单：没有中文名时名字不重复显示同一串英文',
+    grps[1].list[0].name === 'C. Four' && grps[1].list[0].enName === '',
+    `${grps[1].list[0].name} / "${grps[1].list[0].enName}"`)
+  check('球队名单：空名单不出组（避免渲染出空分组头）',
+    rosterViewMod.groupByPos([]).length === 0 && rosterViewMod.groupByPos(null).length === 0)
+  // 上游只给英制，写成英制等于没给
+  const rosterSrc = fsMod.readFileSync(path.join(ROOT, 'tools/team-roster.js'), 'utf8')
+  check('球队名单：身高体重已转公制（上游只有英寸/磅）',
+    rosterSrc.indexOf('inch * 2.54') > -1 && rosterSrc.indexOf('lb * 0.4536') > -1)
+  // 🔴 上游 `j.coach` 是脏数据（切尔西与皇马都返回 Mourinho、阿森纳返回 Wenger），
+  //    所以压根不落库。这条守卫防止以后把它"顺手加回来"。
+  check('球队名单：不显示教练（上游 coach 字段实测是脏数据）',
+    rosterSrc.indexOf('coach') === -1 || /故意不带 coach/.test(rosterSrc))
+  // birthPlace 是个对象，直接 String() 会落 "[object Object]"
+  check('球队名单：birthPlace 取对象里的字段（不能 String(对象)）',
+    rosterSrc.indexOf('typeof bpRaw === \'string\'') > -1 && rosterSrc.indexOf('bpRaw.displayText') > -1)
+
+  // app.json 必须登记，否则 navigateTo 会直接报「页面不存在」
+  const appJsonNow = JSON.parse(fsMod.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
+  check('球员页：已在 app.json 的 pages 里登记（漏登记会「页面不存在」）',
+    appJsonNow.pages.indexOf('pages/player/player') > -1, appJsonNow.pages.join(','))
+
+  ;['js', 'wxml', 'wxss', 'json'].forEach((ext) => {
+    check(`球员页：${ext} 文件存在`, fsMod.existsSync(path.join(ROOT, `pages/player/player.${ext}`)))
+  })
+
+  require(path.join(ROOT, 'pages/player/player.js'))
+  const playerOpts = global.__page
+  const playerJsSrc = fsMod.readFileSync(path.join(ROOT, 'pages/player/player.js'), 'utf8')
+  const playerWxml = fsMod.readFileSync(path.join(ROOT, 'pages/player/player.wxml'), 'utf8')
+
+  // 少参数不能白屏
+  const ctxPlayerNoArg = makeCtx(playerOpts)
+  playerOpts.onLoad.call(ctxPlayerNoArg, {})
+  check('球员页：缺参数给出提示而非白屏', !!ctxPlayerNoArg.data.loadError, ctxPlayerNoArg.data.loadError)
+
+  // 赛季数据块：没进榜的人（后卫/门将很常见）整块隐藏，不留空表
+  check('球员页：无赛季数据时整块隐藏（不留空表）',
+    playerWxml.indexOf('wx:if="{{hasStats}}"') > -1
+    && /filter\(\(r\) => r\.v !== '0'\)/.test(playerJsSrc))
+  // 中文名缺失是预期状态，必须有英文兜底而不是空字符串
+  check('球员页：名字有中文优先、无中文回落英文（中英混排是预期状态）',
+    /p\.z \|\| p\.s \|\| p\.n/.test(playerJsSrc))
+  // 回球队页
+  const ctxPlayer = makeCtx(playerOpts)
+  ctxPlayer.setData({ comp: 'epl', teamId: '359', athleteId: '169532' })
+  playerOpts.goTeam.call(ctxPlayer)
+  check('球员页：可回所属球队页且参数带全',
+    /\/pages\/team\/team\?comp=epl&id=359/.test(collected.navigateTo || ''), collected.navigateTo || '')
+  void playerOpts
+
   /* ---------- 积分榜页 ---------- */
   require(path.join(ROOT, 'pages/rank/rank.js'))
   const rankOpts = global.__page

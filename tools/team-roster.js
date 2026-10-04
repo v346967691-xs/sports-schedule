@@ -37,6 +37,7 @@ if (typeof global.wx === 'undefined') {
 const dataMod = require('../utils/data.js')
 const zhNames = require('./zh-names.js')
 const md = require('./match-detail.js') // 只取 SLUG（赛事 → ESPN slug 的唯一来源）
+const rosterView = require('../utils/roster.js') // ⚠️ 位置分组规则来源唯一，页面侧用的是同一份
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 const FRESH_DAYS = 7
@@ -44,7 +45,9 @@ const COMPETITIONS = require('../data/meta.js').competitions
 const SLUG = md.SLUG
 
 /** 位置 abbreviation → 中文（ESPN 给 G/D/M/F 四档） */
-const POS_ZH = { G: '门将', D: '后卫', M: '中场', F: '前锋' }
+// 位置表在 utils/roster.js（与页面侧同一份），这里只是取个别名方便写
+const POS_ZH = rosterView.POS_ZH
+const POS_ORDER = rosterView.POS_ORDER
 
 function arg(name, def) {
   const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))
@@ -161,7 +164,6 @@ async function main() {
       const j = await getJSON(`${ESPN}/soccer/${slug}/teams/${t.id}/roster`)
       const players = sortPlayers(((j && j.athletes) || []).map(rowOf).filter(Boolean))
       if (!players.length) { failed += 1; continue }
-      const coach = ((j.coach || [])[0]) || {}
       rows.push({
         id,
         comp: comp.key,
@@ -169,7 +171,9 @@ async function main() {
         payload: {
           v: 1,
           team: t.zh || t.name || '',
-          coach: [coach.firstName, coach.lastName].filter(Boolean).join(' ') || '',
+          // 🔴 **故意不带 coach**：上游 `j.coach` 是脏数据 —— 实测切尔西与皇马都返回
+          //    "Jose Mourinho"、阿森纳返回 "Arsene Wenger"（2018 年就离任了）。
+          //    错的教练名字比没有教练更糟（2026-10-04 核实），别再把它加回来。
           players,
           season: (j.season && (j.season.displayName || j.season.year)) || '',
         },
@@ -222,4 +226,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { POS_ZH, POS_ORDER, rowOf, sortPlayers }
+module.exports = { rowOf, sortPlayers }

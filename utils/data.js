@@ -594,6 +594,18 @@ async function playerProfile(comp, teamId, athleteId) {
   return { player: row, team: roster.team, coach: roster.coach, season: roster.season }
 }
 
+/**
+ * 单个球员在某个赛事射手榜里的那一行（有就给，没有给 null）。
+ * 球员详情页用它显示赛季数据 —— **不另抓任何东西**，榜是该赛事唯一的官方数据源。
+ * ⚠️ 榜上有名字的才返回：没进榜（0 球 0 助攻）的人本来就不在表里，这是正常的。
+ */
+function scorerRow(compKey, athleteId) {
+  const table = scorersOf(compKey)
+  if (!table || !Array.isArray(table.players)) return null
+  const id = String(athleteId)
+  return table.players.find((p) => p && String(p.i) === id) || null
+}
+
 async function doRefresh() {
   try {
     // 并行拉三张表：它们互不依赖，串行只会白白多等两个 RTT
@@ -663,6 +675,7 @@ module.exports = {
   scorersKeys,
   scorersGeneratedAt,
   scorersTop,
+  scorerRow,
   matchDetail,
   teamRoster,
   playerProfile,

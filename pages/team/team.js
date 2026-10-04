@@ -19,6 +19,7 @@ const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
 const nav = require('../../utils/nav')
+const rosterView = require('../../utils/roster')
 
 const FORM_N = 5
 const UPCOMING_N = 8
@@ -59,6 +60,10 @@ Page({
     hasStandings: false,
     followed: false,
     loadError: '',
+    // 球队名单（云端 `team_roster`，异步加载）
+    rosterGroups: [],
+    rosterSize: 0,
+    rosterLoading: false,
   },
 
   onLoad(query) {
@@ -70,6 +75,7 @@ Page({
     }
     this.setData({ comp, id })
     this.render()
+    this.loadRoster()
   },
 
   onShow() {
@@ -82,6 +88,9 @@ Page({
     const self = this
     data.refresh().then(() => {
       self.render()
+      // ⚠️ 下拉是「强制刷新」语义，名单也跟着重读一次 ——
+      //    否则新赛季换了阵容，用户下拉也看不到。
+      self.loadRoster()
       wx.stopPullDownRefresh()
     })
   },
@@ -173,6 +182,46 @@ Page({
     const id = e.currentTarget.dataset.id
     if (!id) return
     wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(id)}` })
+  },
+
+  /**
+   * 球队名单。数据只在云端（进包要 500KB+，包体积扛不住），所以是**异步**的。
+   *
+   * ⚠️ 两条纪律：
+   *  ① 读不到（网络失败 / 该队还没抓）就**整块隐藏**，不留空卡片 —— 名单是增强内容，
+   *     没有它这一页照样要能用。
+   *  ② `data.teamRoster()` 自带 10 分钟缓存与并发合并，所以 onShow 里不用再调一次；
+   *     这里只在下拉刷新后重读。
+   */
+  loadRoster() {
+    this.setData({ rosterLoading: true })
+    const comp = this.data.comp
+    const id = String(this.data.id)
+    data.teamRoster(comp, id)
+      .then((payload) => {
+        if (!payload || !payload.players || !payload.players.length) {
+          this.setData({ rosterGroups: [], rosterSize: 0, rosterLoading: false })
+          return
+        }
+        this.setData({
+          rosterGroups: rosterView.groupByPos(payload.players),
+          rosterSize: payload.players.length,
+          rosterLoading: false,
+        })
+      })
+      .catch(() => {
+        this.setData({ rosterGroups: [], rosterSize: 0, rosterLoading: false })
+      })
+  },
+
+  onPlayerTap(e) {
+    const pid = e.currentTarget.dataset.pid
+    if (!pid) return
+    wx.navigateTo({
+      url: `/pages/player/player?comp=${encodeURIComponent(this.data.comp)}`
+        + `&team=${encodeURIComponent(String(this.data.id))}`
+        + `&id=${encodeURIComponent(String(pid))}`,
+    })
   },
 
   onFormTap(e) {

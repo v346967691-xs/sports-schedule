@@ -1,0 +1,142 @@
+/* 球员详情页 —— 样式与 pages/team 同源，hero / card / empty 体系直接复用 */
+
+.hero {
+  position: relative;
+  padding: 40rpx 32rpx 48rpx;
+  color: #fff;
+  border-bottom-left-radius: 40rpx;
+  border-bottom-right-radius: 40rpx;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  right: -90rpx;
+  top: -80rpx;
+  width: 300rpx;
+  height: 300rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hero-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.avatar {
+  flex: none;
+  width: 96rpx;
+  height: 96rpx;
+  margin-right: 24rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hero-id {
+  flex: 1;
+  min-width: 0;
+}
+
+.hero-name {
+  font-size: 40rpx;
+  font-weight: 800;
+  letter-spacing: 1rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hero-sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  opacity: 0.82;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hero-comp {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  opacity: 0.72;
+}
+
+/* ------------------------------------------------------------------ 档案 */
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 28rpx;
+}
+
+.pf-row.br {
+  border-top: 2rpx solid var(--line);
+}
+
+.pf-k {
+  flex: none;
+  width: 140rpx;
+  font-size: 26rpx;
+  color: var(--muted);
+}
+
+.pf-v {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ 赛季数据 */
+
+.stat-card {
+  display: flex;
+  padding: 32rpx 0;
+}
+
+.st-item {
+  flex: 1;
+  text-align: center;
+}
+
+.st-num {
+  font-size: 40rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.st-label {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: var(--muted);
+}
+
+.form-note {
+  margin: 12rpx 8rpx 0;
+  font-size: 20rpx;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.empty.small {
+  padding: 40rpx 24rpx;
+}
+
+.foot-link {
+  margin: 40rpx 24rpx 0;
+  padding: 28rpx;
+  text-align: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--sub);
+  border-radius: 20rpx;
+  background: var(--card);
+}

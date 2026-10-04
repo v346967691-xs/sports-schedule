@@ -1,0 +1,41 @@
+name: 球队名单刷新（每天一次）
+
+# 为什么单独开一条工作流，而不是塞进 sync-schedule.yml 里：
+#   ① 名单**不需要**每 15 分钟刷 —— 一支队的阵容不像比分那样一天几变，
+#      tools/team-roster.js 自带 7 天新鲜度判断，够新就跳过，白跑的是几百次无意义请求。
+#   ② 首次全量要抓 446 支球队（实测 5 分 14 秒），塞进「刷新比分」那条 15 分钟的主链路里
+#      会把主链路拖慢，而主链路才是用户看比分的命脉。分开跑，互不影响。
+#   ③ 失败的影响面也不同：名单是增强内容，缺了页面照样能用（会把整块藏掉）。
+#
+# 触发：每天 UTC 18:17（= 北京时间次日 02:17）跑一次，避开白天的使用高峰。
+# ⚠️ 已知 GitHub 原生 cron 在这个仓库会延迟 2~5 小时（sync-schedule.yml 里有完整记录，
+#    别重复降频试验）。名单有 7 天的新鲜期兜底，晚几个小时完全无所谓。
+
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: team-roster
+  cancel-in-progress: false
+
+jobs:
+  roster:
+    runs-on: ubuntu-latest
+    # 全量过期时要抓 446 支、每支 220ms 退避 + 网络往返，给足余量
+    timeout-minutes: 25
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装云 SDK
+        run: npm install
+
+      - name: 抓取名单并推送到云端
+        run: node tools/team-roster.js

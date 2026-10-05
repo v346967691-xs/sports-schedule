@@ -73,12 +73,28 @@ jobs:
       #   ③ 耗时不到 1 秒，公开仓库 Actions 分钟数免费。
       # continue-on-error：日报是附加功能，它的成败不该污染「赛程同步」本身的红绿信号，
       # 后者才是用户看比分的主链路（失败会被 check-cloud 之前的步骤捕获）。
-      # 🟡 2026-10-05 追加：只在「大快照真的推了」的那一班才跑。
+      # 🟡 2026-10-05 追加：不再每 15 分钟跑，只在两种情况下跑。
       #    日报就两个出报时刻（06/21），内容几乎不变，却原本每 15 分钟把同样 4 行重写一遍
-      #    （≈46MB/月纯浪费）。跟着 sync 走 = 96 次/天 → 16 次/天。
+      #    （≈46MB/月纯浪费）。
+      #
+      # 🔴 但**不能只挂在 sync 的 pushed 上** —— 节流闸把大快照拉到 90 分钟一次，
+      #    推送时刻会随时间漂移，早报可能迟到 07:45、晚报迟到 22:45（10-05 我自己引入的回归）。
+      #    → 两个条件取「或」：
+      #      ① sync 真的推了（16 次/天，散布全天，兜底）
+      #      ② 当前北京时间落在出报窗口内（06~07 点 / 21~22 点，各 4 班）
+      #    这样 06:00 与 21:00 的期次一定在 15 分钟内落库，其余时间不再空转。
+      - name: 判断是否处于出报窗口
+        id: briefwin
+        run: |
+          H=$(TZ=Asia/Shanghai date +%H)
+          case "$H" in
+            06|07|21|22) echo "due=1" >> "$GITHUB_OUTPUT" ;;
+            *)           echo "due=0" >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - name: 生成日报并推送到云端
         continue-on-error: true
-        if: steps.sync.outputs.pushed == 'true'
+        if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1'
         run: node tools/brief-push.js
 
       # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。

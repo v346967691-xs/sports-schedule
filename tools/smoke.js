@@ -2745,8 +2745,16 @@ async function run() {
   const ymlSrc = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
   check('工作流：实时比分那一步不受节流闸影响（60 秒粒度保持不变）',
     csMod.MIN_INTERVAL_MIN >= 60 && ymlSrc.indexOf('--every=60') !== -1, '--every=60')
-  check('工作流：日报跟着大快照走（不再每 15 分钟重写同样那几行）',
+  check('工作流：日报不再每 15 分钟重写同样那几行（跟大快照走）',
     ymlSrc.indexOf("steps.sync.outputs.pushed == 'true'") !== -1)
+  // 🔴 只挂 pushed 会让日报跟着 90 分钟节流闸漂移：早报可能 07:45 才出、晚报 22:45，
+  //    出报时刻 06/21 是刻意设计的（brief-window.js 文件头有实测依据），不能被节流带偏。
+  //    → 必须额外在出报窗口内各跑 4 班（06~07 点 / 21~22 点）。
+  check('工作流：日报在 06/21 出报窗口内必定落库（不被 90 分钟节流带偏）',
+    ymlSrc.indexOf("steps.briefwin.outputs.due == '1'") !== -1
+    && /steps\.sync\.outputs\.pushed == 'true' \|\| steps\.briefwin\.outputs\.due == '1'/.test(ymlSrc)
+    && /case "\$H" in\s*\n\s*06\|07\|21\|22\)/.test(ymlSrc),
+    'pushed 或 briefwin 取或')
 
   // 实时比分：绝大多数轮次比分其实没变，那些 upsert 既没信息量又烧额度。
   // 🔴 但「不写」不能变成「永不写」—— 客户端要能区分「比分没变」和「同步挂了」。

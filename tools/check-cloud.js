@@ -11,6 +11,7 @@
 
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
+const { isOutage } = require('./cloud-outage')
 
 /** 陈旧阈值（分钟），与 utils/data.js 的 STALE_MS 保持一致。
  *  对齐真实刷新粒度（GitHub 定时实测约 2.5~3 小时一次），
@@ -29,6 +30,13 @@ async function main() {
     .eq('id', 'latest')
 
   if (error) {
+    // 🔴 环境级故障（隔离 / 停服）时退出码 0：这是环境问题不是同步问题，
+    //    重试也没用，不该让每 15 分钟一班的工作流持续飘红、天天几百封失败邮件。
+    if (isOutage(error)) {
+      console.log('[check-cloud] ⛔ 云环境当前整体不可用，跳过新鲜度校验（环境问题，不算失败）')
+      console.log('   ' + JSON.stringify(error).slice(0, 200))
+      return
+    }
     console.error('[check-cloud] 读取云端失败：', JSON.stringify(error))
     process.exit(1)
   }

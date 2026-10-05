@@ -2726,6 +2726,25 @@ async function run() {
   check('实时比分：心跳上限存在且不超过 10 轮（别让客户端分不清「没变」和「挂了」）',
     Number.isFinite(hbRounds) && hbRounds >= 1 && hbRounds <= 10, `${hbRounds} 轮 ≈ ${hbRounds} 分钟`)
 
+  // 🔴 云环境整体不可用（隔离 / 停服）时：**早退 + 退出码 0，不算失败**。
+  //    否则每 15 分钟一班全飘红，一天 96 封 GitHub 失败邮件，还会白烧 Actions 分钟数。
+  //    但绝不能误伤：权限错误（42501）这类是**真的代码/配置问题**，必须照常判红。
+  const outageMod = require(path.join(ROOT, 'tools/cloud-outage.js'))
+  check('云故障：认得出「环境被隔离」这类错误',
+    outageMod.isOutage({ code: 'DATABASE_RESOURCE_ISOLATED', message: 'Database resource is isolated.' }) === true
+    && outageMod.isOutage({ message: 'res_stopped' }) === true
+    && outageMod.isOutage(null) === false)
+  check('云故障：不误伤普通错误（42501 权限问题必须照常判红，不能被当成环境问题吞掉）',
+    outageMod.isOutage({ code: '42501', message: 'permission denied for table' }) === false
+    && outageMod.isOutage({ code: '22P02', message: 'invalid input syntax' }) === false,
+    '42501 / 22P02 均判为「非环境故障」')
+  const ccSrc = fs.readFileSync(path.join(ROOT, 'tools/check-cloud.js'), 'utf8')
+  check('云故障：新鲜度校验遇到隔离时退出 0（不把环境问题当同步失败）',
+    /isOutage\(error\)/.test(ccSrc) && ccSrc.indexOf('跳过新鲜度校验') !== -1)
+  const csSrc = fs.readFileSync(path.join(ROOT, 'tools/cloud-sync.js'), 'utf8')
+  check('云故障：同步脚本探测到隔离就早退（省下每班 2 分钟抓取 + 不再刷失败邮件）',
+    /detectOutage\(cloud\)/.test(csSrc) && csSrc.indexOf('本班不重试、不算失败') !== -1)
+
   /* ---------- 输出 ---------- */
   let failed = 0
   results.forEach((r) => {

@@ -121,6 +121,7 @@ async function pushRow(cloud, table, row) {
  * ⚠️ 读 `generated_at` 只读一个小字段，比写 1.3MB 便宜两个数量级。
  */
 const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
+const { detectOutage, isOutage } = require('./cloud-outage')
 
 /**
  * @returns {{skip:boolean, ageMin:number|null, reason:string}}
@@ -176,7 +177,19 @@ async function main() {
     publishableKey: publicConfig.publishableKey,
   })
 
-  // 0) 节流闸。跳过是**正常路径**，退出码 0，后面的 step（校验 / 日报 / 实时比分）照常执行。
+  // 0a) 环境级故障探测：隔离 / 停服时**立刻收工**，退出码 0。
+  //     否则每 15 分钟一班都要先跑满 2 分钟抓取再失败，既白烧 Actions 分钟数，
+  //     又会让 GitHub 一天给你发 96 封失败邮件。详见 tools/cloud-outage.js。
+  const outage = await detectOutage(cloud)
+  if (outage.outage) {
+    log('⛔ 云环境当前整体不可用（隔离 / 停服），本班不重试、不算失败。')
+    log(`   原因：${outage.detail}`)
+    log('   这是环境问题不是代码问题：恢复后下一班会自动照常同步，无需改代码、无需发版。')
+    ghOut('pushed', 'false')
+    return
+  }
+
+  // 0b) 节流闸。跳过是**正常路径**，退出码 0，后面的 step（校验 / 日报 / 实时比分）照常执行。
   const verdict = await gate(cloud)
   log(`节流闸：${verdict.reason}`)
   if (verdict.skip) {
@@ -273,6 +286,12 @@ async function main() {
     generated_at: new Date().toISOString(),
   })
   if (!pushed.ok) {
+    // 探测阶段还好、推送时才撞上隔离，也按「环境问题」处理，不飘红。
+    if (isOutage(pushed.problem)) {
+      log('⛔ 推送时撞上云环境不可用，本班不重试、不算失败。')
+      ghOut('pushed', 'false')
+      return
+    }
     console.error('[cloud-sync] 推送云端失败：', pushed.problem)
     process.exit(pushed.code)
   }

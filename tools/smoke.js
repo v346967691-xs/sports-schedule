@@ -2680,6 +2680,14 @@ async function run() {
   check('云同步：前瞻窗口不超过 21 天（45 天那份有一半用户看不到，白占落库额度）',
     csMod.DAYS_FORWARD <= 21, `当前 ${csMod.DAYS_FORWARD} 天`)
 
+  // 🔴 踩过：`node cloud-sync.js --force` 会把 '--force' 当第 1 个位置参数，
+  //    Number('--force') = NaN → 子进程收到 `sync.js NaN 21` 直接崩。
+  //    位置参数必须先滤掉 `--` 开关再取。
+  check('云同步：位置参数先滤掉 --flag 再取（否则 --force 会让 sync.js 收到 NaN 而崩）',
+    /process\.argv\.slice\(2\)\.filter\(\(a\) => !a\.startsWith\('--'\)\)/.test(csSrc)
+    && Number.isFinite(csMod.DAYS_BACK) && Number.isFinite(csMod.DAYS_FORWARD),
+    `${csMod.DAYS_BACK}/${csMod.DAYS_FORWARD}`)
+
   // 节流闸的四条路径，用假 cloud 打桩。
   // ⚠️ 第 4 条最要紧：**读云端失败时必须放弃节流**（fail-open），
   //    否则数据库一隔离就再也不会推送，把「暂时不可用」变成「永久不更新」。

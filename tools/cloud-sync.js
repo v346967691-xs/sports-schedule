@@ -34,8 +34,12 @@ const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
 
-const DAYS_BACK = Number(process.argv[2] || 14)
-const DAYS_FORWARD = Number(process.argv[3] || 21)
+// ⚠️ 位置参数必须先滤掉 `--xxx` 开关：否则 `node cloud-sync.js --force` 会把
+//    '--force' 当成第 1 个位置参数，Number('--force') = NaN，子进程拿到
+//    `sync.js NaN 21` 直接崩（2026-10-05 我自己踩的）。
+const ARGS = process.argv.slice(2).filter((a) => !a.startsWith('--'))
+const DAYS_BACK = Number(ARGS[0]) || 14
+const DAYS_FORWARD = Number(ARGS[1]) || 21
 const FORCE = process.argv.includes('--force')
 
 /* 瞬时故障重试：抓取数据源、推送云端都可能撞上网络抖动。

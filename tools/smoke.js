@@ -1383,6 +1383,41 @@ async function run() {
   check('球员名生成器：可被 require 而不触发整轮抓取（require.main 守卫）',
     pnSrc.indexOf('require.main === module') !== -1)
 
+  /* ---------------------- KPL 单局详情（SCHEMA 6） ----------------------
+   * KPL 走官方 getScheduleDetail，不在 ESPN SLUG 表里 —— 三处要同时认它，
+   * 漏一处就会「抓到了但被清理掉」或「根本不抓」，而且都不会报错。
+   */
+  const kpMod = require(path.join(ROOT, 'tools/match-detail.js'))
+  const kpSrc = fs.readFileSync(path.join(ROOT, 'tools/match-detail.js'), 'utf8')
+  check('KPL 详情：SCHEMA 已升到 6（新增单局详情）', kpMod.SCHEMA === 6, `当前 ${kpMod.SCHEMA}`)
+  check('KPL 详情：scheduleid 与 seasonid 同时传（只传一个上游直接 10020003）',
+    /\{ scheduleid, seasonid \}/.test(kpSrc) && /m\.seasonid \|\| ''/.test(kpSrc))
+  check('KPL 详情：请求头三件套齐（UA + Referer + Origin，缺一个就 404）',
+    /Referer: 'https:\/\/kpl\.qq\.com\/'/.test(kpSrc) && /Origin: 'https:\/\/kpl\.qq\.com'/.test(kpSrc))
+  check('KPL 详情：kpl 被两处放行（目标筛选 + detailCapable，漏一处就静默丢数据）',
+    kpMod.detailCapable('kpl') && /m\.comp !== 'kpl'/.test(kpSrc))
+  check('KPL 详情：seasonid 由 sync.js 写进比赛对象（没有它详情永远抓不到）',
+    /seasonid: ev\.seasonid \|\| ''/.test(fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
+
+  // 🔴 位置映射是实测反推的（pos4=赵云/裴擒虎 = 打野，不是直觉上的 2），标错路比不标更糟
+  const { KPL_POS, kplHeroIcon } = require(path.join(ROOT, 'utils/roster.js'))
+  check('KPL 位置：五档映射与实测一致（1=对抗路 2=中路 3=发育路 4=打野 5=游走）',
+    KPL_POS['1'] === '对抗路' && KPL_POS['2'] === '中路' && KPL_POS['3'] === '发育路'
+      && KPL_POS['4'] === '打野' && KPL_POS['5'] === '游走',
+    `1=${KPL_POS['1']} 2=${KPL_POS['2']} 3=${KPL_POS['3']} 4=${KPL_POS['4']} 5=${KPL_POS['5']}`)
+  check('KPL 英雄图标：拼在王者官方 CDN（KPL 自家的 /hero/ 返回占位图，200 但没内容）',
+    kplHeroIcon(536) === 'https://game.gtimg.cn/images/yxzj/img201606/heroimg/536/536.jpg' && kplHeroIcon(0) === '')
+
+  const kpJs = fs.readFileSync(path.join(ROOT, 'pages/detail/detail.js'), 'utf8')
+  const kpWxml = fs.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
+  const kpWxss = fs.readFileSync(path.join(ROOT, 'pages/detail/detail.wxss'), 'utf8')
+  check('KPL 详情页：hasKpl 门控 + WXML 有渲染块（没数据整块隐藏，不留白块）',
+    /hasKpl: !!kpl/.test(kpJs) && kpWxml.indexOf('detail.hasKpl') !== -1)
+  check('KPL 详情页：英雄图标按 hero_id 拼URL直出（不落库、不进包）',
+    /kplHeroIcon\(p\.h\)/.test(kpJs))
+  check('详情页样式：不用 flex gap（老 WebView 不支持，踩过的坑）',
+    !/gap\s*:/.test(kpWxss))
+
   check('射手榜：playerZh 只吃 id，不按名字查（同名球员很多）',
     znMod.playerZh('253989') === '哈兰德' && znMod.playerZh(253989) === '哈兰德' && znMod.playerZh('no-such-id') === '')
   // 生成器里不能把友谊赛接上：友谊赛进球毫无参考价值（与「不抓友谊赛详情」同一理由）
@@ -1551,10 +1586,34 @@ async function run() {
     }))
     check('详情：交锋里没有未开赛的幽灵 0-0',
       ghostH2H.length === 0, ghostH2H.slice(0, 4).join(' ') || `${mdToday} 之后无 0-0`)
-    // ts / v 是增量刷新的唯一依据，缺了就会退化成全量重抓
+    // ts / v 是增量刷新的唯一依据，缺了就会退化成全量重抓。
+    // ⚠️ 不能要求**全部**条目 v === SCHEMA：已结束的比赛只抓一次，超出 48h 重抓窗的老场次
+    //    会带着旧版本号一直躺到 7 天保留期结束（10-05 升 SCHEMA 6 时踩到这个误报）。
+    //    → 只要求「这场比赛现在仍在可重抓窗口内」的条目是当前版本 —— 它本来就该被重抓成新版。
+    const snapArr = (function () {
+      const raw = require(path.join(ROOT, 'data/matches.js'))
+      const dec = require(path.join(ROOT, 'utils/snapshot.js')).decodeSnapshot(raw)
+      const map = {}
+      dec.forEach((m) => { map[m.id] = m })
+      return map
+    })()
+    const refetchable = (d) => {
+      const m = snapArr[d.id]
+      if (!m) return false
+      const t = Date.parse(m.start)
+      if (Number.isNaN(t)) return false
+      if (m.status === 'live' || m.status === 'inprogress') return true
+      if (m.status === 'upcoming') return t - Date.now() < 7 * 24 * 3600 * 1000
+      return Date.now() - t < (48 + 6) * 3600 * 1000
+    }
+    const staleV = all.filter((d) => refetchable(d) && d.v !== md.SCHEMA)
+    const missingTs = all.filter((d) => typeof d.ts !== 'number' || typeof d.v !== 'number')
     check('详情：每条都带抓取时刻与 schema 版本',
-      all.length > 0 && all.every((d) => typeof d.ts === 'number' && d.v === md.SCHEMA),
-      all.length ? `v=${all[0].v} / 期望 ${md.SCHEMA}` : '无')
+      all.length > 0 && missingTs.length === 0,
+      missingTs.length ? `缺 ts/v 的 ${missingTs.length} 条，如 ${missingTs[0] && missingTs[0].id}` : `${all.length} 条齐全`)
+    check('详情：可重抓窗口内的条目都是当前 SCHEMA（超出窗口的老场次允许带旧版本自然过期）',
+      staleV.length === 0,
+      staleV.length ? `${staleV.slice(0, 3).map((d) => `${d.id}:v${d.v}`).join(' ')} 应为 v${md.SCHEMA}` : `当前 v${md.SCHEMA}`)
   }
 
   /* ---------- 赛前预览的页面表现 ---------- */

@@ -788,3 +788,87 @@
   font-size: 23rpx;
   color: var(--muted);
 }
+
+/* ===== KPL 单局战报 ===== */
+/* ⚠️ 全程不用 flex gap —— 老 WebView 不支持（项目里踩过），间距一律用 margin */
+.kp-round {
+  padding: 18rpx 0;
+  border-top: 1rpx solid var(--line);
+}
+
+.kp-round:first-of-type {
+  border-top: 0;
+  padding-top: 4rpx;
+}
+
+.kp-head {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 14rpx;
+}
+
+.kp-no {
+  font-size: 25rpx;
+  font-weight: 600;
+  margin-right: 16rpx;
+}
+
+.kp-win {
+  font-size: 23rpx;
+  color: var(--brand);
+  font-weight: 500;
+}
+
+.kp-p {
+  display: flex;
+  align-items: center;
+  width: 50%;
+  box-sizing: border-box;
+  padding: 4rpx 10rpx 4rpx 0;
+}
+
+.kp-hero {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 12rpx;
+  background: rgba(128, 128, 128, 0.14);
+  flex: none;
+  margin-right: 12rpx;
+}
+
+.kp-meta {
+  min-width: 0;
+}
+
+.kp-line1 {
+  display: flex;
+  align-items: baseline;
+}
+
+.kp-hero-name {
+  font-size: 25rpx;
+  font-weight: 500;
+  margin-right: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-pos {
+  flex: none;
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+.kp-player {
+  margin-top: 2rpx;
+  font-size: 21rpx;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-real {
+  color: var(--faint, #b0b3b8);
+}

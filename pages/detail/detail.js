@@ -6,6 +6,7 @@ const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
 const nav = require('../../utils/nav')
 const { appInstance } = require('../../utils/app-instance')
+const { KPL_POS, kplHeroIcon } = require('../../utils/roster')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
@@ -118,6 +119,58 @@ function buildQuarters(match, sideName) {
 }
 
 /**
+ * KPL 单局详情：payload 里是 `{list:[{n,w,s,v}], picks:[[10×{i,h}]], people:{id:{n,r,av,q,t}}, heroes:{hid:名}}`
+ * （见 tools/match-detail.js 的 pickKplDetail）。
+ *
+ * ⚠️ 英雄图标 / 选手头像的 URL **不在 payload 里**（省体积），这里按 id / 完整地址拼。
+ *    英雄图标拼在王者官方 CDN（`game.gtimg.cn`），选手头像存的就是完整 URL。
+ * ⚠️ `list[].s` 是胜方在哪一边（h/a），用来在局条上高亮；空串表示上游没给（不猜）。
+ * ⚠️ 选手按 `people[i].t` 归到主/客两队，`q` 走 KPL_POS（1=对抗路 2=中路 3=发育路 4=打野 5=游走）。
+ *    上游没给 t 的人归到「其他」，**不能丢人**。
+ */
+function buildKpl(d) {
+  if (!d || !d.kpl || !d.kpl.list || !d.kpl.list.length) return null
+  const people = d.kpl.people || {}
+  const heroes = d.kpl.heroes || {}
+  const rounds = (d.kpl.list || []).map((r, i) => ({
+    idx: i,
+    n: r.n || i + 1,
+    w: r.w || '',
+    s: r.s || '',
+    v: r.v || '',
+    picks: ((d.kpl.picks || [])[i] || []).length,
+  }))
+  const sides = ['h', 'a', '']
+  const roundRows = rounds.map((r) => ({
+    idx: r.idx,
+    n: r.n,
+    w: r.w,
+    s: r.s,
+    v: r.v,
+    teams: sides.map((side) => ({
+      side,
+      players: ((d.kpl.picks || [])[r.idx] || [])
+        .map((p) => {
+          const per = people[p.i] || {}
+          if (side && per.t !== side) return null
+          if (!side && per.t) return null
+          return {
+            n: per.n || '',
+            real: per.r || '',
+            pos: KPL_POS[per.q] || '',
+            hero: heroes[p.h] || '',
+            icon: kplHeroIcon(p.h),
+            av: per.av || '',
+          }
+        })
+        .filter(Boolean)
+        .filter((x) => x.hero || x.n),
+    })).filter((t) => t.players.length),
+  }))
+  return { rounds, roundRows }
+}
+
+/**
  * 把云端详情整理成页面直接可用的形状。
  *
  * 两处需要算而不能直出：
@@ -180,6 +233,7 @@ function decorateDetail(d, match) {
   const lineups = buildLineups(d, sideName)
   const box = buildBox(d, sideName)
   const quarters = buildQuarters(match, sideName)
+  const kpl = buildKpl(d)
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -197,6 +251,8 @@ function decorateDetail(d, match) {
     hasBox: !!box,
     quarters,
     hasQuarters: !!quarters,
+    kpl,
+    hasKpl: !!kpl,
     formRows,
     hasForm: formRows.length > 0,
     h2h,

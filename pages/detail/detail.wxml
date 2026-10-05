@@ -151,6 +151,30 @@
     <view class="foot-note tight">数据来自 ESPN 官方技术统计，未出场球员不列入。</view>
   </view>
 
+  <!-- ③c KPL 单局详情（只有 KPL 有。逐局胜方 + 十名选手的英雄；未开赛抓不到 → 整块隐藏） -->
+  <view class="section card" wx:if="{{detail.hasKpl}}">
+    <view class="sec-title">单局战报</view>
+    <view class="kp-round" wx:for="{{detail.kpl.roundRows}}" wx:for-item="r" wx:key="idx">
+      <view class="kp-head">
+        <text class="kp-no">第 {{r.n}} 局</text>
+        <text class="kp-win">{{r.w}} 胜</text>
+      </view>
+      <view class="kp-side" wx:for="{{r.teams}}" wx:for-item="t" wx:key="side">
+        <view class="kp-p" wx:for="{{t.players}}" wx:for-item="p" wx:key="n">
+          <image class="kp-hero" src="{{p.icon}}" mode="aspectFill" lazy-load="{{true}}" />
+          <view class="kp-meta">
+            <view class="kp-line1">
+              <text class="kp-hero-name">{{p.hero}}</text>
+              <text class="kp-pos">{{p.pos}}</text>
+            </view>
+            <view class="kp-player">{{p.n}}<text class="kp-real" wx:if="{{p.real}}">（{{p.real}}）</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+    <view class="foot-note tight">英雄与选手信息来自 KPL 官方赛报，头像与英雄头像需联网加载。</view>
+  </view>
+
   <!-- ④ 双方近况 -->
   <view class="section card" wx:if="{{detail.hasForm}}">
     <view class="sec-title">双方近况</view>

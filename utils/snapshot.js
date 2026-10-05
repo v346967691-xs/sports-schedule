@@ -99,6 +99,9 @@ function encodeSnapshot(list, extra) {
     if (m.bo != null) rec.o = m.bo
     if (m.broadcast && m.broadcast.length) rec.b = m.broadcast
     if (m.slug) rec.l = m.slug
+    // KPL 专用：getScheduleDetail 必须同时传 seasonid（scheduleid 可从 id 还原）。
+    // ⚠️ 新增可选键对老解码器是安全的（只读自己认识的键），云端老格式里没有它也不影响。
+    if (m.seasonid) rec.n = m.seasonid
     if (m.historical) rec.z = 1
     if (!byComp[m.comp]) byComp[m.comp] = []
     byComp[m.comp].push(rec)
@@ -146,6 +149,7 @@ function decodeMatch(rec, comp, teams) {
     away: decTeam(rec.a, teams),
   }
   if (rec.l) m.slug = rec.l
+  if (rec.n) m.seasonid = rec.n
   if (rec.z) m.historical = true
   return m
 }

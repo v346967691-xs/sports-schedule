@@ -35,6 +35,21 @@ function basketPos(raw) {
 }
 
 /**
+ * KPL 上游的 `position` 是 **1~5 的数字**，语义与常见直觉不同（2 不是打野）。
+ * 🔴 映射关系是**实测**核对出来的（2026-10-05，用英雄反推：
+ *    pos1=夏洛特/达摩、pos2=海月/女娲、pos3=百里守约/敖隐、pos4=赵云/裴擒虎、pos5=张飞/苏烈），
+ *    不是猜的 —— 上游没有给出文字说明，改这里之前先重新核对一局真实数据。
+ * 🔴 与足球/篮球的两套缩写（G/D/M/F 与 BG/BF/BC）**互不复用** —— 数字键不可能撞，但别图省事合表。
+ */
+const KPL_POS = { 1: '对抗路', 2: '中路', 3: '发育路', 4: '打野', 5: '游走' }
+/** 英雄图标：KPL 上游只给 `hero_id`，头像拼在王者官方 CDN（实测 200，KPL 自家那个是占位图） */
+function kplHeroIcon(heroId) {
+  const id = Number(heroId)
+  return id ? `https://game.gtimg.cn/images/yxzj/img201606/heroimg/${id}/${id}.jpg` : ''
+}
+
+
+/**
  * 名单按位置分组，返回可直接喂给 WXML 的结构。
  *
  * ⚠️ 展示名优先级：`z`（中文名）→ `s`（英文短名）→ `n`（全名）。
@@ -69,4 +84,4 @@ function groupByPos(players) {
   return groups.sort((a, b) => a.order - b.order)
 }
 
-module.exports = { POS_ZH, POS_ORDER, groupByPos, basketPos, BASKET_POS }
+module.exports = { POS_ZH, POS_ORDER, groupByPos, basketPos, BASKET_POS, KPL_POS, kplHeroIcon }

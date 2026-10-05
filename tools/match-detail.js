@@ -76,7 +76,7 @@ const BASKETBALL = { nba: true }
  *    已结束的比赛只抓一次、之后永不刷新，光改代码老数据不会变。
  *    needsFetch 见到版本号不同会强制重抓一次，老数据自动淘汰。
  */
-const SCHEMA = 5 // 5 = 新增 NBA 单场球员数据（pickBasketballPlayers）
+const SCHEMA = 6 // 6 = 新增 KPL 单局详情（pickKplDetail：逐局胜方 + 十名选手 + 英雄中文名）
 
 const FINISHED_MS = 48 * 3600 * 1000 // 已结束：只补最近 48 小时
 const UPCOMING_MS = 7 * 24 * 3600 * 1000 // 赛前预览：未来 7 天内开赛的也抓
@@ -281,6 +281,50 @@ function getJSON(url) {
       .on('error', reject)
   })
 }
+
+/**
+ * KPL 官方接口是 POST + JSON body。
+ * 🔴 必须带这三个头，否则 404（结论见 REFERENCE §十五，2026-10-05 实测）：
+ *    `User-Agent`(Chrome) + `Referer: https://kpl.qq.com/` + `Origin: https://kpl.qq.com`
+ */
+const KPL = 'https://kplshop-op.timi-esports.qq.com/kplow'
+const KPL_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  Referer: 'https://kpl.qq.com/',
+  Origin: 'https://kpl.qq.com',
+  'Content-Type': 'application/json',
+}
+
+function postJSON(url, body) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const payload = JSON.stringify(body || {})
+    const req = https.request(
+      {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        method: 'POST',
+        headers: Object.assign({ 'Content-Length': Buffer.byteLength(payload) }, KPL_HEADERS),
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume()
+          reject(new Error(`HTTP ${res.statusCode}`))
+          return
+        }
+        let d = ''
+        res.on('data', (c) => { d += c })
+        res.on('end', () => {
+          try { resolve(JSON.parse(d)) } catch (e) { reject(e) }
+        })
+      }
+    )
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}
+
 
 async function mapLimit(items, limit, worker) {
   const out = []
@@ -544,7 +588,77 @@ function resolveSlug(m) {
  *    光把 `SLUG` 里的键删掉，云端老数据不会消失（详情桶是打进包的，占体积）。
  */
 function detailCapable(comp) {
-  return !!SLUG[comp] || comp === 'chn'
+  return !!SLUG[comp] || comp === 'chn' || comp === 'kpl'
+}
+
+/* --------------------------- KPL 单局详情 ---------------------------
+ *
+ * KPL 没有 ESPN summary，走官方 `getScheduleDetail`：
+ *   `round_details[]` 每局给 round / win_team / win_team_name / vid / players[10]。
+ *   `data.players[]`（12 人 = 10 首发 + 替补）才有**选手中文名 / 真名 / 头像**，
+ *   round_details 里只有 playerid —— 所以两份要合起来用。
+ *
+ * 🔴 参数陷阱：`scheduleid` 与 `seasonid` **必须同时传**，只传一个 → `10020003`。
+ *    scheduleid 从比赛 id 前缀还原（`kpl-KPL2026S3M1W1D1`），seasonid 在 sync.js 写进比赛对象。
+ *
+ * 体积刻意压到 ~2.5KB/场（BO5 实测 4.0KB）：英雄名与选手名按 id 去重成字典，
+ * picks 只存 `(playerid, hero_id)`；头像/图标是 URL，**页面端拼接，不落库**。
+ */
+function pickKplDetail(j, m) {
+  const data = (j && j.data) || {}
+  const rounds = data.round_details || []
+  if (!rounds.length) return null
+  const homeId = (m.home && m.home.id) || ''
+  const awayId = (m.away && m.away.id) || ''
+  const sideOf = (teamId) => (teamId === homeId ? 'h' : teamId === awayId ? 'a' : '')
+
+  const heroes = {}
+  const people = {}
+  const picks = []
+  const list = rounds.map((r) => {
+    picks.push(
+      ((r && r.players) || []).map((p) => {
+        const hid = Number(p && p.hero_id) || 0
+        if (hid && p.hero_name && !heroes[hid]) heroes[hid] = p.hero_name
+        const pid = String((p && p.playerid) || '')
+        if (pid && !people[pid]) people[pid] = { q: Number(p && p.position) || 0 }
+        return { i: pid, h: hid }
+      })
+    )
+    return {
+      n: Number(r.round) || 0,
+      w: r.win_team_name || '',
+      s: sideOf(r.win_team),
+      v: r.vid || '',
+    }
+  })
+  ;(data.players || []).forEach((p) => {
+    const pid = String((p && p.playerid) || '')
+    if (!pid) return
+    const o = people[pid] || (people[pid] = { q: Number(p.position) || 0 })
+    if (p.player_name_short) o.n = p.player_name_short
+    if (p.player_name_real) o.r = p.player_name_real
+    if (p.player_icon) o.av = p.player_icon
+    if (p.team_id) o.t = sideOf(p.team_id)
+  })
+  return { list, picks, people, heroes }
+}
+
+async function fetchKplDetail(m) {
+  const scheduleid = String(m.id).replace(/^kpl-/, '')
+  const seasonid = m.seasonid || ''
+  // 只传一个会被上游当成「查不到」，而且**不传参时返回「默认最新一场」看起来像成功**
+  // —— 宁可跳过也不存错数据（用户红线：宁可不要，也不要错的）
+  if (!scheduleid || !seasonid) return null
+  const j = await postJSON(`${KPL}/getScheduleDetail`, { scheduleid, seasonid })
+  return {
+    id: m.id,
+    comp: m.comp,
+    fin: m.status === 'finished',
+    v: SCHEMA,
+    ts: Date.now(),
+    kpl: pickKplDetail(j, m),
+  }
 }
 
 async function fetchDetail(m) {
@@ -664,9 +778,14 @@ async function main() {
 
   const targets = list.filter((m) => {
     // ⚠️ 必须走 resolveSlug（含比赛自带的 slug），只查 SLUG 表会把中国国字号漏掉
-    if (!resolveSlug(m)) return false
+    //    KPL 走另一条链路（官方 getScheduleDetail），不在 SLUG 表里
+    if (!resolveSlug(m) && m.comp !== 'kpl') return false
     const t = new Date(m.start).getTime()
     if (Number.isNaN(t)) return false
+    if (m.comp === 'kpl') {
+      // 单局信息只在开打之后才存在，未开赛抓不到任何东西
+      return m.status === 'finished' || m.status === 'live' || m.status === 'inprogress'
+    }
     if (m.status === 'finished') return now - t < FINISHED_MS + 6 * 3600 * 1000
     if (m.status === 'live' || m.status === 'inprogress') return true
     // 赛前预览：ESPN 对未开赛的比赛照样给 lastFiveGames / seasonseries，
@@ -683,7 +802,7 @@ async function main() {
   const failed = []
   await mapLimit(todo, 4, async (m) => {
     try {
-      const d = await fetchDetail(m)
+      const d = m.comp === 'kpl' ? await fetchKplDetail(m) : await fetchDetail(m)
       if (!d) return
       const key = `d-${dayKey(m.start)}`
       if (!buckets[key]) buckets[key] = { day: dayKey(m.start), payload: {} }
@@ -764,4 +883,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

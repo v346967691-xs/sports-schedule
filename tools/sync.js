@@ -584,6 +584,9 @@ async function fetchKpl(comp) {
     out.push({
       id: `${comp.key}-${ev.scheduleid}`,
       comp: comp.key,
+      // 🔴 getScheduleDetail 的 scheduleid + seasonid **必须同时传**（只传一个 → 10020003）。
+      //    scheduleid 可从 id 前缀还原，seasonid 没地方放 → 存在这里，详情抓取靠它。
+      seasonid: ev.seasonid || '',
       start,
       date: beijingDay(start),
       time: beijingTime(start),

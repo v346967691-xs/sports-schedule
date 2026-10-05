@@ -518,14 +518,36 @@ function zhNameOf(ent, wikiTitle) {
  *    `Nico González Iglesias`），末段就成了 `Madrazo`，直接判不符把正确条目丢掉。
  *    改成**词集合包含**：两个方向的包含都算命中。
  */
+/** 辈分后缀（Jr. / Sr. / III …）。父子同名时靠它区分，见 nameMatches 里的说明。 */
+const SENIORITY = new Set(['jr', 'sr', 'ii', 'iii', 'iv'])
+
+/**
+ * 🔴 2026-10-05 补过两道闸 —— 原先「姓氏相同就放行」把 LeBron James 配成了他儿子。
+ *
+ * 事故复盘：ESPN 的 `LeBron James`（id 1966）被写成「布朗尼·詹姆斯」。
+ *   ① 原逻辑第一条是 `候选姓氏 === ESPN 姓氏` 就直接通过 —— 父子姓氏当然相同；
+ *   ② 而且 Bronny 的法定名是 **LeBron Raymone James Jr.**，连首名都含 "LeBron"，
+ *      即便加上首名校验也照样漏。
+ * 所以补两道：辈分后缀必须对称、且姓氏相同之外还要名字对得上。
+ */
 function nameMatches(espnName, enNames) {
   const want = fold(espnName).split(/[\s.]+/).filter(Boolean)
   const sur = surnameOf(espnName)
   if (!want.length || !sur) return false
+  const wantSen = want.some((t) => SENIORITY.has(t))
   for (const n of enNames) {
     const got = fold(n).split(/[\s.]+/).filter(Boolean)
     if (!got.length) continue
-    if (got[got.length - 1] === sur) return true
+    // ① 辈分后缀必须**对称**：候选带 Jr./Sr./III 而 ESPN 名字里没有 → 那是另一个人。
+    //    反向（ESPN 有后缀、候选没有）也要交给下面的常规判断兜底，不在这里直接放行。
+    if (!wantSen && got.some((t) => SENIORITY.has(t))) continue
+    if (got[got.length - 1] === sur) {
+      // ② 姓氏相同不再单独成立：还要名字对得上。
+      //    唯一例外是 Wikidata 侧只给了姓氏一个词（那种情况没有别的依据可用）。
+      if (got.length === 1) return true
+      if (want.length > 1 && got.includes(want[0])) return true
+      continue
+    }
     if (want.every((t) => got.includes(t))) return true
     if (got.every((t) => want.includes(t))) return true
   }
@@ -1182,6 +1204,8 @@ module.exports = {
   isSportPlayer,
   sportOf,
   SPORT_QIDS,
+  nameMatches,
+  SENIORITY,
   enNamesOf,
   nameMatches,
   zhNameOf,

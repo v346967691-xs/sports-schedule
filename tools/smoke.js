@@ -2447,6 +2447,20 @@ async function run() {
     && pnMod.SPORT_QIDS.basketball.occ === 'Q3665646'
     && pnMod.SPORT_QIDS.basketball.sport === 'Q5372',
     `足球 ${pnMod.SPORT_QIDS.football.occ} / 篮球 ${pnMod.SPORT_QIDS.basketball.occ}`)
+  // 🔴 父子同名的张冠李戴（2026-10-05 事故，用户发现）：LeBron James(id 1966)
+  //    曾被写成他儿子 Bronny 的「布朗尼·詹姆斯」。原因是原逻辑「姓氏相同就放行」，
+  //    而 Bronny 的法定名是 **LeBron Raymone James Jr.** —— 连首名都含 LeBron。
+  //    防线有两条，缺一条都还会漏：辈分后缀必须对称 + 姓氏之外名字也要对得上。
+  check('播种器：父子同名不会张冠李戴（LeBron 不能配成 Bronny）',
+    pnMod.nameMatches('LeBron James', ['Bronny James', 'LeBron Raymone James Jr.']) === false
+    && pnMod.nameMatches('LeBron James', ['LeBron Raymone James Jr.']) === false
+    && pnMod.nameMatches('LeBron James', ['LeBron James']) === true,
+    'Bronny 的法定名带 Jr.，ESPN 侧没有 → 必须拒绝')
+  check('播种器：名字匹配的放宽不误伤正常情况（Jr. 对称 / 多中间名 / 普通名）',
+    pnMod.nameMatches('Tim Hardaway Jr.', ['Tim Hardaway Jr.']) === true
+    && pnMod.nameMatches('Kevin Durant', ['Kevin Wayne Durant']) === true
+    && pnMod.nameMatches('James Harden', ['James Harden']) === true,
+    'Jr. 对称、Wikidata 多中间名、普通名都应通过')
   check('播种器：sportOf 按赛事判定运动项目（nba→篮球，epl→足球）',
     typeof pnMod.isSportPlayer === 'function'
     && pnMod.sportOf(['nba']) === 'basketball'

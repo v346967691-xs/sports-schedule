@@ -2419,7 +2419,7 @@ async function run() {
     && pnMod.COMP_RANK.every((k) => !!dataMod.compOf(k).name && dataMod.compOf(k).name !== k),
     `${pnMod.COMP_RANK.length} 项`)
 
-  /* ---------- 球员字典的检索通道（A = 模糊搜、B = 服务端足员过滤） ----------
+  /* ---------- 球员字典的检索通道（A = 模糊搜、B = 服务端运动项目过滤） ----------
      守三件事：① 两条通道的缓存必须**分开存、各自带版本号**（合并会让 A 的 1300 人白查一遍）；
      ② B 的查询语句必须真的带 `haswbstatement` 且只收 QID（否则等于跑了两遍同一个 A）；
      ③ 默认通道保持 a —— 改默认值会静默改变命中率口径与缓存语义。 */
@@ -2429,14 +2429,31 @@ async function run() {
     && pnMod.B_CACHE_FILE.indexOf('cache-b') > -1
     && pnMod.B_CACHE_VERSION >= 1,
     `${path.basename(pnMod.CACHE_FILE)} v${pnMod.CACHE_VERSION} / ${path.basename(pnMod.B_CACHE_FILE)} v${pnMod.B_CACHE_VERSION}`)
-  // 源码级守卫：B 通道的实现必须同时满足「服务端足员过滤」与「只收 QID」两个条件。
+  // 源码级守卫：B 通道的实现必须同时满足「服务端运动项目过滤」与「只收 QID」两个条件。
   // 这两点任何一个丢了都不会报错，只会让 B 退化成 A 的复制品 —— 只能靠读源码守。
+  // ⚠️ 2026-10-05：过滤 Q 号**不再写死** `Q937857`（足球运动员）。原先那样会让篮球运动员
+  //    全被当成噪音挡下 —— 实测 NBA 617 人只命中 4 个（0.6%），改完后升到 48%。
+  //    现按 `sport` 从 SPORT_QIDS 取，这里的守卫也相应从「检查静态字符串」升级为
+  //    「检查动态取值 + 检查两套 Q 号都到位」，比原来更严。
   const pnSrcB = fs.readFileSync(path.join(ROOT, 'tools/player-names.js'), 'utf8')
   const bFn = pnSrcB.slice(pnSrcB.indexOf('async function searchEntitiesBySport'))
   // 只看函数体开头的这段即可（URL 拼接与返回值都在这几十行里）
   const bBody = bFn.slice(0, 1600)
-  check('播种器：通道 B 把「必须是足球员」交给服务端（haswbstatement:P106=Q937857）',
-    /haswbstatement:P106=Q937857/.test(bBody), '源码里有该过滤条件')
+  check('播种器：通道 B 把运动项目过滤交给服务端（Q 号按 sport 动态取，不是写死足球）',
+    /haswbstatement:P106=\$\{Q\.occ\}/.test(bBody), 'A 类：Q 号来自 SPORT_QIDS')
+  check('播种器：足球与篮球各有一套 Q 号（含稀有的篮球 Q3665646，别写成 Q3667436）',
+    pnMod.SPORT_QIDS.football.occ === 'Q937857'
+    && pnMod.SPORT_QIDS.football.sport === 'Q2736'
+    && pnMod.SPORT_QIDS.basketball.occ === 'Q3665646'
+    && pnMod.SPORT_QIDS.basketball.sport === 'Q5372',
+    `足球 ${pnMod.SPORT_QIDS.football.occ} / 篮球 ${pnMod.SPORT_QIDS.basketball.occ}`)
+  check('播种器：sportOf 按赛事判定运动项目（nba→篮球，epl→足球）',
+    typeof pnMod.isSportPlayer === 'function'
+    && pnMod.sportOf(['nba']) === 'basketball'
+    && pnMod.sportOf(['cba']) === 'basketball'
+    && pnMod.sportOf(['epl']) === 'football'
+    && pnMod.sportOf([]) === 'football',
+    'nba/cba→basketball，空→football')
   check('播种器：通道 B 只用引号精确短语搜（否则名字会被拆词）',
     /`"\$\{name\}" haswbstatement/.test(bBody), '引号短语 + 过滤条件同时存在')
   check('播种器：通道 B 只接受 QID 形状的标题（防 disambiguation 混入）',

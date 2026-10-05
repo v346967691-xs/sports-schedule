@@ -283,23 +283,63 @@ const stripParen = (s) => String(s || '').replace(/\s*[（(][^）)]*[）)]\s*$/,
 
 const FOOTBALLER_Q = 'Q937857'
 const FOOTBALL_SPORT_Q = 'Q2736'
+// 🔴 篮球的对应 Q 号（2026-10-05 加）。此前闸门**只认足球运动员**，
+//    617 名 NBA 球员里 613 人因为「P106 不含足球运动员」被判成噪音挡下，
+//    全量跑完只命中 4 人（0.6%）—— 详见 REFERENCE §二 三审。
+//    ⚠️ Q 号必须实测核对，别凭印象写：先前误以为 Q3667436 是篮球运动员，
+//       实测它是**基安蒂葡萄酒产区**；正确的是 Q3665646（用 LeBron James 的 P106 反查确认）。
+const BASKETBALLER_Q = 'Q3665646'
+const BASKET_SPORT_Q = 'Q5372'
 const HUMAN_Q = 'Q5'
+
+/** 各项目的「职业(P106) / 从事运动(P641)」Q 号。闸门按运动项目取，别再写死足球。 */
+const SPORT_QIDS = {
+  football: { occ: FOOTBALLER_Q, sport: FOOTBALL_SPORT_Q },
+  basketball: { occ: BASKETBALLER_Q, sport: BASKET_SPORT_Q },
+}
+
+/**
+ * 赛事 key → sport，从 `sync.js` 的 COMPETITIONS 读，避免这里再抄一份容易不同步的表。
+ * ⚠️ sync.js 已加 `require.main` 守卫，require 它是安全的（会联网初始化，但不执行主流程）。
+ */
+const SPORT_BY_COMP = (() => {
+  const m = {}
+  try {
+    require('./sync').COMPETITIONS.forEach((c) => {
+      m[c.key] = c.sport || 'football'
+    })
+  } catch (e) {
+    /* 兜底：认不出的一律按足球处理，与改动前行为一致 */
+  }
+  return m
+})()
+
+/** 球员所属赛事里只要有一个是篮球项目，就按篮球判定 */
+const sportOf = (comps) =>
+  (comps || []).some((c) => SPORT_BY_COMP[c] === 'basketball') ? 'basketball' : 'football'
 
 /** 取某个 claim 的实体 id 列表 */
 const claimIds = (ent, prop) => (((ent && ent.claims) || {})[prop] || [])
   .map((c) => c.mainsnak && c.mainsnak.datavalue && c.mainsnak.datavalue.value && c.mainsnak.datavalue.value.id)
 
 /**
- * 🔴 必须是**人**，且是足球运动员。
+ * 🔴 必须是**人**，且从事**本项目**（足球 → 足球运动员；篮球 → 篮球运动员）。
  *
- * 只查 `P641=足球` 是不够的 —— 实测**俱乐部、国家队、赛事条目都带足球属性**：
+ * 只查 `P641=某运动` 是不够的 —— 实测**俱乐部、国家队、赛事条目都带该运动属性**：
  * 「塞內加爾國家足球隊」「摩纳哥体育协会足球俱乐部」「2026年國際足協世界盃外圍賽」
  * 全都会通过，白白占掉候选位。先卡 `P31=Q5`（instance of: human）就能一步滤干净。
+ *
+ * ⚠️ 2026-10-05：这里原先写死只认足球运动员，篮球运动员被全数当成噪音挡下，
+ *    结果 NBA 全量 617 人只命中 4 个。现改为按 `sport` 取 Q 号（见 SPORT_QIDS）。
  */
-function isFootballer(ent) {
+function isSportPlayer(ent, sport) {
   if (!claimIds(ent, 'P31').includes(HUMAN_Q)) return false
-  return claimIds(ent, 'P106').includes(FOOTBALLER_Q) || claimIds(ent, 'P641').includes(FOOTBALL_SPORT_Q)
+  const qids = SPORT_QIDS[sport] || SPORT_QIDS.football
+  return claimIds(ent, 'P106').includes(qids.occ) || claimIds(ent, 'P641').includes(qids.sport)
 }
+
+/** 旧名保留：按足球判定（足球链路的行为与改动前完全一致） */
+const isFootballer = (ent) => isSportPlayer(ent, 'football')
 
 /** 实体身上所有英文名字（label + aliases），用于和 ESPN 名字核对 */
 function enNamesOf(ent) {
@@ -721,8 +761,9 @@ async function searchEntities(name) {
  *
  * 返回：QID 数组（可信负结果为 `[]`）／`null`（请求失败，**不缓存**，与通道 A 同约定）。
  */
-async function searchEntitiesBySport(name) {
-  const q = `"${name}" haswbstatement:P106=Q937857`
+async function searchEntitiesBySport(name, sport) {
+  const Q = SPORT_QIDS[sport] || SPORT_QIDS.football
+  const q = `"${name}" haswbstatement:P106=${Q.occ}`
   const url = `${WD_API}?action=query&list=search&srsearch=${encodeURIComponent(q)}` +
     '&srnamespace=0&srlimit=10&format=json'
   const j = await getJSON(url)
@@ -893,7 +934,7 @@ async function main() {
       if (needB) await sleep(SLEEP)
     }
     if (needB && !bCached(p.id)) {
-      const qids = await searchEntitiesBySport(p.full)
+      const qids = await searchEntitiesBySport(p.full, sportOf(p.comps))
       if (qids === null) bFailed += 1
       else {
         bStore[p.id] = qids
@@ -954,7 +995,7 @@ async function main() {
   let miss = 0
   let tradOnly = 0
   let hkOnly = 0
-  let notFoot = 0
+  let notTarget = 0
   let nameBad = 0
   let rejected = 0
   let fromB = 0
@@ -966,12 +1007,13 @@ async function main() {
     // 人工复核判定不可用的（张冠李戴 / 港台译名）：连查都不查。
     // ⚠️ 这里必须排在结转逻辑**之前** —— 否则上一轮已经写进字典的错名会被结转顶回来。
     if (MANUAL_REJECT.has(p.id)) { rejected += 1; return }
+    const sport = sportOf(p.comps)
     let picked = ''
     // 候选是 A ∪ B 的并集（A 在前），见上面 candOf 的注释
     for (const q of candOf[p.id] || []) {
       const ent = ents[q]
       if (!ent || ent.missing !== undefined) continue
-      if (!isFootballer(ent)) { notFoot += 1; continue }
+      if (!isSportPlayer(ent, sport)) { notTarget += 1; continue }
       if (!nameMatches(p.full, enNamesOf(ent))) { nameBad += 1; continue }
       const raw = zhwikiTitleOf(ent)
       const simpTitle = simp[raw] || raw
@@ -1008,7 +1050,7 @@ async function main() {
   })
 
   log(`命中 ${hit} 人 / 未命中 ${miss} 人（命中率 ${Math.round((hit / Math.max(1, all.length)) * 100)}%）`)
-  log(`闸门挡下次数：非人类/非足球员 ${notFoot}｜英文名不符 ${nameBad}｜` +
+  log(`闸门挡下次数：非人类/非本项目运动员 ${notTarget}｜英文名不符 ${nameBad}｜` +
     `繁体回落英文 ${tradOnly}｜港译回落英文 ${hkOnly}｜人工复核否决 ${rejected}`)
   if (fromB) {
     log(`其中 ${fromB} 人是靠通道 B（服务端足员过滤）捞回来的 —— 抽查这 30 条：`)
@@ -1137,6 +1179,9 @@ module.exports = {
   compRank,
   collectPlayers,
   isFootballer,
+  isSportPlayer,
+  sportOf,
+  SPORT_QIDS,
   enNamesOf,
   nameMatches,
   zhNameOf,

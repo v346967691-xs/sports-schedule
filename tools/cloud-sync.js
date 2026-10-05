@@ -5,7 +5,14 @@
  *       无需重新发布就能看到最新比分。配合每小时自动化调用即可自动保持新鲜。
  *
  * 用法： node tools/cloud-sync.js [daysBack] [daysForward]
- *   默认回看 14 天、前瞻 45 天（与 sync.js 一致）。
+ *   默认回看 14 天、前瞻 21 天。
+ *
+ * ⚠️ 前瞻窗口 2026-10-05 从 45 天压到 21 天：891KB → 379KB（-57%），实测得数见 decision log。
+ *    45 天那份里有一半以上用户根本看不到（首页只展示未来 7 天），白占云端落库额度。
+ *    要临时看更远的赛程：`node tools/cloud-sync.js 14 45 --force`。
+ *
+ * 🔴 还有一道**节流闸**（MIN_INTERVAL_MIN）：距上次推送不足该间隔就整班跳过。
+ *    被触发 96 次/天不代表要写 96 次 —— 详见 gate() 的注释。
  *
  * 流程：
  *   1) 复用 tools/sync.js 抓取数据源、刷新本地 data/matches.js、data/meta.js
@@ -28,7 +35,8 @@ const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
 
 const DAYS_BACK = Number(process.argv[2] || 14)
-const DAYS_FORWARD = Number(process.argv[3] || 45)
+const DAYS_FORWARD = Number(process.argv[3] || 21)
+const FORCE = process.argv.includes('--force')
 
 /* 瞬时故障重试：抓取数据源、推送云端都可能撞上网络抖动。
    整点任务一失败就要再等一小时，这里先做有限次退避重试再放弃。 */
@@ -95,7 +103,89 @@ async function pushRow(cloud, table, row) {
   return { ok: false, code: 3, problem }
 }
 
+/**
+ * 🔴🔴 节流闸 —— 云端额度耗尽事故后的头道防线（2026-10-05）
+ *
+ * 事故经过：cron-job.org 每 15 分钟 POST 一次 `workflow_dispatch` = **96 次/天**，
+ * 而每一班都**无条件全量 upsert**：schedule_cache 891KB + standings 129KB
+ * + scorers 108KB + match_detail 170KB ≈ **1.3MB/次** → 125MB/天 ≈ **3.7GB/月落库**。
+ * 免费版每月只有 5000 资源点，**5 天就烧穿**，数据库随即被隔离（且只保留 15 天即销毁）。
+ *
+ * 根因不是「功能变多」也不是「数据累积」（稳态总量才 ~1.3MB），而是
+ * **写入频次 × 单次体积**。这道闸直接从频次这一侧砍：
+ *   96 次/天 → 16 次/天（-83%），再叠加窗口瘦身 -57%，合计降到原来的约 **9%**。
+ *
+ * ⚠️ 判断依据是**云端那一行的 generated_at**，不是本地文件 —— 多机触发也幂等。
+ * ⚠️ 实时比分**完全不受影响**：live-watch 写的是独立的 `live_scores` 小表（约 2KB），
+ *    挂在 workflow 后面的 step 里，本脚本跳不跳它都照跑，60 秒粒度不变。
+ * ⚠️ 读 `generated_at` 只读一个小字段，比写 1.3MB 便宜两个数量级。
+ */
+const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
+
+/**
+ * @returns {{skip:boolean, ageMin:number|null, reason:string}}
+ *          skip=true 表示这次整班跳过全量推送（正常跳过，**不是错误**）。
+ */
+async function gate(cloud) {
+  if (FORCE) return { skip: false, ageMin: null, reason: '--force 已指定' }
+  if (MIN_INTERVAL_MIN <= 0) return { skip: false, ageMin: null, reason: '节流已关闭' }
+
+  let rows = null
+  try {
+    const res = await cloud.database
+      .from('schedule_cache')
+      .select('id, generated_at')
+      .eq('id', 'latest')
+    if (res && res.error) return { skip: false, ageMin: null, reason: `读云端失败（放弃节流）：${JSON.stringify(res.error).slice(0, 80)}` }
+    rows = res && res.data
+  } catch (err) {
+    return { skip: false, ageMin: null, reason: `读云端异常（放弃节流）：${(err && err.message) || err}` }
+  }
+
+  const at = Array.isArray(rows) && rows[0] && rows[0].generated_at
+    ? new Date(rows[0].generated_at).getTime()
+    : null
+  // 读不到就当作必须推（比节流误跳过更安全）
+  if (!at) return { skip: false, ageMin: null, reason: '云端尚无历史行，按必须推送处理' }
+
+  const ageMin = Math.round((Date.now() - at) / 60000)
+  if (ageMin < MIN_INTERVAL_MIN) {
+    return { skip: true, ageMin, reason: `距上次推送仅 ${ageMin} 分钟（阈值 ${MIN_INTERVAL_MIN}）` }
+  }
+  return { skip: false, ageMin, reason: `距上次推送 ${ageMin} 分钟，已过阈值 ${MIN_INTERVAL_MIN}` }
+}
+
+/**
+ * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
+ * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
+ */
+function ghOut(key, value) {
+  const file = process.env.GITHUB_OUTPUT
+  if (!file) return
+  try {
+    require('fs').appendFileSync(file, `${key}=${value}\n`)
+  } catch (err) {
+    log(`（写 step output 失败，忽略）：${(err && err.message) || err}`)
+  }
+}
+
 async function main() {
+  // ⚠️ 云客户端在这里就建好 —— 节流闸要读云端，必须在抓取之前，省下的是 CPU 和配额两层成本。
+  const cloud = createWorkBuddyCloud({
+    endpoint: publicConfig.endpoint,
+    publishableKey: publicConfig.publishableKey,
+  })
+
+  // 0) 节流闸。跳过是**正常路径**，退出码 0，后面的 step（校验 / 日报 / 实时比分）照常执行。
+  const verdict = await gate(cloud)
+  log(`节流闸：${verdict.reason}`)
+  if (verdict.skip) {
+    log('⏭  本机跳过本班全量推送（约 0.8MB 落库已省下）；实时比分不受影响，仍在 60 秒粒度上跑')
+    ghOut('pushed', 'false')
+    return
+  }
+  ghOut('pushed', 'true')
+
   // 1) 刷新本地数据（reuse 全部抓取/归一化逻辑）
   log(`刷新本地赛程数据（回看 ${DAYS_BACK} 天，前瞻 ${DAYS_FORWARD} 天）…`)
   await withRetry('抓取数据源', () => {
@@ -174,12 +264,7 @@ async function main() {
     process.exit(2)
   }
 
-  // 4) 推送到云端
-  const cloud = createWorkBuddyCloud({
-    endpoint: publicConfig.endpoint,
-    publishableKey: publicConfig.publishableKey,
-  })
-
+  // 4) 推送到云端（cloud 实例已在节流闸那一步建好，这里复用）
   log('推送云端 schedule_cache(id=latest) …')
   const pushed = await pushRow(cloud, 'schedule_cache', {
     id: 'latest',
@@ -263,7 +348,13 @@ function dayStamp(ms) {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-main().catch((err) => {
-  console.error('[cloud-sync] 未预期错误：', err && err.stack ? err.stack : err)
-  process.exit(1)
-})
+// 🔴 为什么加这道 require.main 守卫：2026-10-05 给节流闸写单测时要 require 本文件，
+//    而它原本在模块顶层直接跑 main() —— 一 require 就真的发起一轮云端同步。
+module.exports = { gate, MIN_INTERVAL_MIN, DAYS_BACK, DAYS_FORWARD }
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[cloud-sync] 未预期错误：', err && err.stack ? err.stack : err)
+    process.exit(1)
+  })
+}

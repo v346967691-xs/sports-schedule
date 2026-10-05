@@ -2665,6 +2665,67 @@ async function run() {
     fs.readFileSync(path.join(ROOT, 'pages/index/index.js'), 'utf8').indexOf('/pages/search/search') > -1
     && fs.readFileSync(path.join(ROOT, 'pages/teams/teams.js'), 'utf8').indexOf('/pages/search/search') > -1)
 
+  /* ---------- 云端额度：节流闸与推送窗口（2026-10-05 事故后的防线） ----------
+     🔴 背景：每 15 分钟被触发一次 = 96 次/天，若每班都全量 upsert 约 1.3MB，
+        就是 3.7GB/月落库 —— 免费版 5000 资源点 5 天烧穿，**数据库被隔离且只保留 15 天**。
+        下面这几条守的是「把额度吃光的那几个开关」，谁改都得先过这关。 */
+  const csMod = require(path.join(ROOT, 'tools/cloud-sync.js'))
+  check('云同步：被 require 不会自己跑同步（有 require.main 守卫）',
+    typeof csMod.gate === 'function' && csMod.DAYS_FORWARD !== undefined)
+
+  check('云同步：节流闸默认 90 分钟（96 次/天 → 16 次/天，防止再烧穿额度）',
+    csMod.MIN_INTERVAL_MIN >= 60,
+    `当前 ${csMod.MIN_INTERVAL_MIN} 分钟`)
+  check('云同步：前瞻窗口不超过 21 天（45 天那份有一半用户看不到，白占落库额度）',
+    csMod.DAYS_FORWARD <= 21, `当前 ${csMod.DAYS_FORWARD} 天`)
+
+  // 节流闸的四条路径，用假 cloud 打桩。
+  // ⚠️ 第 4 条最要紧：**读云端失败时必须放弃节流**（fail-open），
+  //    否则数据库一隔离就再也不会推送，把「暂时不可用」变成「永久不更新」。
+  const fakeCloud = (ageMin) => ({
+    database: {
+      from: () => ({
+        select: () => ({
+          eq: () => Promise.resolve({
+            data: ageMin == null ? [] : [{ generated_at: new Date(Date.now() - ageMin * 60000).toISOString() }],
+            error: null,
+          }),
+        }),
+      }),
+    },
+  })
+  const brokenCloud = {
+    database: {
+      from: () => ({
+        select: () => ({ eq: () => Promise.resolve({ data: null, error: { code: 'ISOLATED' } }) }),
+      }),
+    },
+  }
+  const gFresh = await csMod.gate(fakeCloud(10))
+  const gStale = await csMod.gate(fakeCloud(200))
+  const gNone = await csMod.gate(fakeCloud(null))
+  const gBroken = await csMod.gate(brokenCloud)
+  check('云同步：节流闸行为正确（刚推过就跳过 / 过期就推送 / 无历史行就推送）',
+    gFresh.skip === true && gStale.skip === false && gNone.skip === false,
+    `fresh=${gFresh.skip} stale=${gStale.skip} none=${gNone.skip}`)
+  check('云同步：读云端失败时放弃节流（fail-open，别把临时故障变成永久不更新）',
+    gBroken.skip === false, gBroken.reason.slice(0, 60))
+
+  const ymlSrc = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
+  check('工作流：实时比分那一步不受节流闸影响（60 秒粒度保持不变）',
+    csMod.MIN_INTERVAL_MIN >= 60 && ymlSrc.indexOf('--every=60') !== -1, '--every=60')
+  check('工作流：日报跟着大快照走（不再每 15 分钟重写同样那几行）',
+    ymlSrc.indexOf("steps.sync.outputs.pushed == 'true'") !== -1)
+
+  // 实时比分：绝大多数轮次比分其实没变，那些 upsert 既没信息量又烧额度。
+  // 🔴 但「不写」不能变成「永不写」—— 客户端要能区分「比分没变」和「同步挂了」。
+  const lwSrc = fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')
+  check('实时比分：内容没变就不重复写云端（省掉占大头的无效写入）',
+    /sig === lastSig/.test(lwSrc) && /JSON\.stringify\(rows\)/.test(lwSrc))
+  const hbRounds = Number((lwSrc.match(/const HEARTBEAT_ROUNDS = (\d+)/) || [])[1])
+  check('实时比分：心跳上限存在且不超过 10 轮（别让客户端分不清「没变」和「挂了」）',
+    Number.isFinite(hbRounds) && hbRounds >= 1 && hbRounds <= 10, `${hbRounds} 轮 ≈ ${hbRounds} 分钟`)
+
   /* ---------- 输出 ---------- */
   let failed = 0
   results.forEach((r) => {

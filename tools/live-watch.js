@@ -39,6 +39,9 @@ const SYNC_COMPS = require('./sync.js').COMPETITIONS
 const DAY = 86400000
 const DISCOVER_EVERY = 5 // 每 5 轮做一次全量发现（防止漏掉刚开赛的联赛）
 const IDLE_EXIT_ROUNDS = 3 // 连续 N 轮没有 live 比赛就退出（省 Actions 分钟数）
+// 内容一直没变时，至少每隔 N 轮还是要写一次（=60s×5≈5 分钟一次心跳）。
+// 目的：客户端要能区分「比分确实没变」和「同步挂了」这两种情况。
+const HEARTBEAT_ROUNDS = 5
 
 function arg(name, def) {
   const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))
@@ -263,6 +266,10 @@ async function main() {
   let comps = TARGETS
   let total = 0
   let cbaActive = false // CBA 上一轮有没有扫到比赛（有就继续扫，省得每轮都白打）
+  // 写入去重的状态（详见下面 while 里的「内容去重 + 心跳保活」）
+  let lastSig = null
+  let roundsSinceWrite = 0
+  let idleWritesSkipped = 0
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -286,7 +293,23 @@ async function main() {
     console.log(
       `[live-watch] 第 ${round} 轮 ${useAll ? '全量' : `收敛(${comps.length})`}：${rows.length} 场（进行中 ${live}），耗时 ${Date.now() - t0}ms`
     )
-    if (rows.length) await push(cloud, rows)
+    if (rows.length) {
+      // 🔴 内容去重 + 心跳保活（2026-10-05 云端额度事故后加）
+      //    原本每一轮都无条件 upsert 一次，但**绝大多数轮次比分根本没变** ——
+      //    那些写入既没有信息量，又实打实消耗云端资源点（若按请求数计费，这条路
+      //    原本独占全部写入请求的 73%）。
+      //    规则：内容变了立刻写（60 秒粒度、新鲜度零损失）；一直没变则每
+      //    HEARTBEAT_ROUNDS 轮补一次，让客户端知道这条管道还活着，而不是同步挂了。
+      const sig = JSON.stringify(rows)
+      if (sig === lastSig && roundsSinceWrite < HEARTBEAT_ROUNDS) {
+        idleWritesSkipped += 1
+      } else {
+        await push(cloud, rows)
+        lastSig = sig
+        roundsSinceWrite = 0
+      }
+    }
+    roundsSinceWrite += 1
     total += rows.length
 
     if (live) {
@@ -310,7 +333,10 @@ async function main() {
     }
     await new Promise((r) => setTimeout(r, everySec * 1000))
   }
-  console.log(`[live-watch] 完成：${round} 轮，共 ${total} 场`)
+  console.log(
+    `[live-watch] 完成：${round} 轮，共 ${total} 场`
+    + (idleWritesSkipped ? `，内容未变跳过 ${idleWritesSkipped} 次云端写入` : '')
+  )
 }
 
 if (require.main === module) {

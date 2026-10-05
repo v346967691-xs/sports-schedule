@@ -1,10 +1,20 @@
-name: 赛程快照刷新（每 15 分钟）
+name: 赛程刷新与实时比分（每 15 分钟触发，内部节流）
 
-# 触发方式：定时 cron（每小时第 23 分钟，UTC）+ 仓库 Actions 页手动 workflow_dispatch。
+# 触发方式：GitHub 定时 cron + 外部 cron-job.org 每 15 分钟 POST workflow_dispatch（带 PAT）。
 # 这条工作流是「关电脑也能刷新比分」的关键：
 # 它跑在 GitHub 的服务器上，不依赖本机开机，也不依赖 WorkBuddy 是否运行。
 # 云 SDK 用的是公开 publishableKey（anon 身份），schedule_cache 的写入又被 RLS 锁死在
 # id='latest' 这一行，所以这里不需要配置任何 Secret。
+#
+# 🔴🔴 2026-10-05 事故后的架构调整 —— **触发频率 ≠ 写入频率**
+#   事故：每 15 分钟被触发 = 96 次/天，而每班都无条件全量 upsert ≈1.3MB
+#         → 3.7GB/月落库，免费版 5000 资源点 5 天烧穿，数据库随即被隔离。
+#   修法：**保持高频触发（实时比分需要），但把「大快照」和「实时比分」两条路径解耦**
+#      · 大快照 schedule/standings/scorers/detail ≈0.8MB → 由 cloud-sync.js 内部的
+#        **节流闸**控制，默认 90 分钟才真正写一次（96 次/天 → 16 次/天）
+#      · 实时比分 live_scores ≈2KB → 完全不过闸，始终是 60 秒粒度
+#   ✅ 这样做的好处：**cron-job.org 那边一个字都不用改**，照旧每 15 分钟打一次即可。
+#   ⚠️ 想把全量刷新调得更频繁/更懒，改 SYNC_MIN_INTERVAL_MIN（单位分钟，0 = 关闸）。
 
 on:
   schedule:
@@ -46,6 +56,11 @@ jobs:
         run: npm install
 
       - name: 刷新并推送赛程快照到云端
+        id: sync
+        # 🔴 内部自带节流闸（默认 90 分钟一次）：被触发不等于会写，见文件头注释。
+        #    跳过走退出码 0（正常路径），并把 pushed=false 写给后面的 step 判断。
+        env:
+          SYNC_MIN_INTERVAL_MIN: '90'
         run: node tools/cloud-sync.js
 
       - name: 校验云端快照是否真的新鲜
@@ -58,8 +73,12 @@ jobs:
       #   ③ 耗时不到 1 秒，公开仓库 Actions 分钟数免费。
       # continue-on-error：日报是附加功能，它的成败不该污染「赛程同步」本身的红绿信号，
       # 后者才是用户看比分的主链路（失败会被 check-cloud 之前的步骤捕获）。
+      # 🟡 2026-10-05 追加：只在「大快照真的推了」的那一班才跑。
+      #    日报就两个出报时刻（06/21），内容几乎不变，却原本每 15 分钟把同样 4 行重写一遍
+      #    （≈46MB/月纯浪费）。跟着 sync 走 = 96 次/天 → 16 次/天。
       - name: 生成日报并推送到云端
         continue-on-error: true
+        if: steps.sync.outputs.pushed == 'true'
         run: node tools/brief-push.js
 
       # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。
@@ -69,8 +88,12 @@ jobs:
       #       可靠触发只能靠外部 cron-job.org POST —— 每多加一条就要多配一次外部服务；
       #    ② 挂在这里则**零外部配置**：一次运行 ≈ 2 分钟（主同步）+ 11 分钟（盯场），
       #       几乎连续覆盖，等效粒度就是 60 秒；
-      #    ③ `schedule_cache` 一行 891KB，2 分钟刷一次 = 790MB/天 —— 只有把它拆成
+      #    ③ `schedule_cache` 一行原本 891KB，2 分钟刷一次 = 790MB/天 —— 只有把它拆成
       #       只含进行中比赛的小表（~2KB）才刷得起。
+      #
+      # ✅ 2026-10-05：**这一步就是「高频路径」的全部**，它不受上面节流闸影响。
+      #    90 分钟才写一次的是那份大快照，2KB 的实时比分仍然 60 秒一次 —— 用户感知到的
+      #    实时性没有任何退化，省下的却是落库量的大头。
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
       # ⚠️ continue-on-error：实时比分是增强，它的成败不该污染主链路的红绿信号。
       - name: 盯进行中的比赛（实时比分）

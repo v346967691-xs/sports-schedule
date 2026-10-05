@@ -2670,6 +2670,7 @@ async function run() {
         就是 3.7GB/月落库 —— 免费版 5000 资源点 5 天烧穿，**数据库被隔离且只保留 15 天**。
         下面这几条守的是「把额度吃光的那几个开关」，谁改都得先过这关。 */
   const csMod = require(path.join(ROOT, 'tools/cloud-sync.js'))
+  const csSrc = fs.readFileSync(path.join(ROOT, 'tools/cloud-sync.js'), 'utf8')
   check('云同步：被 require 不会自己跑同步（有 require.main 守卫）',
     typeof csMod.gate === 'function' && csMod.DAYS_FORWARD !== undefined)
 
@@ -2709,7 +2710,29 @@ async function run() {
     gFresh.skip === true && gStale.skip === false && gNone.skip === false,
     `fresh=${gFresh.skip} stale=${gStale.skip} none=${gNone.skip}`)
   check('云同步：读云端失败时放弃节流（fail-open，别把临时故障变成永久不更新）',
-    gBroken.skip === false, gBroken.reason.slice(0, 60))
+    gBroken.skip === false && gBroken.outage === false, gBroken.reason.slice(0, 60))
+
+  // 「环境整体不可用」必须和「普通读失败」分开：前者早退不算失败，后者照常判红。
+  const gOutage = await csMod.gate({
+    database: {
+      from: () => ({
+        select: () => ({
+          eq: () => Promise.resolve({ data: null, error: { code: 'DATABASE_RESOURCE_ISOLATED', message: 'Database resource is isolated.' } }),
+        }),
+      }),
+    },
+  })
+  check('云同步：环境被隔离时识别为 outage 并早退（不刷邮件、不白烧 Actions）',
+    gOutage.outage === true && gOutage.skip === false)
+
+  // 一次探测同时干两件事（识别隔离 + 取时间做节流），拆成两次读每月多烧约 2900 次请求。
+  check('云同步：节流判断与环境探测合并为一次读（别拆回两次请求）',
+    (csSrc.match(/from\('schedule_cache'\)/g) || []).length === 1,
+    `cloud-sync 里 schedule_cache 查询点 ${(csSrc.match(/from\('schedule_cache'\)/g) || []).length} 处`)
+
+  // match_detail 按天分桶，一次 11 行，是单次全量推送里请求数最大一块 → 独立节流。
+  check('云同步：match_detail 有独立节流且不额外发请求（复用主闸拿到的 ageMin）',
+    /const detailDue = verdict\.ageMin == null \|\| verdict\.ageMin >= DETAIL_MIN_INTERVAL_MIN/.test(csSrc))
 
   const ymlSrc = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
   check('工作流：实时比分那一步不受节流闸影响（60 秒粒度保持不变）',
@@ -2741,9 +2764,8 @@ async function run() {
   const ccSrc = fs.readFileSync(path.join(ROOT, 'tools/check-cloud.js'), 'utf8')
   check('云故障：新鲜度校验遇到隔离时退出 0（不把环境问题当同步失败）',
     /isOutage\(error\)/.test(ccSrc) && ccSrc.indexOf('跳过新鲜度校验') !== -1)
-  const csSrc = fs.readFileSync(path.join(ROOT, 'tools/cloud-sync.js'), 'utf8')
   check('云故障：同步脚本探测到隔离就早退（省下每班 2 分钟抓取 + 不再刷失败邮件）',
-    /detectOutage\(cloud\)/.test(csSrc) && csSrc.indexOf('本班不重试、不算失败') !== -1)
+    /verdict\.outage/.test(csSrc) && csSrc.indexOf('本班不重试、不算失败') !== -1)
 
   /* ---------- 输出 ---------- */
   let failed = 0

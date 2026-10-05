@@ -121,39 +121,57 @@ async function pushRow(cloud, table, row) {
  * ⚠️ 读 `generated_at` 只读一个小字段，比写 1.3MB 便宜两个数量级。
  */
 const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
-const { detectOutage, isOutage } = require('./cloud-outage')
+const { isOutage } = require('./cloud-outage')
+
+/**
+ * `match_detail` 的独立节流（分钟）。它按「天」分桶，一次推送要写 11 行，
+ * 是单次全量推送里请求数最大的一块（16 班/天 × 11 = 176 次/天，占全量写入的 78%）。
+ * 而详情（时间轴 / 近况 / 交锋 / 技术统计）本身变化就慢，3 小时刷一次足够。
+ * ⚠️ 用的是主节流闸已经拿到的 ageMin，**不额外发一次请求**。
+ */
+const DETAIL_MIN_INTERVAL_MIN = Number(process.env.SYNC_DETAIL_INTERVAL_MIN || 180)
 
 /**
  * @returns {{skip:boolean, ageMin:number|null, reason:string}}
  *          skip=true 表示这次整班跳过全量推送（正常跳过，**不是错误**）。
  */
 async function gate(cloud) {
-  if (FORCE) return { skip: false, ageMin: null, reason: '--force 已指定' }
-  if (MIN_INTERVAL_MIN <= 0) return { skip: false, ageMin: null, reason: '节流已关闭' }
+  if (FORCE) return { skip: false, outage: false, ageMin: null, reason: '--force 已指定' }
+  if (MIN_INTERVAL_MIN <= 0) return { skip: false, outage: false, ageMin: null, reason: '节流已关闭' }
 
+  // 🔴 这一次读同时干两件事：识别「环境整体不可用」+ 取上次推送时间做节流。
+  //    拆成两次读的话，每班多一次请求 × 96 班/天 = 每月多烧约 2900 次请求。
   let rows = null
+  let error = null
   try {
     const res = await cloud.database
       .from('schedule_cache')
       .select('id, generated_at')
       .eq('id', 'latest')
-    if (res && res.error) return { skip: false, ageMin: null, reason: `读云端失败（放弃节流）：${JSON.stringify(res.error).slice(0, 80)}` }
+    error = res && res.error
     rows = res && res.data
   } catch (err) {
-    return { skip: false, ageMin: null, reason: `读云端异常（放弃节流）：${(err && err.message) || err}` }
+    error = err
+  }
+  if (error && isOutage(error)) {
+    return { skip: false, outage: true, ageMin: null, reason: '云环境整体不可用', detail: JSON.stringify(error).slice(0, 200) }
+  }
+  if (error) {
+    // 非环境级故障 → fail-open：读不到就当必须推，比节流误跳过更安全
+    return { skip: false, outage: false, ageMin: null, reason: `读云端失败（放弃节流）：${JSON.stringify(error).slice(0, 80)}` }
   }
 
   const at = Array.isArray(rows) && rows[0] && rows[0].generated_at
     ? new Date(rows[0].generated_at).getTime()
     : null
   // 读不到就当作必须推（比节流误跳过更安全）
-  if (!at) return { skip: false, ageMin: null, reason: '云端尚无历史行，按必须推送处理' }
+  if (!at) return { skip: false, outage: false, ageMin: null, reason: '云端尚无历史行，按必须推送处理' }
 
   const ageMin = Math.round((Date.now() - at) / 60000)
   if (ageMin < MIN_INTERVAL_MIN) {
-    return { skip: true, ageMin, reason: `距上次推送仅 ${ageMin} 分钟（阈值 ${MIN_INTERVAL_MIN}）` }
+    return { skip: true, outage: false, ageMin, reason: `距上次推送仅 ${ageMin} 分钟（阈值 ${MIN_INTERVAL_MIN}）` }
   }
-  return { skip: false, ageMin, reason: `距上次推送 ${ageMin} 分钟，已过阈值 ${MIN_INTERVAL_MIN}` }
+  return { skip: false, outage: false, ageMin, reason: `距上次推送 ${ageMin} 分钟，已过阈值 ${MIN_INTERVAL_MIN}` }
 }
 
 /**
@@ -177,20 +195,19 @@ async function main() {
     publishableKey: publicConfig.publishableKey,
   })
 
-  // 0a) 环境级故障探测：隔离 / 停服时**立刻收工**，退出码 0。
-  //     否则每 15 分钟一班都要先跑满 2 分钟抓取再失败，既白烧 Actions 分钟数，
-  //     又会让 GitHub 一天给你发 96 封失败邮件。详见 tools/cloud-outage.js。
-  const outage = await detectOutage(cloud)
-  if (outage.outage) {
+  // 0) 一次极轻量的云端探测，同时完成两件事：
+  //    ① 环境级故障（隔离 / 停服）→ **立刻收工**，退出码 0。
+  //       否则每 15 分钟一班都要先跑满 2 分钟抓取再失败，既白烧 Actions 分钟数，
+  //       又会让 GitHub 一天给你发 96 封失败邮件。详见 tools/cloud-outage.js。
+  //    ② 正常 → 用同一个返回值做节流判断（顺带省下一次请求）。
+  const verdict = await gate(cloud)
+  if (verdict.outage) {
     log('⛔ 云环境当前整体不可用（隔离 / 停服），本班不重试、不算失败。')
-    log(`   原因：${outage.detail}`)
+    log(`   原因：${verdict.detail}`)
     log('   这是环境问题不是代码问题：恢复后下一班会自动照常同步，无需改代码、无需发版。')
     ghOut('pushed', 'false')
     return
   }
-
-  // 0b) 节流闸。跳过是**正常路径**，退出码 0，后面的 step（校验 / 日报 / 实时比分）照常执行。
-  const verdict = await gate(cloud)
   log(`节流闸：${verdict.reason}`)
   if (verdict.skip) {
     log('⏭  本机跳过本班全量推送（约 0.8MB 落库已省下）；实时比分不受影响，仍在 60 秒粒度上跑')
@@ -331,7 +348,12 @@ async function main() {
     console.warn('[cloud-sync] ⚠ 本次没有可用的射手榜数据，跳过推送')
   }
 
-  if (details && details.buckets && details.buckets.length) {
+  // ⚠️ 详情独立节流：--force（ageMin 为 null）时照常推。
+  const detailDue = verdict.ageMin == null || verdict.ageMin >= DETAIL_MIN_INTERVAL_MIN
+  if (details && details.buckets && details.buckets.length && !detailDue) {
+    log(`⏭ match_detail 距上次推送 ${verdict.ageMin} 分钟 < ${DETAIL_MIN_INTERVAL_MIN}，本班跳过（省 11 次写入）`)
+  }
+  if (details && details.buckets && details.buckets.length && detailDue) {
     log(`推送云端 match_detail（${details.buckets.length} 个日桶）…`)
     let done = 0
     const nowIso = new Date().toISOString()

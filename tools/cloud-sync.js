@@ -251,8 +251,16 @@ async function main() {
   //       先 `--force` 再 `cloud-sync` 时，详情整整一班没上云端，本地却一切正常。
   let details = null
   let execNote = ''
+  // 🔴 `--force` 必须往下传。`match-detail.js` 的增量规则是「已结束的只抓一次」，
+  //    而**球员中文名是抓的时候烘焙进 payload 的**（payload 只存解析后的名字字符串，
+  //    不存 athlete id，事后无法回填）→ 字典更新后不 force 重抓，详情页会一直显示英文。
+  //    2026-10-05 踩到：写完 271 条 NBA 中文名、跑了 `cloud-sync --force`，
+  //    库里在单场详情页里仍然是 "Curry"。
+  //    ⚠️ Actions 里从不带 --force，所以这条只影响手动执行，不会增加定时任务的请求量。
+  const detailArgs = [path.join(__dirname, 'match-detail.js')]
+  if (FORCE) detailArgs.push('--force')
   try {
-    execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js')], { stdio: 'inherit' })
+    execFileSync(process.execPath, detailArgs, { stdio: 'inherit' })
   } catch (err) {
     execNote = (err && err.message) || String(err)
   }

@@ -2739,6 +2739,11 @@ async function run() {
     `cloud-sync 里 schedule_cache 查询点 ${(csSrc.match(/from\('schedule_cache'\)/g) || []).length} 处`)
 
   // match_detail 按天分桶，一次 11 行，是单次全量推送里请求数最大一块 → 独立节流。
+  // 详情 payload 只存「解析后的名字字符串」，不存 athlete id —— 字典更新后无法回填，
+  // 只能靠重抓。所以 cloud-sync --force 必须把 --force 传给 match-detail.js，
+  // 否则「字典改了 + 跑了 --force」看起来天衣无缝，详情页却还是英文。
+  check('云同步：--force 会传给 match-detail.js（否则改完中文名详情页还是英文）',
+    /detailArgs\.push\('--force'\)/.test(csSrc) && /execFileSync\(process\.execPath, detailArgs/.test(csSrc))
   check('云同步：match_detail 有独立节流且不额外发请求（复用主闸拿到的 ageMin）',
     /const detailDue = verdict\.ageMin == null \|\| verdict\.ageMin >= DETAIL_MIN_INTERVAL_MIN/.test(csSrc))
 

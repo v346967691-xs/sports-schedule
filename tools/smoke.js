@@ -1341,10 +1341,33 @@ async function run() {
   check('射手榜：球员中文字典已建立（人工 + 自动种子）', manualIds.length + autoCount >= 100,
     `人工 ${manualIds.length} + 自动 ${autoCount}`)
 
+  // 🔴 港台译名专用字（人工表与自动表共用同一道闸）
+  const TRAD_ONLY = /[羅爾賓貝蘭馬奧薩費華維賀蘇積龍衛頓遜謝贊亞倫齊傑納萊內魯歷聯賽國隊韋]/
+
+  // 🔴🔴 NBA 球星表是**纯人工**维护的（2026-10-05 起不再批量播种），这里守住两件事：
+  //   ① 顶级球星的译名不许错 —— 踩过：自动播种把 LeBron James 写成「布朗尼·詹姆斯」（他儿子），
+  //      Luka Doncic 写成「唐西奇」。用户红线：「宁可都不写中文，也不要错的中文」。
+  //   ② 人工表里同样不许出现繁体/港译（之前只守了自动字典，人工表是漏网之鱼）。
+  const PZ = znMod.PLAYER_ZH || {}
+  const STAR = [
+    ['1966', 'LeBron James', '勒布朗·詹姆斯', '布朗尼·詹姆斯'],
+    ['3945274', 'Luka Doncic', '卢卡·东契奇', '唐西奇'],
+    ['3975', 'Stephen Curry', '斯蒂芬·库里', '科里'],
+    ['6585', 'Andre Drummond', '安德烈·德拉蒙德', '祖蒙特'],
+    ['3907387', 'Ben Simmons', '本·西蒙斯', '施蒙斯'],
+  ]
+  const badStar = STAR.filter(([id, , want]) => PZ[id] !== want)
+  check('NBA 球星表：顶级球星的译名是人工确认的那一个（LeBron 不能写成布朗尼）',
+    badStar.length === 0,
+    badStar.length ? badStar.map(([, en, want]) => `${en} 应为 ${want}，实际 ${PZ[badStar[0][0]]}`).join(' / ')
+      : STAR.map(([, en]) => en).join(' / '))
+  const tradManual = manualIds.filter((k) => TRAD_ONLY.test(String(PZ[k])))
+  check('NBA 球星表：人工字典里同样没有港台译名（含繁体专用字）', tradManual.length === 0,
+    tradManual.length ? tradManual.slice(0, 3).map((k) => PZ[k]).join(' / ') : `${manualIds.length} 条人工条目全部像简体`)
+
   // 🔴 自动字典里不能出现港台译名。
   //    踩过：早期用中文维基全文检索，捞回一批港式音译（「安祖·罗拔臣」「伊斯高」「尼曼查·马迪」），
   //    面向大陆读者比英文短名更让人困惑 —— 生成器现在宁可回落英文，这里守住别退回。
-  const TRAD_ONLY = /[羅爾賓貝蘭馬奧薩費華維賀蘇積龍衛頓遜謝贊亞倫齊傑納萊內魯歷聯賽國隊韋]/
   const tradAuto = Object.keys(autoDict).filter((k) => TRAD_ONLY.test(autoDict[k]))
   check('射手榜：自动字典里没有港台译名（含繁体专用字）', tradAuto.length === 0,
     tradAuto.length ? tradAuto.slice(0, 3).map((k) => autoDict[k]).join(' / ') : `${autoCount} 条自动条目全部像简体`)

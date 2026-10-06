@@ -1537,6 +1537,20 @@ async function run() {
     md.needsFetch({ id: 'x', status: 'upcoming' }, cap(md.SCHEMA, t0)) === false)
   check('详情：未开赛超过 12 小时会刷新（近况可能变了）',
     md.needsFetch({ id: 'x', status: 'upcoming' }, cap(md.SCHEMA, t0 - 13 * 3600 * 1000)) === true)
+
+  // 🔴 KPL 抓到空值必须补抓（10-06 事故）：BO5 打 2.5 小时，抓早了上游 `round_details` 是空的，
+  //    而「已结束只抓一次」会让这条空数据永久留着 —— 用户看到的就是「这场没有对局数据」。
+  const H = 3600 * 1000
+  const kcap = (kpl, ts) => ({ x: { v: md.SCHEMA, ts, kpl } })
+  const km = (startAgo) => ({ id: 'x', comp: 'kpl', status: 'finished', start: new Date(t0 - startAgo).toISOString() })
+  check('详情：KPL 抓到空值时隔一会儿会补抓（上游结算有延迟）',
+    md.needsFetch(km(1 * H), kcap(null, t0 - 3 * H)) === true)
+  check('详情：KPL 补抓有节流，不是每班都打上游（2 小时内不重复试）',
+    md.needsFetch(km(1 * H), kcap(null, t0 - 10 * 60 * 1000)) === false)
+  check('详情：KPL 补抓有窗口，开赛 48 小时后不再纠缠（桶也要过期了）',
+    md.needsFetch(km(72 * H), kcap(null, t0 - 3 * H)) === false)
+  check('详情：KPL 已抓到数据就照常不重抓（补抓逻辑只在空值时生效）',
+    md.needsFetch(km(1 * H), kcap({ list: [{}] }, t0 - 3 * H)) === false)
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误
   // 赛事从「抓详情」名单里去掉后，云端老行必须被清掉 —— 详情桶是打进包的，占体积

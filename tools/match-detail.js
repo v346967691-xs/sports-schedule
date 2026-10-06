@@ -100,6 +100,21 @@ const BASKET_STAT_LABELS = [
   'MIN', 'PTS', 'FG', '3PT', 'FT', 'REB', 'AST', 'TO', 'STL', 'BLK', 'OREB', 'DREB', 'PF', '+/-',
 ]
 
+/**
+ * KPL 单局详情的**补抓**窗口。
+ *
+ * 🔴 事故（2026-10-06 用户反馈）：10-05 14:00 的北京WB vs 长沙TES.A 在详情页看不到对局数据。
+ *    原因：BO5 打到 16:30 才结束，而 14:22 那班去抓时上游 `round_details` 还是空的
+ *    —— 于是存了一条 `kpl: null`，再叠加「已结束的比赛只抓一次」，这条**从此再也不会被重抓**，
+ *    数据永久缺失（16:40 之后上游其实早就结算好了，实测现在能抓到 5 局）。
+ *
+ * → 抓到空值不能就此作罢，但要控制代价：
+ *   · 只在开赛后 `KPL_RETRY_WINDOW_MS` 内重试（超出就认了，再往后桶也要过期了）
+ *   · 每 `KPL_RETRY_GAP_MS` 才试一次（不跟着 15 分钟一班白打上游）
+ */
+const KPL_RETRY_WINDOW_MS = 48 * 3600 * 1000
+const KPL_RETRY_GAP_MS = 2 * 3600 * 1000
+
 /* ------------------------- 阵容球员池（给球员字典播种） -------------------------
  *
  * 这里抓 summary 时，手里那份 `rosters` 已经含**每位球员的 id + 全名 + 短名**，
@@ -767,6 +782,14 @@ function needsFetch(m, captured) {
   if (!prev) return true
   // 老版本抽出来的数据（比如早期没过滤未开赛交锋）强制重抓一次
   if (prev.v !== SCHEMA) return true
+  // 🔴 KPL 抓到空值必须补抓：上游结算有延迟（BO5 打 2.5 小时），抓早了 `round_details` 是空的，
+  //    而「已结束只抓一次」会让这条空数据永久留着（10-06 用户反馈的北京WB 那场）。
+  //    ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
+  if (m.comp === 'kpl' && m.status === 'finished' && prev.kpl == null) {
+    const t = Date.parse(m.start)
+    if (Number.isFinite(t) && Date.now() - t < KPL_RETRY_WINDOW_MS
+      && Date.now() - (prev.ts || 0) > KPL_RETRY_GAP_MS) return true
+  }
   if (m.status === 'finished') return false
   return Date.now() - (prev.ts || 0) > UPCOMING_REFRESH_MS
 }

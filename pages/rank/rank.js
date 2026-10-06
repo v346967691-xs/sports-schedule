@@ -41,7 +41,9 @@ const TIER_PLAN = {
     { key: 'assists', label: '助攻榜', kind: 'scorer' },
   ],
   basketball: [
-    { key: 'standings', label: '积分榜', kind: 'standings' },
+    // ⚠️ 篮球叫「球队榜」不叫「积分榜」（2026-10-06 用户定）：
+    //    NBA / CBA 的排名看的是**胜率**不是积分，写「积分榜」名不副实。
+    { key: 'standings', label: '球队榜', kind: 'standings' },
   ],
   esports: [
     { key: 'standings', label: '积分榜', kind: 'standings' },

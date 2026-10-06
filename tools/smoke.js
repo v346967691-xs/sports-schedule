@@ -2116,6 +2116,13 @@ async function run() {
     ctxNba.data.tiers.map((t) => t.label).join('/'))
   check('排行页：篮球档位名取自上游中文榜名（得分榜 / 篮板榜 …）',
     nbaBoards.every((b) => ctxNba.data.tiers.some((t) => t.key === b.key && t.label === b.name)))
+  // 篮球排名看胜率不看积分 → 那档叫「球队榜」，不能沿用足球的「积分榜」（2026-10-06 用户定）
+  check('排行页：篮球那档叫「球队榜」不叫「积分榜」（排名看胜率）',
+    ctxNba.data.tiers[0].key === 'standings' && ctxNba.data.tiers[0].label === '球队榜'
+      && !ctxNba.data.tiers.some((t) => t.label === '积分榜'),
+    ctxNba.data.tiers.map((t) => t.label).join('/'))
+  check('排行页：足球仍叫「积分榜」（只有篮球改名）',
+    ctxRank.data.tiers[0].label === '积分榜', ctxRank.data.tiers[0].label)
   rankOpts.onTierTap.call(ctxNba, { currentTarget: { dataset: { key: 'points' } } })
   check('排行页：切到得分榜档渲染出行（数值是场均，一位小数）',
     ctxNba.data.tier === 'points' && ctxNba.data.tierKind === 'leader'

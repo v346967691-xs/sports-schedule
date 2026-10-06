@@ -42,6 +42,9 @@ let scorersData = (() => {
   }
 })()
 
+/* KPL 选手数据榜：**只在云端**（见 refreshKplRank 的注释），本地没有兜底文件。 */
+let kplRankData = null
+
 let meta = (() => {
   try {
     return require('../data/meta.js')
@@ -616,6 +619,49 @@ async function refreshScorers() {
 }
 
 /**
+ * KPL 选手数据榜（9 张官方榜，tools/kpl-rank.js 推送）。
+ *
+ * 🔴 这份数据**只在云端**（`kpl_rank` 表），本地包里没有 —— 它刷新频率低（12 小时），
+ *    打进包纯属浪费体积。所以云读不到就是没有，页面据此整块隐藏。
+ * ⚠️ 与积分榜/射手榜不同，它**没有本地兜底**，别指望离线也能看到。
+ */
+async function refreshKplRank() {
+  if (!cloudClient.isReady()) return false
+  try {
+    const { data, error } = await cloudClient.cloud.database
+      .from('kpl_rank')
+      .select('data')
+      .eq('id', 'latest')
+      .maybeSingle()
+    if (error || !data || !data.data || !Array.isArray(data.data.boards)) return false
+    kplRankData = data.data
+    return true
+  } catch (err) {
+    console.warn('[赛程助手] 云端 KPL 选手榜读取失败', err)
+    return false
+  }
+}
+
+/** KPL 选手榜生成时间（只在真的有数据时才有值） */
+function kplRankGeneratedAt() {
+  return (kplRankData && kplRankData.generatedAt) || ''
+}
+
+/** 赛季标签（如 KPL2026S3） */
+function kplRankSeason() {
+  return (kplRankData && kplRankData.season) || ''
+}
+
+/**
+ * 某一赛事的选手榜（目前只有 KPL 有）。
+ * ⚠️ 返回各榜的原始顺序（官方已按 rank 排好），页面不再重排 —— 官方并列第 2 就是并列第 2。
+ */
+function kplRankBoards(compKey) {
+  if (compKey !== 'kpl') return []
+  return (kplRankData && kplRankData.boards) || []
+}
+
+/**
  * 北京时间（UTC+8）下的 YYYYMMDD —— 与 tools/match-detail.js 归档口径必须一致，
  * 两边算法不同会导致「明明抓到了，页面却读不到」。
  */
@@ -717,8 +763,8 @@ function scorerRow(compKey, athleteId) {
 
 async function doRefresh() {
   try {
-    // 并行拉三张表：它们互不依赖，串行只会白白多等两个 RTT
-    const [main] = await Promise.all([refreshSchedule(), refreshStandings(), refreshScorers()])
+    // 并行拉四张表：它们互不依赖，串行只会白白多等两三个 RTT
+    const [main] = await Promise.all([refreshSchedule(), refreshStandings(), refreshScorers(), refreshKplRank()])
 
     // decodeSnapshot 同时吃「扁平数组」和「紧凑对象」，云端换格式时这里不用改
     const list = snapshot.decodeSnapshot(main.data && main.data.data)
@@ -785,6 +831,10 @@ module.exports = {
   scorersGeneratedAt,
   scorersTop,
   scorerRow,
+  // KPL 选手数据榜
+  kplRankBoards,
+  kplRankSeason,
+  kplRankGeneratedAt,
   matchDetail,
   teamRoster,
   playerProfile,

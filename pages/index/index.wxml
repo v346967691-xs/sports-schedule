@@ -264,10 +264,12 @@
           <view class="entry-count" wx:if="{{item.count}}">{{item.count}} 场待开赛</view>
         </view>
         <view class="entry-summary {{item.hasNext ? '' : 'is-dim'}}">{{item.summary}}</view>
-        <!-- 有积分榜的赛事多一条「榜首」信息；点它直接进积分榜，点卡片本体仍是赛程 -->
-        <view class="entry-rank" wx:if="{{item.hasStandings}}">
-          <view class="entry-rank-text">榜首 {{item.leader}}</view>
-          <view class="entry-rank-go" data-key="{{item.key}}" catchtap="onRankTap">积分榜 ›</view>
+        <!-- 有积分榜的赛事多一条「榜首」信息；点它直接进积分榜，点卡片本体仍是赛程。
+             ⚠️ KPL 官方没有积分榜，但有**选手数据榜** —— 那条入口同样进榜单页，
+                只是文案换成「选手榜 ›」，别让它因为没有积分榜就彻底没入口。 -->
+        <view class="entry-rank" wx:if="{{item.hasRank}}">
+          <view class="entry-rank-text" wx:if="{{item.hasStandings}}">榜首 {{item.leader}}</view>
+          <view class="entry-rank-go" data-key="{{item.key}}" catchtap="onRankTap">{{item.rankLabel}} ›</view>
         </view>
         <view class="entry-bar" style="background: {{item.accent}}"></view>
       </view>

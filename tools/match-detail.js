@@ -238,6 +238,9 @@ const EVENT_ZH = [
   [/second yellow/i, '两黄变红'],
   [/red card/i, '红牌'],
   [/yellow card/i, '黄牌'],
+  // 「VAR 介入后把黄牌升级成红牌」—— 比赛回顾里算一张红牌，但上游给的是独立句式；
+  // 落在 `/yellow card/i` 之后、这里之前的顺序别动：它同时含 "Card" 与 "Red"。
+  [/var.*card upgrade|card upgrade/i, 'VAR 改判红牌'],
   [/substitution/i, '换人'],
 ]
 

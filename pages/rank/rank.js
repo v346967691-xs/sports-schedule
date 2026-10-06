@@ -4,9 +4,14 @@
  * 数据来自 data/standings.js + data/scorers.js（本地兜底），
  * 云端 standings_cache / scorers_cache 打开即读覆盖。
  *
- * ⚠️ 三档的**赛事覆盖面不一样**：有积分榜的赛事不一定有射手榜
+ * ⚠️ 各档的**赛事覆盖面不一样**：有积分榜的赛事不一定有射手榜
  *    （欧协联就没有，上游不提供这两个榜），所以每一档各自判断可用性，
  *    不能「有积分榜就假设有射手榜」。不可用的档位置灰、点了不响应。
+ *
+ * ⚠️ 第四档「选手榜」是**电竞赛事专用**（目前只有 KPL）：这部分数据只在云端
+ *    （`kpl_rank` 表，见 utils/data.js 的 refreshKplRank），本地包里没有兜底。
+ *    KPL 官方不给积分榜/射手榜，所以它是 KPL 在这个页面的唯一入口 ——
+ *    同理，赛事列表也不能只由 standingsKeys() 决定，要把有选手榜的赛事并进来。
  *
  * ⚠️ 这是页面层：新增 / 改动都要发版。
  */
@@ -18,11 +23,12 @@ const { appInstance } = require('../../utils/app-instance')
 /** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
 const SCORER_ROWS = 20
 
-/** 三档的定义。key 同时是页面态与数据取数的开关 */
+/** 四档的定义。key 同时是页面态与数据取数的开关 */
 const TIERS = [
   { key: 'standings', label: '积分榜' },
   { key: 'goals', label: '射手榜' },
   { key: 'assists', label: '助攻榜' },
+  { key: 'players', label: '选手榜' },
 ]
 
 /**
@@ -66,6 +72,45 @@ function renderRow(row, columns, compKey, prevRow) {
     // 区块标签只画在色带的第一行上，避免每一行都挂一个
     zoneFirst: !!z && (!prevRow || !prevRow.zone || prevRow.zone.label !== z.label),
   }
+}
+
+/**
+ * 构造 KPL 选手数据榜的渲染数据。
+ *
+ * ⚠️ 数值不要自己换算单位：这里只是加千分位，原始单位由官方给的是什么就是什么
+ *    （团战输出是原始伤害 619020，KPL App 也是这么显示的，别擅自改成「62万」）。
+ * ⚠️ 名次**照抄官方 rank**：并列第 2 就是两条都写 2，不自己补 3。
+ */
+function buildBoards(compKey) {
+  return data.kplRankBoards(compKey).map((b) => ({
+    key: b.key,
+    name: b.name,
+    rows: (b.rows || []).map((r) => ({
+      rank: r.rank,
+      num: fmtNum(r.num),
+      name: r.name,
+      avatar: r.av || '',
+      // 头像加载失败时用选手名最后一个字兜底（队名可能不是汉字，取 id 也难看）
+      initial: String(r.name || '').replace(/^.*[.]/, '').slice(0, 1) || '?',
+    })),
+  }))
+}
+
+/** 千分位，纯为了好看；NaN / null 一律回空串，别把 undefined 画到界面上 */
+function fmtNum(n) {
+  const v = Number(n)
+  if (!Number.isFinite(v)) return ''
+  return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+/**
+ * 每一档读的是**不同的生成时间**（四张表各自独立同步）：
+ * 选手榜根本不在本地包里，用 standings/scorers 的时间会被误报成「几分钟前更新」。
+ */
+function pickUpdatedAt(tier) {
+  if (tier === 'standings') return data.standingsGeneratedAt()
+  if (tier === 'players') return data.kplRankGeneratedAt()
+  return data.scorersGeneratedAt()
 }
 
 /** MM-DD HH:mm（本地时区），与赛程页同一口径 */
@@ -112,7 +157,7 @@ Page({
     //    站内跳转**走不到这里** —— 积分榜是 tabBar 页面，只能 wx.switchTab，
     //    而 switchTab 不支持带 query，参数靠 globalData.pendingComp 交接（见 onShow）。
     //    同理 query.tier：分享出去的射手榜，点开要直接落在射手榜档。
-    const keys = data.standingsKeys()
+    const keys = this.compKeys()
     const wanted = query && query.comp ? decodeURIComponent(query.comp) : ''
     const activeComp = keys.indexOf(wanted) > -1 ? wanted : (keys[0] || '')
     const tier = this.resolveTier(activeComp, query && query.tier ? decodeURIComponent(query.tier) : '')
@@ -153,17 +198,35 @@ Page({
     if (tier === 'standings') return !!data.standingsOf(key)
     if (tier === 'goals') return data.scorersTop(key, 'goals', 1).length > 0
     if (tier === 'assists') return data.scorersTop(key, 'assists', 1).length > 0
+    if (tier === 'players') return data.kplRankBoards(key).length > 0
     return false
   },
 
   /** 换赛事时把档位收敛到该赛事真正有的那几档；都没有就回到积分榜 */
   resolveTier(key, want) {
-    const order = ['standings', 'goals', 'assists']
+    const order = ['standings', 'goals', 'assists', 'players']
     if (want && order.indexOf(want) > -1 && this.tierAvailable(key, want)) return want
     for (const t of order) {
       if (this.tierAvailable(key, t)) return t
     }
     return 'standings'
+  },
+
+  /**
+   * 这个页面要展示哪些赛事。
+   * ⚠️ **不能只算 standingsKeys()** —— KPL 官方没有积分榜/射手榜，
+   *    但它有选手榜；只用积分榜的名单会把 KPL 整个挡在门外。
+   */
+  compKeys() {
+    const base = data.standingsKeys()
+    const extra = data.kplRankBoards('kpl').length ? ['kpl'] : []
+    const known = {}
+    base.concat(extra).forEach((k) => { known[k] = true })
+    const order = []
+    data.categories().forEach((cat) => {
+      ;(cat.competitions || []).forEach((key) => { if (known[key]) order.push(key) })
+    })
+    return order
   },
 
   /** 顶部分段控件的三档状态（不可用的置灰，不可点） */
@@ -209,7 +272,11 @@ Page({
       season: '', totalTeams: 0, scrollTop: this.data.slideTop[key] || 0,
       goals: [], assists: [], rankRows,
       hasGoals: goals.length > 0, hasAssists: assists.length > 0,
+      boards: buildBoards(key),
+      season: data.kplRankSeason() || '',
     }
+    // ⚠️ KPL 这类「只有选手榜」的赛事会走到这里：blank 里已经带好 boards + 赛季，
+    //    下面的积分榜代码**不能**再碰（table 是 null，会直接崩）
     const table = data.standingsOf(key)
     if (!table) return blank
 
@@ -246,20 +313,22 @@ Page({
       rankRows,
       hasGoals: goals.length > 0,
       hasAssists: assists.length > 0,
+      // KPL 选手数据榜（只有该赛事有）
+      boards: buildBoards(key),
     }
   },
 
   render() {
-    const keys = data.standingsKeys()
+    const keys = this.compKeys()
     if (!keys.length) {
-      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
+      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], playerBoards: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
       return
     }
     const idx = Math.max(0, this.indexOfKey(this.data.activeComp))
     // 数据可能在刷新后变化：档位要按最新数据再收敛一次，避免停在一个已经没内容的档
     const tier = this.resolveTier(this.data.activeComp, this.data.tier)
     const slides = keys.map((k, i) => this.buildSlide(k, i, idx, tier))
-    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [] }
+    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [], boards: [] }
 
     this.setData({
       slides,
@@ -268,6 +337,7 @@ Page({
       tier,
       tiers: this.tierState(this.data.activeComp),
       rankRows: cur.rankRows || [],
+      boards: cur.boards || [],
       // 激活赛事的镜像，供分享标题 / 冒烟断言使用
       compName: cur.name,
       columns: cur.columns,
@@ -275,7 +345,7 @@ Page({
       legend: cur.legend,
       season: cur.season,
       totalTeams: cur.totalTeams,
-      updatedAt: timeLabel(tier === 'standings' ? data.standingsGeneratedAt() : data.scorersGeneratedAt()),
+      updatedAt: timeLabel(pickUpdatedAt(tier)),
       source: data.source() === 'cloud' ? '云端' : '本地',
     })
   },

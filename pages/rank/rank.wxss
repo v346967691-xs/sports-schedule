@@ -335,3 +335,73 @@
   color: #fff;
   font-size: 26rpx;
 }
+
+/* ---------------- KPL 选手数据榜（第四档） ----------------
+   ⚠️ 全站不用 flex `gap`（老 WebView 不支持），间距一律 margin。 */
+.kpr-board {
+  margin: 20rpx 24rpx 0;
+  padding: 22rpx 24rpx 8rpx;
+}
+
+.kpr-title {
+  margin-bottom: 12rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.kpr-row {
+  display: flex;
+  align-items: center;
+  padding: 14rpx 0;
+  border-top: 1rpx solid var(--line);
+}
+
+.kpr-rank {
+  flex: none;
+  width: 40rpx;
+  font-size: 25rpx;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpr-rank.top {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.kpr-avatar {
+  flex: none;
+  width: 56rpx;
+  height: 56rpx;
+  margin-right: 18rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  /* ⚠️ 别用 --chip：app.wxss 里没这个变量，写了会变透明 */
+  background: var(--brand-soft);
+}
+
+.kpr-img {
+  width: 56rpx;
+  height: 56rpx;
+  display: block;
+}
+
+.kpr-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kpr-num {
+  flex: none;
+  margin-left: 18rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}

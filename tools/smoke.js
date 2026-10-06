@@ -1664,6 +1664,12 @@ async function run() {
     const all = []
     mdData.buckets.forEach((b) => Object.keys(b.payload || {}).forEach((k) => all.push(b.payload[k])))
     const evs = all.reduce((acc, d) => acc.concat(d.events || []), [])
+  // 🔴 上游会冒出新句式（2026-10-06 出现 "VAR - (Red) Card Upgrade"），
+  //    事件字典漏了就会把英文原句画进界面 —— 加映射后必须重抓才生效。
+  check('详情：事件字典覆盖已知的上游新句式（VAR 改判红牌）',
+    md.zhEvent('VAR - (Red) Card Upgrade') === 'VAR 改判红牌'
+      && md.zhEvent('Yellow Card') === '黄牌' && md.zhEvent('Red Card') === '红牌',
+    `${md.zhEvent('VAR - (Red) Card Upgrade')} / ${md.zhEvent('Yellow Card')}`)
     check('详情：抽出的事件类型全部是中文', evs.length > 0 && evs.every((e) => /[一-龥]/.test(e.t)),
       evs.length ? evs.slice(0, 5).map((e) => e.t).join('/') : '无事件')
     const opps = all.reduce((acc, d) => acc.concat((d.form && d.form.home) || [], (d.form && d.form.away) || []), [])
@@ -2048,10 +2054,62 @@ async function run() {
 
   /* ---------- 积分榜页：射手榜 / 助攻榜档（2026-10-03 新增） ---------- */
   rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'epl' } } })
-  check('积分榜页：三档都存在（积分榜 / 射手榜 / 助攻榜）',
-    ctxRank.data.tiers.length === 3 && ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜/射手榜/助攻榜',
+  // ⚠️ 现在是**四档**：第四档「选手榜」是电竞专用（KPL 官方只有这一张榜，
+  //    没有积分榜/射手榜），离线（没读到云端 kpl_rank）时必须置灰不可点。
+  check('积分榜页：四档齐整（积分榜 / 射手榜 / 助攻榜 / 选手榜）',
+    ctxRank.data.tiers.length === 4
+      && ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜/射手榜/助攻榜/选手榜',
     ctxRank.data.tiers.map((t) => t.label).join('/'))
+  check('积分榜页：没读到云端选手榜时「选手榜」档置灰（空档不给人点）',
+    ctxRank.data.tiers[3].key === 'players' && ctxRank.data.tiers[3].enabled === false)
   check('积分榜页：默认停在积分榜档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+  // 切到还不可用的档位必须原地不动（与「空赛事入口隐藏」同一约定）
+  rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'players' } } })
+  check('积分榜页：点了置灰的选手榜不切档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+
+  /* ---------- KPL 选手榜档（拿到云端数据后） ----------
+   * `kpl_rank` 只在云端，冒烟里读不到 → 用 data/kpl-rank.js（工具产物）注入，
+   * 验证「有数据时」这一条渲染链路；验完必须还原，否则会污染后面的用例。
+   */
+  const krRealFile = path.join(ROOT, 'data/kpl-rank.js')
+  if (fsMod.existsSync(krRealFile)) {
+    const krReal = require(krRealFile)
+    const dataR = require(path.join(ROOT, 'utils/data.js'))
+    const keep = {
+      boards: dataR.kplRankBoards,
+      season: dataR.kplRankSeason,
+      at: dataR.kplRankGeneratedAt,
+    }
+    dataR.kplRankBoards = (k) => (k === 'kpl' ? krReal.boards : [])
+    dataR.kplRankSeason = () => krReal.season
+    dataR.kplRankGeneratedAt = () => krReal.generatedAt
+    try {
+      const ctxKpl = makeCtx(rankOpts)
+      rankOpts.onLoad.call(ctxKpl, { comp: 'kpl' })
+      check('积分榜页：KPL 能进榜单列表（赛事名单不能只按积分榜筛）',
+        (ctxKpl.data.comps || []).map((c) => c.key).indexOf('kpl') > -1)
+      check('积分榜页：KPL 默认落在选手榜档（它没有积分榜/射手榜）',
+        ctxKpl.data.tier === 'players', ctxKpl.data.tier)
+      check('积分榜页：选手榜渲染出全部官方榜，每行都有名次/选手/头像/数值',
+        (ctxKpl.data.boards || []).length === krReal.boards.length
+          && ctxKpl.data.boards.every((b) => b.rows.length > 0
+            && b.rows.every((r) => r.rank && r.name && /^https:\/\//.test(r.avatar) && r.num !== '')),
+        `${(ctxKpl.data.boards || []).length}/${krReal.boards.length} 张榜`)
+      const dmg = (ctxKpl.data.boards || []).find((b) => b.key === 'adc_teamfight_damage_list')
+      check('积分榜页：选手榜数值带千分位（团战输出 619020 → 619,020，不擅自换算单位）',
+        !!dmg && dmg.rows[0].num === '619,020', dmg ? dmg.rows[0].num : '未找到该榜')
+      check('积分榜页：选手榜档的「更新于」用的是它自己的生成时间（不是积分榜的）',
+        !!ctxKpl.data.updatedAt && !!krReal.generatedAt, ctxKpl.data.updatedAt)
+    } finally {
+      dataR.kplRankBoards = keep.boards
+      dataR.kplRankSeason = keep.season
+      dataR.kplRankGeneratedAt = keep.at
+    }
+  }
+  // 首页入口：KPL 没有积分榜但要有「选手榜 ›」入口，否则那张卡摸不到榜单页
+  const idxRankSrc = fsMod.readFileSync(path.join(ROOT, 'pages/index/index.js'), 'utf8')
+  check('首页：榜单入口不再只认积分榜（KPL 走「选手榜 ›」）',
+    /hasRank:/.test(idxRankSrc) && /rankLabel:/.test(idxRankSrc) && /kplRankBoards\(c\.key\)/.test(idxRankSrc))
 
   rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'goals' } } })
   check('积分榜页：切到射手榜档并渲染出榜单',

@@ -126,7 +126,7 @@
           </block>
 
           <!-- 射手榜 / 助攻榜档 -->
-          <block wx:else>
+          <block wx:elif="{{tier === 'goals' || tier === 'assists'}}">
             <view class="meta" wx:if="{{item.rankRows.length}}">
               <text class="meta-main">{{item.name}} · {{tier === 'goals' ? '射手榜' : '助攻榜'}} 前 {{item.rankRows.length}} 名</text>
               <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
@@ -175,6 +175,42 @@
               榜单由上游官方统计实时同步，只列各赛事前 {{item.rankRows.length}} 名。
               球员中文名来自自建词典，尚未收录的球员显示英文原名 —— 中英混排是正常现象。
               点一行可查看该球员所属球队的详情。
+            </view>
+          </block>
+
+          <!-- KPL 选手数据榜档：官方 9 张榜，每张 Top5 -->
+          <block wx:elif="{{tier === 'players'}}">
+            <view class="meta" wx:if="{{item.boards.length}}">
+              <text class="meta-main">{{item.name}} · 选手数据榜</text>
+              <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+            </view>
+            <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
+
+            <view class="empty" wx:if="{{!item.boards.length}}">
+              <view class="empty-title">该赛事暂无选手数据榜</view>
+              <view class="empty-desc">目前只有 KPL 提供选手维度的数据榜，其他赛事换一档看看。</view>
+            </view>
+
+            <view class="kpr-board card" wx:for="{{item.boards}}" wx:for-item="board" wx:key="key">
+              <view class="kpr-title">{{board.name}}</view>
+              <view
+                wx:for="{{board.rows}}"
+                wx:for-item="row"
+                wx:key="name"
+                class="kpr-row"
+              >
+                <view class="kpr-rank {{row.rank <= 3 ? 'top' : ''}}">{{row.rank}}</view>
+                <view class="kpr-avatar">
+                  <image class="kpr-img" src="{{row.avatar}}" mode="aspectFill"></image>
+                </view>
+                <view class="kpr-name">{{row.name}}</view>
+                <view class="kpr-num">{{row.num}}</view>
+              </view>
+            </view>
+
+            <view class="foot-note">
+              数据来自 KPL 官方数据榜（每张取前 5），官方结算有延迟时会按滞后状态显示。
+              数值保留官方原始单位，不做换算。
             </view>
           </block>
 

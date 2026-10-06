@@ -53,14 +53,17 @@ Page({
   onLoad() {
     this.build()
     this.loadBrief()
-    data.refresh().then((r) => { if (r.updated) this.build() })
+    // 🔴 为什么必须重绘而不再看 r.updated：第一次 build 时云端还没回话，
+    //    「数据陈旧」的结论要等云端探测完才有意义（详见 utils/data.js 的 staleInfo）。
+    //    只看 updated 的话，陈旧警告会挂在上面不肯下来（换不上新数据时）或闪一下（换上了）。
+    data.refresh().then(() => this.build())
   },
 
   onShow() {
-    // 立即用当前数据渲染（本地包或已换上的云端数据），再尝试拉云端、有更新就重建
+    // 立即用当前数据渲染（本地包或已换上的云端数据），再尝试拉云端、拿到了就重建
     this.build()
     this.loadBrief()
-    data.refresh().then((r) => { if (r.updated) this.build() })
+    data.refresh().then(() => this.build())
     this.syncLivePoll()
   },
 

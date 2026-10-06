@@ -59,6 +59,9 @@ const THROTTLE_MS = 5 * 60 * 1000 // 同一端最多每 5 分钟才请求一次�
 let lastRefreshAt = 0
 let inflight = null // 并发刷新共享同一个请求，避免 onLaunch 与 onShow 重复打接口
 let dataSource = 'bundle' // 'bundle' 本地兜底包 | 'cloud' 云端快照
+// 是否已完成至少一次云端探测（成功/失败都算）。
+// 🔴 见 staleInfo()：没它就无法区分「数据真的旧」和「还没来得及问」，前者才该警告。
+let cloudProbed = false
 
 /* ------------------------------------------------------------------ 实时比分
  *
@@ -495,15 +498,30 @@ function generatedAt() {
 const STALE_MS = 180 * 60 * 1000
 
 /**
+ * 是否已完成第一次云端探测。
+ * 页面用它决定要不要先把位置留出来 —— 见 staleInfo() 的 `pending`。
+ */
+function settled() {
+  return cloudProbed
+}
+
+/**
  * 数据是否陈旧
- * @returns {{stale:boolean, minutes:number}} minutes = 距生成时间过去了多少分钟
+ * @returns {{stale:boolean, minutes:number, pending:boolean}} minutes = 距生成时间过去了多少分钟
  */
 function staleInfo() {
+  // 🔴 **还没问过云端之前不下结论**。冷启动那一刻手里只有本地包，它的 generatedAt 是
+  //    **打包那一刻**，拿它跟现在比必然「陈旧」→ 警告条先闪出来，等云端数据到位再被擦掉。
+  //    这个闪烁是纯视觉噪音：数据其实是好的，只是结论下得太早（10-06 用户反馈）。
+  //    → pending 期间一律返回 stale:false；refresh() 有结果后才给出真实判断。
+  //    ⚠️ 云端真挂了的情况不受影响：那时 refresh() 已经返回（失败也算探测过），
+  //       陈旧警告照常显示 —— 这个提示本来的职责就是「定时任务挂了要明说」，不能该报不报。
+  if (!cloudProbed) return { stale: false, minutes: 0, pending: true }
   const t = Date.parse(generatedAt() || '')
-  if (!t) return { stale: false, minutes: 0 }
+  if (!t) return { stale: false, minutes: 0, pending: false }
   const diff = Date.now() - t
-  if (diff < 0) return { stale: false, minutes: 0 }
-  return { stale: diff > STALE_MS, minutes: Math.round(diff / 60000) }
+  if (diff < 0) return { stale: false, minutes: 0, pending: false }
+  return { stale: diff > STALE_MS, minutes: Math.round(diff / 60000), pending: false }
 }
 
 /**
@@ -527,13 +545,25 @@ function applyCloudSnapshot(snapList, snapMeta) {
  * @returns {Promise<{updated:boolean, reason?:string, source:string}>}
  */
 async function refresh() {
-  if (!cloudClient.isReady()) return { updated: false, reason: 'no-cloud', source: dataSource }
+  // ⚠️ 三个提前返回的出口都要把 cloudProbed 置起来，否则 staleInfo() 会永远停在 pending，
+  //    云端真挂了反而不报警告。
+  if (!cloudClient.isReady()) {
+    cloudProbed = true
+    return { updated: false, reason: 'no-cloud', source: dataSource }
+  }
   const now = Date.now()
   // 已在刷新中：多个入口（onLaunch / onShow）共享同一次请求
+  // （那个请求结束时统一置位，这里不要抢 —— 否则第二个调用者会误判成「已探测完」）
   if (inflight) return inflight
-  if (now - lastRefreshAt < THROTTLE_MS) return { updated: false, reason: 'throttled', source: dataSource }
+  if (now - lastRefreshAt < THROTTLE_MS) {
+    cloudProbed = true
+    return { updated: false, reason: 'throttled', source: dataSource }
+  }
   lastRefreshAt = now
-  inflight = doRefresh().finally(() => { inflight = null })
+  inflight = doRefresh().finally(() => {
+    inflight = null
+    cloudProbed = true
+  })
   return inflight
 }
 
@@ -765,5 +795,6 @@ module.exports = {
   applyLive,
   source,
   generatedAt,
+  settled,
   staleInfo,
 }

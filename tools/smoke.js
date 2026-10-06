@@ -376,6 +376,25 @@ async function run() {
   check('数据层：recentFinished 窗口收窄后只留更近的',
     oneHour.every((m) => Date.parse(m.start) >= Date.now() - 3600000 - 1000), `${oneHour.length} 场`)
 
+  // 🔴 陈旧警告的闪现bug（10-06）：冷启动那一刻只有本地包，它的 generatedAt 是打包时刻，
+  //    算必然「陈旧」→ 警告条先闪出来，云端数据到位后再被擦掉。修法是「探测完云端才下结论」。
+  const dSrc = fs.readFileSync(path.join(ROOT, 'utils/data.js'), 'utf8')
+  check('数据层：没探测过云端时不判陈旧（防「数据已 N 小时未更新」闪一下）',
+    /if \(!cloudProbed\) return \{ stale: false, minutes: 0, pending: true \}/.test(dSrc))
+  check('数据层：staleInfo 带 pending 字段供页面区分「还没问」和「问过了但没坏」',
+    dSrc.indexOf('pending: false') !== -1 && dSrc.indexOf('function settled()') !== -1)
+  // ⚠️ 三个出口都必须置 cloudProbed（no-cloud / throttled / 正常完成），漏一个就会
+  //    「云端真挂了也不报警告」。inflight 分支故意不置 —— 它共享的那个请求会负责置位。
+  const probeExits = (dSrc.match(/cloudProbed = true/g) || []).length
+  check('数据层：refresh 的三个出口都置起云端探测标志（失败也算探测过，不能漏）',
+    probeExits === 3, `置位点 ${probeExits} 处（应为 no-cloud / throttled / finally 三处）`)
+  const idxSrc = fs.readFileSync(path.join(ROOT, 'pages/index/index.js'), 'utf8')
+  const schSrc = fs.readFileSync(path.join(ROOT, 'pages/schedule/schedule.js'), 'utf8')
+  check('页面：云端探测完成后无条件重绘（只看 updated 会让陈旧警告不肯消失）',
+    (idxSrc.match(/refresh\(\)\.then\(\(\) =>/g) || []).length >= 2
+      && /refresh\(\)\.then\(\(\) => \{/.test(schSrc),
+    `主页 ${(idxSrc.match(/refresh\(\)\.then\(\(\) =>/g) || []).length} 处 / 赛程页 ${(schSrc.match(/refresh\(\)\.then\(\(\) =>/g) || []).length} 处`)
+
   const recentTeam = recentPool[0] && recentPool[0].home
   if (recentTeam && recentTeam.id) {
     tfMod.toggle({ comp: recentPool[0].comp, id: String(recentTeam.id), zh: recentTeam.zh, display: recentTeam.zh })

@@ -119,13 +119,16 @@ Page({
     this.liveTimer = null
   },
 
-  /** 拉云端赛程缓存，若比本地新则重建列表 */
+  /**
+   * 拉云端赛程缓存。
+   * 🔴 不管有没有换上新数据都要重绘一次:首页那套「陈旧」警告的结论依赖「云端探测完了没」，
+   *    只看 updated 的话，换不上新数据时警告会不肯消失（详见 utils/data.js 的 staleInfo）。
+   *    一次 setData 换一个准确的提示，比少一次渲染值。
+   */
   cloudRefresh() {
-    data.refresh().then((r) => {
-      if (r.updated) {
-        this.reload()
-        this.syncLivePoll()
-      }
+    data.refresh().then(() => {
+      this.reload()
+      this.syncLivePoll()
     })
   },
 

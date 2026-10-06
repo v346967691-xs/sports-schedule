@@ -20,15 +20,18 @@
   </scroll-view>
 
   <!--
-    档位分段控件：积分榜 / 射手榜 / 助攻榜。
-    ⚠️ 三档的赛事覆盖面不一样（欧协联只有积分榜，上游不给射手榜），
-       拿不到内容的档位置灰且点了不响应 —— 与「空赛事入口隐藏」同一约定。
+    档位分段控件：档位**按赛事大类给不同的集合**（2026-10-06 改）
+      足球 = 积分榜 / 射手榜 / 助攻榜
+      篮球 = 积分榜 + 得分榜 / 篮板榜 / 助攻榜 / 抢断榜 / 盖帽榜
+      电竞 = 只有积分榜（KPL 多一个选手榜）
+    ⚠️ 拿不到内容的档位**直接不渲染**，不再置灰占位 —— 与「空赛事入口隐藏」同一约定。
+    ⚠️ 只剩一档时整条隐藏（一条只有一个按钮的分段控件没有意义）。
   -->
-  <view class="tier-bar" wx:if="{{tiers.length}}">
+  <view class="tier-bar" wx:if="{{tiers.length > 1}}">
     <view
       wx:for="{{tiers}}"
       wx:key="key"
-      class="tier {{item.key === tier ? 'active' : ''}} {{item.enabled ? '' : 'disabled'}}"
+      class="tier {{item.key === tier ? 'active' : ''}}"
       data-key="{{item.key}}"
       bindtap="onTierTap"
     >{{item.label}}</view>
@@ -45,8 +48,8 @@
     <swiper-item wx:for="{{slides}}" wx:key="key">
       <scroll-view class="slide-scroll" scroll-y scroll-top="{{item.scrollTop}}">
         <block wx:if="{{item.visible}}">
-          <!-- 积分榜档 -->
-          <block wx:if="{{tier === 'standings'}}">
+          <!-- 积分榜档（tierKind = standings） -->
+          <block wx:if="{{tierKind === 'standings'}}">
             <view class="meta" wx:if="{{item.totalTeams}}">
               <text class="meta-main">{{item.name}} · {{item.totalTeams}} 支球队</text>
               <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
@@ -125,8 +128,8 @@
             </view>
           </block>
 
-          <!-- 射手榜 / 助攻榜档 -->
-          <block wx:elif="{{tier === 'goals' || tier === 'assists'}}">
+          <!-- 射手榜 / 助攻榜档（足球，tierKind = scorer） -->
+          <block wx:elif="{{tierKind === 'scorer'}}">
             <view class="meta" wx:if="{{item.rankRows.length}}">
               <text class="meta-main">{{item.name}} · {{tier === 'goals' ? '射手榜' : '助攻榜'}} 前 {{item.rankRows.length}} 名</text>
               <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
@@ -178,8 +181,56 @@
             </view>
           </block>
 
+          <!-- 篮球数据榜档：得分 / 篮板 / 助攻 / 抢断 / 盖帽（tierKind = leader） -->
+          <block wx:elif="{{tierKind === 'leader'}}">
+            <view class="meta" wx:if="{{item.rankRows.length}}">
+              <text class="meta-main">{{item.name}} · {{tierLabel}} 前 {{item.rankRows.length}} 名</text>
+              <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+            </view>
+            <view class="season-note" wx:if="{{item.season}}">{{item.season}}</view>
+
+            <view class="empty" wx:if="{{!item.rankRows.length}}">
+              <view class="empty-title">该赛事暂无{{tierLabel}}</view>
+              <view class="empty-desc">赛季还没开打时上游不出数据榜，可以看看别的档位。</view>
+            </view>
+
+            <view class="table card scorer leader" wx:if="{{item.rankRows.length}}">
+              <view class="tr th">
+                <view class="th-pos">#</view>
+                <view class="th-player">球员</view>
+                <view class="th-val">场均</view>
+              </view>
+
+              <!-- 篮球榜不带球队信息，也没有对应的球员详情页 → 整行不可点 -->
+              <view
+                wx:for="{{item.rankRows}}"
+                wx:for-item="row"
+                wx:key="id"
+                class="tr"
+              >
+                <view class="td-pos">
+                  <text class="pos-num">{{row.pos}}</text>
+                </view>
+                <view class="td-player">
+                  <!-- 中文名优先，未收录回落英文短名 —— 中英混排是预期内的正常状态 -->
+                  <view class="player-name">
+                    <text>{{row.name}}</text>
+                    <text class="player-en" wx:if="{{row.hasZh}}">{{row.en}}</text>
+                  </view>
+                </view>
+                <view class="td-val">{{row.value}}</view>
+              </view>
+            </view>
+
+            <view class="foot-note">
+              {{tierLabel}}取上游官方统计的前 {{item.rankRows.length}} 名，数值为场均，按官方排序原样呈现、不重排。
+              赛季刚开始时可能还没生成，此时该档不会出现。
+              球员中文名来自自建词典，尚未收录的显示英文原名 —— 中英混排是正常现象。
+            </view>
+          </block>
+
           <!-- KPL 选手数据榜档：官方 9 张榜，每张 Top5 -->
-          <block wx:elif="{{tier === 'players'}}">
+          <block wx:elif="{{tierKind === 'players'}}">
             <view class="meta" wx:if="{{item.boards.length}}">
               <text class="meta-main">{{item.name}} · 选手数据榜</text>
               <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>

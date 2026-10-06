@@ -180,6 +180,16 @@ function compOf(key) {
   return c || { key, name: key, full: key, cat: 'football', accent: '#6B7280' }
 }
 
+/**
+ * 某个赛事属于哪个大类（football / basketball / esports）。
+ *
+ * ⚠️ 榜单页靠它决定「给哪几档」：足球要射手榜/助攻榜，篮球要数据榜，
+ *    电竞只给积分榜（外加 KPL 的选手榜）。别在页面里另写一份赛事白名单。
+ */
+function catOf(compKey) {
+  return compOf(compKey).cat || 'football'
+}
+
 function findMatch(id) {
   return matches().find((m) => m.id === id) || null
 }
@@ -438,6 +448,28 @@ function scorersTop(compKey, kind, n) {
       played: p.p == null ? '' : String(p.p),
       jersey: p.j || 0,
     }))
+}
+
+/* ------------------------------------------------ 篮球赛季数据榜 */
+
+/**
+ * 篮球（NBA / CBA…）的官方赛季数据榜：得分 / 篮板 / 助攻 / 抢断 / 盖帽。
+ *
+ * ⚠️ 它和足球的射手榜**共用 scorers 这一张表**，靠 `kind === 'leaders'` 区分：
+ *    足球那边是 `{ season, players[] }`（一份并集，页面现排），
+ *    篮球这边是 `{ kind, season, boards[] }`（上游已经排好序，页面照抄、绝不自己重排）。
+ * ⚠️ 篮球榜是**场均**值（33.48 分/场），不是总数；列头要写「场均」。
+ */
+function leaderBoards(compKey) {
+  const table = scorersOf(compKey)
+  if (!table || table.kind !== 'leaders' || !Array.isArray(table.boards)) return []
+  return table.boards.filter((b) => b && Array.isArray(b.rows) && b.rows.length > 0)
+}
+
+/** 篮球数据榜所属的赛季（「2025-26」），用于页面副标题 */
+function leaderSeason(compKey) {
+  const table = scorersOf(compKey)
+  return (table && table.season) || ''
 }
 
 /**
@@ -806,6 +838,7 @@ module.exports = {
   competitions,
   compMap,
   compOf,
+  catOf,
   findMatch,
   query,
   matchHasTeam,
@@ -831,6 +864,9 @@ module.exports = {
   scorersGeneratedAt,
   scorersTop,
   scorerRow,
+  // 篮球赛季数据榜
+  leaderBoards,
+  leaderSeason,
   // KPL 选手数据榜
   kplRankBoards,
   kplRankSeason,

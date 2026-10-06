@@ -23,8 +23,8 @@
       <view class="stat {{hasStandings ? '' : 'disabled'}}" bindtap="goRank">
         <view class="stat-num">{{standing ? standing.pos : '—'}}</view>
         <view class="stat-label">联赛排名</view>
-        <view class="stat-go" wx:if="{{hasStandings}}">看积分榜 ›</view>
-        <view class="stat-go muted" wx:else>该赛事无积分榜</view>
+        <view class="stat-go" wx:if="{{hasStandings}}">看排行榜 ›</view>
+        <view class="stat-go muted" wx:else>该赛事暂无榜</view>
       </view>
       <view class="stat" bindtap="goSchedule">
         <view class="stat-num">{{matches.length}}</view>

@@ -240,7 +240,7 @@
       <button class="btn primary share-btn" open-type="share">分享赛果</button>
     </view>
     <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>
-    <view class="btn ghost" wx:if="{{hasStandings}}" bindtap="onStandingsTap">查看{{comp.name}}积分榜</view>
+    <view class="btn ghost" wx:if="{{hasStandings}}" bindtap="onStandingsTap">查看{{comp.name}}排行榜</view>
   </view>
 
   <view class="foot-note">

@@ -152,6 +152,115 @@ function buildTable(json) {
   }
 }
 
+/* ------------------------------------------------ 篮球赛季数据榜（NBA） ------------------------------------------------
+ *
+ * 端点：`site.web.api.espn.com/apis/common/v3/sports/basketball/nba/statistics/byathlete`
+ *   · `season=YYYY&seasontype=2` = 常规赛。**当年份没开打时返回 0 人**（2026-10 实测
+ *     season=2027 还是季前赛，0 人）→ 回落到上一个赛季，并把赛季标签一起存下来，
+ *     ⚠️ 别让「上赛季数据」冒充本赛季（页面上会写清楚赛季）。
+ *   · **排序交给上游**，`sort=` 传不同的统计项：
+ *       offensive.avgPoints / general.avgRebounds / offensive.avgAssists
+ *       defensive.avgSteals / defensive.avgBlocks
+ *     🔴 绝不自己按数值重排 —— 「只拉官方榜」是红线。
+ *   · 一个榜一次请求（5 个榜 = 5 次），所以**必须带 6 小时闸门**，
+ *     否则跟着 15 分钟一班跑，一天就打 480 次上游（赛季场均变化很慢，6 小时够了）。
+ *
+ * ❌ 探测结论（2026-10-06，别再试）：
+ *   · `/leaders`、`core ... /leaders`、`core ... /byathlete` 对篮球**全是 404**；
+ *   · `sort=general.avgAssists` / `general.assists` 是 400 —— 助攻在 **offensive** 分类里；
+ *   · KPL 官方没有战队排名（`getTeamRank` / `getRankList` / `getDataRank` 全 404）。
+ */
+const WEB_ESPN = 'https://site.web.api.espn.com/apis/common/v3/sports'
+const LEADERS_TTL_MS = 6 * 3600 * 1000
+const BASKET_SEASON_TYPE = 2
+
+const LEADER_BOARDS = [
+  { key: 'points', name: '得分榜', sort: 'offensive.avgPoints', cat: 'offensive', stat: 'avgPoints' },
+  { key: 'rebounds', name: '篮板榜', sort: 'general.avgRebounds', cat: 'general', stat: 'avgRebounds' },
+  { key: 'assists', name: '助攻榜', sort: 'offensive.avgAssists', cat: 'offensive', stat: 'avgAssists' },
+  { key: 'steals', name: '抢断榜', sort: 'defensive.avgSteals', cat: 'defensive', stat: 'avgSteals' },
+  { key: 'blocks', name: '盖帽榜', sort: 'defensive.avgBlocks', cat: 'defensive', stat: 'avgBlocks' },
+]
+
+/**
+ * 从 athlete.categories[] 里按「分类 + 统计项名」取值。
+ *
+ * 🔴 字段名**只在响应顶层的 `categories[]` 里**（`{name:'offensive', names:['avgPoints',…]}`），
+ *    每个运动员那一层只有 `values` 数组、没有字段名（2026-10-06 踩到：按运动员的
+ *    `names` 去取恒为空，五个榜全空）。所以先把「分类 → 字段名下标」这张表算出来，
+ *    再按位置取值。
+ */
+function statIndexMap(json) {
+  const map = {}
+  ;(json.categories || []).forEach((c) => {
+    map[c.name] = c.names || []
+  })
+  return map
+}
+
+function statValue(a, names, cat, stat) {
+  const c = (a.categories || []).find((x) => x.name === cat)
+  const idx = (names[cat] || []).indexOf(stat)
+  if (!c || idx < 0) return null
+  const v = Number((c.values || [])[idx])
+  return Number.isFinite(v) ? v : null
+}
+
+async function fetchLeaderBoard(league, year, board, limit) {
+  const url = `${WEB_ESPN}/basketball/${league}/statistics/byathlete`
+    + `?region=us&lang=en&contentorigin=espn&season=${year}&seasontype=${BASKET_SEASON_TYPE}`
+    + `&limit=${limit}&sort=${encodeURIComponent(board.sort)}`
+  const json = await getJSON(url)
+  if (!json) return null
+  const names = statIndexMap(json)
+  const rows = []
+  ;(json.athletes || []).forEach((a, i) => {
+    const ath = a.athlete || {}
+    const id = String(ath.id || '')
+    if (!id) return
+    const v = statValue(a, names, board.cat, board.stat)
+    if (v == null) return
+    rows.push({
+      pos: i + 1,
+      i: id,
+      n: ath.displayName || ath.shortName || '',
+      s: ath.shortName || '',
+      z: zhNames.playerZh(id) || '',
+      v,
+    })
+  })
+  if (!rows.length) return null
+  return {
+    key: board.key,
+    name: board.name,
+    season: (json.requestedSeason && (json.requestedSeason.displayName || json.requestedSeason.year)) || String(year),
+    rows,
+  }
+}
+
+/**
+ * 抓一个篮球赛事的赛季数据榜。
+ * ⚠️ 当年份的常规赛还没开始（0 人）就回落上一个赛季，并把真实赛季标签带出去。
+ */
+async function fetchBasketLeaders(league, thisYear, limit) {
+  for (const year of [thisYear, thisYear - 1, thisYear - 2]) {
+    const boards = []
+    for (const b of LEADER_BOARDS) {
+      // eslint-disable-next-line no-await-in-loop
+      const t = await fetchLeaderBoard(league, year, b, limit)
+      if (t) boards.push(t)
+    }
+    if (boards.length) {
+      return {
+        kind: 'leaders',
+        season: boards[0].season,
+        boards,
+      }
+    }
+  }
+  return null
+}
+
 /* ------------------------------------------------------------------ 主流程 */
 
 async function main() {
@@ -159,6 +268,15 @@ async function main() {
   const tables = {}
   const failed = []
   let totalPlayers = 0
+
+  // 上一次的产物，用来给篮球数据榜做 6 小时闸门（读旧文件比重新打上游便宜太多）
+  let prev = null
+  try {
+    // eslint-disable-next-line global-require
+    prev = require(OUT_FILE)
+  } catch (err) {
+    prev = null
+  }
 
   for (const t of TARGETS) {
     const url = `${ESPN}/soccer/${t.espn}/statistics`
@@ -171,6 +289,22 @@ async function main() {
     tables[t.key] = table
     totalPlayers += table.players.length
     available.push(`${t.name} ${table.players.length}人`)
+  }
+
+  // 篮球赛季数据榜（目前只有 NBA；CBA 不是 ESPN 数据源，上游没有这类榜）
+  const prevNba = prev && prev.tables ? prev.tables.nba : null
+  const prevAge = prev && prev.generatedAt ? Date.now() - Date.parse(prev.generatedAt) : Infinity
+  if (prevNba && prevNba.boards && prevNba.boards.length && Number.isFinite(prevAge) && prevAge < LEADERS_TTL_MS) {
+    tables.nba = prevNba
+    available.push(`NBA 数据榜 ${prevNba.boards.length} 榜（距上次 ${Math.round(prevAge / 60000)} 分钟，未重抓）`)
+  } else {
+    const nba = await fetchBasketLeaders('nba', new Date().getUTCFullYear() + 1, 20)
+    if (nba && nba.boards.length) {
+      tables.nba = nba
+      available.push(`NBA 数据榜 ${nba.boards.length} 榜 / ${nba.season}`)
+    } else {
+      failed.push('NBA 数据榜')
+    }
   }
 
   const payload = {
@@ -193,7 +327,8 @@ async function main() {
   const missing = []
   const seenId = {}
   Object.keys(tables).forEach((k) => {
-    tables[k].players.forEach((p) => {
+    // ⚠️ 篮球那张是 kind='leaders'（boards 数组），没有 players 字段
+    (tables[k].players || []).forEach((p) => {
       if (p.z || seenId[p.i]) return
       seenId[p.i] = true
       missing.push({ id: p.i, s: p.s, tz: p.tz, g: p.g })

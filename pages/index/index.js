@@ -179,12 +179,15 @@ Page({
         hasNext: !!next,
         hasLast: !!last,
         count: upcoming.filter((m) => m.comp === c.key).length,
-        // 有积分榜的赛事才显示「积分榜」入口；杯赛和国字号本来就没有排名。
-        // ⚠️ 但 KPL 官方只有**选手数据榜**（见 utils/data.js 的 refreshKplRank），
-        //    所以判定不能只盯着 standings —— 否则 KPL 这张卡永远摸不到榜单页。
+        // 有积分榜的赛事才显示「排行榜」入口；杯赛和国字号本来就没有排名。
+        // ⚠️ 但 KPL 官方只有**选手数据榜**（见 utils/data.js 的 refreshKplRank）、
+        //    篮球还有得分/篮板这类**数据榜** —— 判定不能只盯着 standings，
+        //    否则这些赛事的卡片永远摸不到排行页。
         hasStandings: !!data.standingsOf(c.key),
-        hasRank: !!data.standingsOf(c.key) || data.kplRankBoards(c.key).length > 0,
-        rankLabel: data.standingsOf(c.key) ? '积分榜' : '选手榜',
+        hasRank: !!data.standingsOf(c.key)
+          || data.kplRankBoards(c.key).length > 0
+          || data.leaderBoards(c.key).length > 0,
+        rankLabel: data.standingsOf(c.key) ? '排行榜' : '选手榜',
         leader: leaderText(c.key),
       }
     })

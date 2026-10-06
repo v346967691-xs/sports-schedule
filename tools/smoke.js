@@ -1347,7 +1347,11 @@ async function run() {
   /* ---------- 射手榜 / 助攻榜（2026-10-03 新增） ---------- */
   const scFile = path.join(ROOT, 'data/scorers.js')
   check('射手榜：数据文件存在', fs.existsSync(scFile))
-  const scData = allData.scorersTables()
+  const scAll = allData.scorersTables()
+  // ⚠️ scorers 这一张表里现在混了两种东西：足球球员榜（{season, players[]}）与
+  //    篮球赛季数据榜（{kind:'leaders', season, boards[]}）。本段只验前者，后者单独一段验。
+  const scData = {}
+  Object.keys(scAll).forEach((k) => { if (scAll[k].kind !== 'leaders') scData[k] = scAll[k] })
   const scKeys = allData.scorersKeys()
   check('射手榜：至少 10 个赛事有球员榜', Object.keys(scData).length >= 10, `${Object.keys(scData).length} 个`)
   const scWant = ['ucl', 'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'uel', 'csl', 'acl']
@@ -1392,6 +1396,30 @@ async function run() {
   check('射手榜：中文名必须含汉字（防止用英文回填）',
     badZh.length === 0,
     badZh.length ? badZh.slice(0, 3).map((p) => p.z).join(' / ') : `已汉化 ${scFlat.filter((p) => p.z).length}/${scFlat.length} 人`)
+
+  /* ---------- 篮球赛季数据榜（2026-10-06 新增，与足球球员榜共用 scorers 表） ----------
+   * 红线：**只拉官方榜、绝不自己重排** —— 上游按该项场均降序返回，页面照抄名次。
+   */
+  const ldKeys = Object.keys(scAll).filter((k) => scAll[k].kind === 'leaders')
+  check('篮球数据榜：至少 NBA 一张', ldKeys.indexOf('nba') > -1, ldKeys.join(',') || '无')
+  check('篮球数据榜：只有篮球赛事才有（足球/电竞不能混进来）',
+    ldKeys.every((k) => allData.catOf(k) === 'basketball'), ldKeys.join(','))
+  const ldFlat = []
+  ldKeys.forEach((k) => (scAll[k].boards || []).forEach((b) => (b.rows || []).forEach((r) => ldFlat.push(Object.assign({ comp: k, board: b.key }, r)))))
+  check('篮球数据榜：都有数字 athlete id 与中文/英文短名',
+    ldFlat.length > 0 && ldFlat.every((r) => /^\d+$/.test(String(r.i || '')) && (r.z || r.s || r.n)),
+    `${ldFlat.length} 条`)
+  check('篮球数据榜：中文名必须含汉字（防止用英文回填）',
+    ldFlat.filter((r) => r.z && !/[\u3400-\u9fff]/.test(r.z)).length === 0)
+  check('篮球数据榜：名次与场均值都由上游给（不自己算、不重排）',
+    ldKeys.every((k) => (scAll[k].boards || []).every((b) => b.rows.every((r, i) =>
+      r.pos === i + 1 && Number.isFinite(Number(r.v)) && (i === 0 || Number(b.rows[i - 1].v) >= Number(r.v))))))
+  check('篮球数据榜：每张榜都有中文榜名与赛季',
+    ldKeys.every((k) => (scAll[k].boards || []).every((b) => /[\u3400-\u9fff]/.test(b.name || '') && !!b.season)))
+  // 抓取脚本里不能出现「自己排序」的代码：排序必须交给上游 ESPN
+  const scorerToolSrc = fsMod.readFileSync(path.join(ROOT, 'tools/scorers.js'), 'utf8')
+  check('篮球数据榜：抓取脚本把排序交给上游（sort 参数直接透传，不自己 sort）',
+    /sort=/.test(scorerToolSrc) && !/\.boards\.sort\(/.test(scorerToolSrc))
 
   const znMod = require(path.join(ROOT, 'tools/zh-names'))
   const manualIds = Object.keys(znMod.PLAYER_ZH || {})
@@ -2052,20 +2080,53 @@ async function run() {
   rankOpts.onRowTap.call(ctxRank, { currentTarget: { dataset: { id: 'TBD' } } })
   check('积分榜页：待定队名不可点', !/\/pages\/team\/team\?comp=csl&id=TBD/.test(collected.navigateTo || ''))
 
-  /* ---------- 积分榜页：射手榜 / 助攻榜档（2026-10-03 新增） ---------- */
+  /* ---------- 排行页：档位按赛事大类给（2026-10-06 改：不再置灰） ----------
+   * 足球 = 积分榜/射手榜/助攻榜；篮球 = 积分榜 + 数据榜；电竞 = 只有积分榜（KPL 加选手榜）。
+   * 没数据的档位**压根不渲染**，所以这里验的是「给得准」，不再验「置灰」。
+   */
   rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'epl' } } })
-  // ⚠️ 现在是**四档**：第四档「选手榜」是电竞专用（KPL 官方只有这一张榜，
-  //    没有积分榜/射手榜），离线（没读到云端 kpl_rank）时必须置灰不可点。
-  check('积分榜页：四档齐整（积分榜 / 射手榜 / 助攻榜 / 选手榜）',
-    ctxRank.data.tiers.length === 4
-      && ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜/射手榜/助攻榜/选手榜',
+  check('排行页：足球给三档（积分榜 / 射手榜 / 助攻榜）',
+    ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜/射手榜/助攻榜',
     ctxRank.data.tiers.map((t) => t.label).join('/'))
-  check('积分榜页：没读到云端选手榜时「选手榜」档置灰（空档不给人点）',
-    ctxRank.data.tiers[3].key === 'players' && ctxRank.data.tiers[3].enabled === false)
-  check('积分榜页：默认停在积分榜档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
-  // 切到还不可用的档位必须原地不动（与「空赛事入口隐藏」同一约定）
+  check('排行页：足球档位不带选手榜（那是 KPL 专属）',
+    !ctxRank.data.tiers.some((t) => t.key === 'players'))
+  check('排行页：档位不再有置灰态（没数据的档位压根不渲染）',
+    ctxRank.data.tiers.every((t) => t.enabled === undefined))
+  check('排行页：默认停在积分榜档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+  check('排行页：默认档的渲染模板是 standings', ctxRank.data.tierKind === 'standings', ctxRank.data.tierKind)
+  // 越界调用（该赛事根本没有这一档）必须原地不动
   rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'players' } } })
-  check('积分榜页：点了置灰的选手榜不切档', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+  check('排行页：切到该赛事没有的档位不生效', ctxRank.data.tier === 'standings', ctxRank.data.tier)
+
+  // 电竞（LoL 赛区）只有积分榜 → 只有一档，分段控件整条隐藏（WXML 里 tiers.length > 1）
+  const ctxLpl = makeCtx(rankOpts)
+  rankOpts.onLoad.call(ctxLpl, { comp: 'lpl' })
+  check('排行页：电竞只给积分榜一档（LoL 不显示射手/助攻）',
+    ctxLpl.data.tiers.map((t) => t.label).join('/') === '积分榜',
+    ctxLpl.data.tiers.map((t) => t.label).join('/'))
+  check('排行页：只有一档时不画分段控件（tiers.length > 1 才显示）',
+    /tiers\.length\s*>\s*1/.test(fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')))
+
+  // 篮球：积分榜 + 上游给了几张数据榜就给几张（得分 / 篮板 / 助攻 / 抢断 / 盖帽）
+  const ctxNba = makeCtx(rankOpts)
+  rankOpts.onLoad.call(ctxNba, { comp: 'nba' })
+  const nbaBoards = allData.leaderBoards('nba')
+  check('排行页：篮球给积分榜 + 数据榜（上游给几张就有几档）',
+    nbaBoards.length >= 3 && ctxNba.data.tiers.length === 1 + nbaBoards.length,
+    ctxNba.data.tiers.map((t) => t.label).join('/'))
+  check('排行页：篮球档位名取自上游中文榜名（得分榜 / 篮板榜 …）',
+    nbaBoards.every((b) => ctxNba.data.tiers.some((t) => t.key === b.key && t.label === b.name)))
+  rankOpts.onTierTap.call(ctxNba, { currentTarget: { dataset: { key: 'points' } } })
+  check('排行页：切到得分榜档渲染出行（数值是场均，一位小数）',
+    ctxNba.data.tier === 'points' && ctxNba.data.tierKind === 'leader'
+      && ctxNba.data.rankRows.length > 0
+      && ctxNba.data.rankRows.every((r) => /^\d+\.\d$/.test(String(r.value))),
+    `${ctxNba.data.tierLabel} / ${ctxNba.data.rankRows.length} 行 / 榜首 ${(ctxNba.data.rankRows[0] || {}).name} ${(ctxNba.data.rankRows[0] || {}).value}`)
+  check('排行页：篮球数据榜名次照抄官方 pos、排序也照抄（不自己重排）',
+    ctxNba.data.rankRows.every((r, i) => r.pos === i + 1
+      && (i === 0 || Number(ctxNba.data.rankRows[i - 1].value) >= Number(r.value))))
+  check('排行页：篮球数据榜每屏自带当前档位的行（横滑不串榜）',
+    ctxNba.data.slides.every((s) => Array.isArray(s.rankRows)))
 
   /* ---------- KPL 选手榜档（拿到云端数据后） ----------
    * `kpl_rank` 只在云端，冒烟里读不到 → 用 data/kpl-rank.js（工具产物）注入，
@@ -2137,16 +2198,15 @@ async function run() {
     !!scorerRow.teamId && new RegExp(`/pages/team/team\\?comp=epl&id=${scorerRow.teamId}`).test(collected.navigateTo || ''),
     collected.navigateTo)
 
-  // 欧协联上游不给球员榜 → 该档位置灰、点了不响应、档位自动回落
+  // 欧协联上游不给球员榜 → 只剩积分榜一档，点了越界档位不响应、档位自动回落
   rankOpts.onCompTap.call(ctxRank, { currentTarget: { dataset: { key: 'uecl' } } })
-  check('积分榜页：切到无球员榜的赛事时档位自动回落积分榜',
+  check('排行页：切到无球员榜的赛事时档位自动回落积分榜',
     ctxRank.data.tier === 'standings', ctxRank.data.tier)
-  check('积分榜页：无球员榜赛事的射手榜档位置灰',
-    (ctxRank.data.tiers.find((t) => t.key === 'goals') || {}).enabled === false
-    && (ctxRank.data.tiers.find((t) => t.key === 'standings') || {}).enabled === true,
-    ctxRank.data.tiers.map((t) => `${t.label}${t.enabled ? '' : '(灰)'}`).join('/'))
+  check('排行页：无球员榜的赛事只剩积分榜一档（射手榜不再占位）',
+    ctxRank.data.tiers.map((t) => t.label).join('/') === '积分榜',
+    ctxRank.data.tiers.map((t) => t.label).join('/'))
   rankOpts.onTierTap.call(ctxRank, { currentTarget: { dataset: { key: 'goals' } } })
-  check('积分榜页：点置灰的档位不生效',
+  check('排行页：切到该赛事没有的档位不生效',
     ctxRank.data.tier === 'standings' && ctxRank.data.rankRows.length === 0)
 
   // 分享链接带上档位，别人点开直接落在同一档
@@ -2238,11 +2298,24 @@ async function run() {
 
   // tabBar 新增了第 4 项「积分榜」
   const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8').replace(/^\s*\/\/.*$/gm, ''))
-  check('tabBar 有 4 项且含积分榜',
-    appJson.tabBar.list.length === 4 && appJson.tabBar.list.some((t) => t.text === '积分榜'),
+  // 🔴 2026-10-06 用户定：这一页装的不只是积分榜（还有射手榜/篮球数据榜/KPL 选手榜），
+  //    底部菜单再叫「积分榜」名不副实 → 改叫「排行」。页面标题要跟着改，别留「积分榜」。
+  check('tabBar 有 4 项且第 3 项叫「排行」',
+    appJson.tabBar.list.length === 4 && appJson.tabBar.list[2].text === '排行',
     appJson.tabBar.list.map((t) => t.text).join('/'))
-  check('积分榜页已注册且指向 pages/rank/rank',
+  check('排行页已注册且指向 pages/rank/rank',
     appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
+  const rankJson = JSON.parse(fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.json'), 'utf8'))
+  check('排行页标题跟着改成「排行」（不再写死积分榜）',
+    rankJson.navigationBarTitleText === '排行', rankJson.navigationBarTitleText)
+  // 各入口的跳转文案也不能再写「积分榜」（点进去落在「排行」页会对不上）
+  const rankEntryTexts = [
+    fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.wxml'), 'utf8'),
+    fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8'),
+    fsMod.readFileSync(path.join(ROOT, 'pages/search/search.wxml'), 'utf8'),
+    fsMod.readFileSync(path.join(ROOT, 'pages/team/team.wxml'), 'utf8'),
+  ].join('\n')
+  check('各入口文案跟着改名（不再出现「积分榜」）', !/积分榜/.test(rankEntryTexts))
   const rWxml = fs.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')
 
   /* ---------- tabBar 跳转守卫 ----------

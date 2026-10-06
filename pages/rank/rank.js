@@ -1,16 +1,20 @@
 /**
- * 积分榜 / 射手榜 / 助攻榜 页
+ * 排行页（tabBar 第 3 项，2026-10-06 由「积分榜」改名）
  *
  * 数据来自 data/standings.js + data/scorers.js（本地兜底），
  * 云端 standings_cache / scorers_cache 打开即读覆盖。
  *
- * ⚠️ 各档的**赛事覆盖面不一样**：有积分榜的赛事不一定有射手榜
- *    （欧协联就没有，上游不提供这两个榜），所以每一档各自判断可用性，
- *    不能「有积分榜就假设有射手榜」。不可用的档位置灰、点了不响应。
+ * ⚠️ **档位按赛事大类给不同的集合**（2026-10-06 用户定：置灰体验不好，改成按类别给）：
+ *    足球 = 积分榜 / 射手榜 / 助攻榜
+ *    篮球 = 积分榜 + 得分榜 / 篮板榜 / 助攻榜 / 抢断榜 / 盖帽榜（有几张给几张）
+ *    电竞 = 只有积分榜（LoL 各赛区），KPL 额外给「选手榜」
+ *    拿不到数据的档位**直接不渲染**，不再置灰 —— 与「空赛事入口隐藏」同一约定。
  *
- * ⚠️ 第四档「选手榜」是**电竞赛事专用**（目前只有 KPL）：这部分数据只在云端
- *    （`kpl_rank` 表，见 utils/data.js 的 refreshKplRank），本地包里没有兜底。
- *    KPL 官方不给积分榜/射手榜，所以它是 KPL 在这个页面的唯一入口 ——
+ * ⚠️ 每一档各自判断可用性，不能「有积分榜就假设有射手榜」（欧协联就没有球员榜）。
+ *
+ * ⚠️ 「选手榜」是 **KPL 专用**：这份数据只在云端（`kpl_rank` 表，
+ *    见 utils/data.js 的 refreshKplRank），本地包里没有兜底。
+ *    KPL 官方不给积分榜，所以它是 KPL 在这个页面的唯一入口 ——
  *    同理，赛事列表也不能只由 standingsKeys() 决定，要把有选手榜的赛事并进来。
  *
  * ⚠️ 这是页面层：新增 / 改动都要发版。
@@ -23,13 +27,26 @@ const { appInstance } = require('../../utils/app-instance')
 /** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
 const SCORER_ROWS = 20
 
-/** 四档的定义。key 同时是页面态与数据取数的开关 */
-const TIERS = [
-  { key: 'standings', label: '积分榜' },
-  { key: 'goals', label: '射手榜' },
-  { key: 'assists', label: '助攻榜' },
-  { key: 'players', label: '选手榜' },
-]
+/**
+ * 档位模板：按**大类**给不同的集合，再逐档按数据可用性过滤。
+ *
+ * ⚠️ `kind` 决定 WXML 走哪一套模板：
+ *    standings 积分榜表 / scorer 足球球员榜 / leader 篮球数据榜 / players KPL 选手榜。
+ * ⚠️ 篮球那几张数据榜**不写死在这里** —— 上游给几张就追加几张（见 tierDefs）。
+ */
+const TIER_PLAN = {
+  football: [
+    { key: 'standings', label: '积分榜', kind: 'standings' },
+    { key: 'goals', label: '射手榜', kind: 'scorer' },
+    { key: 'assists', label: '助攻榜', kind: 'scorer' },
+  ],
+  basketball: [
+    { key: 'standings', label: '积分榜', kind: 'standings' },
+  ],
+  esports: [
+    { key: 'standings', label: '积分榜', kind: 'standings' },
+  ],
+}
 
 /**
  * 把一行积分榜数据压成 WXML 能直接渲染的形状。
@@ -96,6 +113,31 @@ function buildBoards(compKey) {
   }))
 }
 
+/**
+ * 构造篮球数据榜（得分 / 篮板 / 助攻 / 抢断 / 盖帽）的行。
+ *
+ * ⚠️ 名次**照抄官方 pos**：排序是上游按该项场均排好的，自己重排就是造假。
+ * ⚠️ 数值是**场均**（33.48 分/场），统一保留一位小数 —— 这只是格式化，不改变排序。
+ */
+function buildLeaderRows(compKey, tier) {
+  const board = data.leaderBoards(compKey).find((b) => b.key === tier)
+  if (!board) return []
+  return (board.rows || []).map((r, i) => ({
+    pos: r.pos || i + 1,
+    id: r.i,
+    name: r.z || r.s || r.n || '',
+    en: r.s || '',
+    hasZh: !!r.z,
+    value: fmtAvg(r.v),
+  }))
+}
+
+/** 场均数值：一位小数。非数字一律回空串，别把 NaN 画到界面上 */
+function fmtAvg(v) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toFixed(1) : ''
+}
+
 /** 千分位，纯为了好看；NaN / null 一律回空串，别把 undefined 画到界面上 */
 function fmtNum(n) {
   const v = Number(n)
@@ -132,9 +174,13 @@ Page({
     slides: [],
     /** 各赛事内容区自己的竖向滚动位置，点标签时把目标重置回顶部 */
     slideTop: {},
-    /** 当前档位：standings | goals | assists */
+    /** 当前档位 key：standings / goals / assists / players / 篮球榜 id */
     tier: 'standings',
-    /** 三档的可用性（随 activeComp 变），供分段控件置灰 */
+    /** 当前档位的渲染方式：standings | scorer | leader | players */
+    tierKind: 'standings',
+    /** 当前档位的中文名（分享标题 / 列头用） */
+    tierLabel: '积分榜',
+    /** 该赛事**真正有内容**的档位（随 activeComp 变）；没有的档位不出现 */
     tiers: [],
     /** 当前档位的榜单行（射手榜 / 助攻榜），积分榜档为空数组 */
     rankRows: [],
@@ -182,7 +228,8 @@ Page({
     const pending = app.globalData.pendingComp
     if (pending) {
       app.globalData.pendingComp = ''
-      if (data.standingsOf(pending) && pending !== this.data.activeComp) {
+      // ⚠️ 不能只认有积分榜的赛事：KPL 只有选手榜，但它同样在榜单列表里
+      if (this.compKeys().indexOf(pending) > -1 && pending !== this.data.activeComp) {
         this.setData({ activeComp: pending, slideTop: this.topAt(pending) })
       }
     }
@@ -191,25 +238,62 @@ Page({
   },
 
   /**
-   * 某个赛事在某一档下有没有内容。
-   * 判定只看**数据本身**：上游不给榜的赛事（欧协联）自然就没有这两档。
+   * 某个赛事**实际有哪几档**。
+   *
+   * 先按大类取模板，再逐档验数据 —— 拿不到内容的档位**根本不进这个数组**
+   * （2026-10-06 用户：置灰体验不好，改成按类别给，没有的就不出现）。
+   */
+  tierDefs(key) {
+    const cat = data.catOf(key)
+    const plan = (TIER_PLAN[cat] || TIER_PLAN.football).slice()
+    if (cat === 'basketball') {
+      // 篮球数据榜：上游给几张就追加几张（得分/篮板/助攻/抢断/盖帽）
+      data.leaderBoards(key).forEach((b) => {
+        plan.push({ key: b.key, label: b.name, kind: 'leader' })
+      })
+    } else if (key === 'kpl') {
+      plan.push({ key: 'players', label: '选手榜', kind: 'players' })
+    }
+    return plan.filter((t) => this.tierAvailable(key, t.key))
+  },
+
+  /**
+   * 某一档有没有内容。判定只看**数据本身**：
+   * 上游不给榜的赛事（欧协联没有球员榜、KPL 没有积分榜）自然就没有那一档。
    */
   tierAvailable(key, tier) {
     if (tier === 'standings') return !!data.standingsOf(key)
-    if (tier === 'goals') return data.scorersTop(key, 'goals', 1).length > 0
-    if (tier === 'assists') return data.scorersTop(key, 'assists', 1).length > 0
+    const cat = data.catOf(key)
+    // ⚠️ goals / assists 只在**足球**语境下是「射手榜 / 助攻榜」；
+    //    篮球的「助攻榜」是数据榜里的一张（key 同样是 assists），
+    //    不先看大类就会被足球那条分支吃掉，篮球白白少一档。
+    if (cat === 'football') {
+      if (tier === 'goals') return data.scorersTop(key, 'goals', 1).length > 0
+      if (tier === 'assists') return data.scorersTop(key, 'assists', 1).length > 0
+    }
     if (tier === 'players') return data.kplRankBoards(key).length > 0
-    return false
+    // 剩下的都是篮球数据榜（key 就是上游给的榜 id）
+    return data.leaderBoards(key).some((b) => b.key === tier)
   },
 
-  /** 换赛事时把档位收敛到该赛事真正有的那几档；都没有就回到积分榜 */
+  /** 换赛事时把档位收敛到该赛事真正有的那几档；一档都没有就回到积分榜 */
   resolveTier(key, want) {
-    const order = ['standings', 'goals', 'assists', 'players']
-    if (want && order.indexOf(want) > -1 && this.tierAvailable(key, want)) return want
-    for (const t of order) {
-      if (this.tierAvailable(key, t)) return t
-    }
-    return 'standings'
+    const defs = this.tierDefs(key)
+    if (!defs.length) return 'standings'
+    if (want && defs.some((d) => d.key === want)) return want
+    return defs[0].key
+  },
+
+  /** 当前档位的渲染方式（WXML 据此选模板） */
+  tierKindOf(key, tier) {
+    const hit = this.tierDefs(key).find((d) => d.key === tier)
+    return hit ? hit.kind : 'standings'
+  },
+
+  /** 当前档位的中文名（分享标题用；档位已不存在时回落「排行榜」） */
+  tierLabelOf(key, tier) {
+    const hit = this.tierDefs(key).find((d) => d.key === tier)
+    return hit ? hit.label : '排行榜'
   },
 
   /**
@@ -218,24 +302,24 @@ Page({
    *    但它有选手榜；只用积分榜的名单会把 KPL 整个挡在门外。
    */
   compKeys() {
-    const base = data.standingsKeys()
-    const extra = data.kplRankBoards('kpl').length ? ['kpl'] : []
-    const known = {}
-    base.concat(extra).forEach((k) => { known[k] = true })
+    const has = data.standingsTables()
     const order = []
     data.categories().forEach((cat) => {
-      ;(cat.competitions || []).forEach((key) => { if (known[key]) order.push(key) })
+      ;(cat.competitions || []).forEach((key) => {
+        // 三种榜任意一种有内容，这个赛事才值得进来
+        if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length) order.push(key)
+      })
     })
     return order
   },
 
-  /** 顶部分段控件的三档状态（不可用的置灰，不可点） */
+  /**
+   * 顶部分段控件。
+   * ⚠️ 只放**真的有内容**的档位 —— 没有的档位不再置灰占位（2026-10-06 用户反馈：
+   *    三个档位里两个是灰的，看着像坏了）。只剩一档时整条隐藏（见 rank.wxml）。
+   */
   tierState(key) {
-    return TIERS.map((t) => ({
-      key: t.key,
-      label: t.label,
-      enabled: this.tierAvailable(key, t.key),
-    }))
+    return this.tierDefs(key)
   },
 
   /** 把某个赛事的内容区滚动位置归零（点标签进来时，从第 1 名开始看） */
@@ -264,7 +348,12 @@ Page({
     const assists = data.scorersTop(key, 'assists', SCORER_ROWS)
     // 每一屏自带当前档位的行数据 —— 这样 WXML 里不必按档位写两套 wx:for，
     // 横滑切屏的那一帧也不会拿错榜（页面级的镜像会晚一拍才同步）
-    const rankRows = tier === 'goals' ? goals : tier === 'assists' ? assists : []
+    // ⚠️ 按 **kind** 取行，别按 key：篮球「助攻榜」的 key 也是 assists，
+    //    但它属于 leader 而不是 scorer（两个榜结构不同、数据源也不同）。
+    const slideKind = (this.tierDefs(key).find((d) => d.key === tier) || {}).kind || 'standings'
+    const rankRows = slideKind === 'scorer' ? (tier === 'goals' ? goals : assists)
+      : slideKind === 'leader' ? buildLeaderRows(key, tier)
+        : []
 
     const blank = {
       key, name, index, visible, empty: true,
@@ -304,7 +393,9 @@ Page({
       columns: table.columns || [],
       groups,
       legend,
-      season: table.season || '',
+      // ⚠️ 篮球数据榜有自己的赛季（2025-26），与积分榜那份不是一回事 ——
+      //    NBA 积分榜的 season 经常是空的，直接沿用会把「2025-26」吞掉
+      season: slideKind === 'leader' ? (data.leaderSeason(key) || table.season || '') : (table.season || ''),
       totalTeams: groups.reduce((n, g) => n + g.rows.length, 0),
       scrollTop: this.data.slideTop[key] || 0,
       // 射手榜 / 助攻榜：两个榜都在这里备好，切档只是换渲染，不重新算数据
@@ -335,6 +426,9 @@ Page({
       swiperIndex: idx,
       emptyReason: '',
       tier,
+      // WXML 按 kind 选模板（standings / scorer / leader / players）
+      tierKind: this.tierKindOf(this.data.activeComp, tier),
+      tierLabel: this.tierLabelOf(this.data.activeComp, tier),
       tiers: this.tierState(this.data.activeComp),
       rankRows: cur.rankRows || [],
       boards: cur.boards || [],
@@ -351,8 +445,9 @@ Page({
   },
 
   /**
-   * 点「积分榜 / 射手榜 / 助攻榜」分段控件 → 切档。
-   * 不可用的档位置灰且点了不响应（与「空赛事入口隐藏」同一约定：拿不到就别给入口）。
+   * 点分段控件 → 切档。
+   * ⚠️ 置灰的档位已经不存在了（没数据的档位压根不渲染），
+   *    这里只挡「该赛事其实没有这一档」的越界调用。
    */
   onTierTap(e) {
     const key = e.currentTarget.dataset.key
@@ -408,7 +503,7 @@ Page({
 
   onShareAppMessage() {
     const name = this.data.compName
-    const tierLabel = (TIERS.find((t) => t.key === this.data.tier) || {}).label || '积分榜'
+    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier)
     return share.message({
       title: name ? `${name}${tierLabel} · 闪现赛程助手` : `闪现赛程助手 · 各赛事${tierLabel}`,
       path: this.data.activeComp
@@ -419,7 +514,7 @@ Page({
 
   onShareTimeline() {
     const name = this.data.compName
-    const tierLabel = (TIERS.find((t) => t.key === this.data.tier) || {}).label || '积分榜'
+    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier)
     return share.timeline({
       title: name ? `${name}${tierLabel}实时更新` : `各赛事${tierLabel}实时更新`,
       query: this.data.activeComp

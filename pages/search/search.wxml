@@ -58,7 +58,7 @@
         <view class="s-comp-name">{{item.name}}</view>
         <view class="s-comp-sub" wx:if="{{item.full}}">{{item.full}}</view>
       </view>
-      <view class="s-comp-go" wx:if="{{item.hasStandings}}" data-key="{{item.key}}" catchtap="onCompRankTap">积分榜 ›</view>
+      <view class="s-comp-go" wx:if="{{item.hasStandings}}" data-key="{{item.key}}" catchtap="onCompRankTap">排行榜 ›</view>
       <view class="s-arrow" wx:else>›</view>
     </view>
   </view>

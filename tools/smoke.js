@@ -783,6 +783,26 @@ async function run() {
   check('LoL 状态：队伍为空时不崩',
     noTeamSt.status === 'finished' && noTeamSt.homeScore === null && noTeamSt.awayScore === null, noTeamSt.status)
 
+  // 🔴 10-06 德玛西亚杯 BRO vs NAVI：上游先给 outcome、后回填 gameWins，
+  //    出现过「已结束 1:1」（BO3 明明打满三局）—— 比分不可能的「已结束」必须降级回 live。
+  const mkBoEv = (state, r0, r1, bo) => ({
+    state,
+    match: { strategy: { count: bo }, teams: [{ code: 'A', result: r0 }, { code: 'B', result: r1 }] },
+  })
+  const mid11 = lolStatus(mkBoEv('completed', { outcome: 'win', gameWins: 1 }, { outcome: 'loss', gameWins: 1 }, 3))
+  check('LoL 状态：BO3「已结束」但最大胜场 <2 → 降级进行中、保留真实局分',
+    mid11.status === 'live' && mid11.statusText === '进行中'
+      && mid11.homeScore === 1 && mid11.awayScore === 1,
+    `${mid11.status} ${mid11.homeScore}-${mid11.awayScore}`)
+  const ok21 = lolStatus(mkBoEv('completed', { outcome: 'win', gameWins: 2 }, { outcome: 'loss', gameWins: 1 }, 3))
+  check('LoL 状态：BO3 2:1 正常判已结束（不误伤）',
+    ok21.status === 'finished' && ok21.homeScore === 2 && ok21.awayScore === 1,
+    `${ok21.status} ${ok21.homeScore}-${ok21.awayScore}`)
+  const ok30 = lolStatus(mkBoEv('completed', { outcome: 'win', gameWins: 3 }, { outcome: 'loss', gameWins: 0 }, 5))
+  check('LoL 状态：BO5 3:0 正常判已结束（不误伤）',
+    ok30.status === 'finished' && ok30.homeScore === 3 && ok30.awayScore === 0,
+    `${ok30.status} ${ok30.homeScore}-${ok30.awayScore}`)
+
   // 已结束的比赛必须有比分，否则详情页会显示空白
   const agDone = agMatches.filter((m) => m.status === 'finished')
   check('数据层：亚运会已结束的比赛都有比分',
@@ -1616,8 +1636,17 @@ async function run() {
     md.needsFetch(km(1 * H), kcap(null, t0 - 10 * 60 * 1000)) === false)
   check('详情：KPL 补抓有窗口，开赛 48 小时后不再纠缠（桶也要过期了）',
     md.needsFetch(km(72 * H), kcap(null, t0 - 3 * H)) === false)
-  check('详情：KPL 已抓到数据就照常不重抓（补抓逻辑只在空值时生效）',
-    md.needsFetch(km(1 * H), kcap({ list: [{}] }, t0 - 3 * H)) === false)
+  check('详情：KPL 局数完整就照常不重抓（补抓不加大请求量）',
+    md.needsFetch(km(1 * H), kcap({ list: [{}, {}, {}] }, t0 - 3 * H)) === false
+      && md.needsFetch(Object.assign(km(1 * H), { home: { score: 3 }, away: { score: 0 } }),
+        kcap({ list: [{}, {}, {}] }, t0 - 3 * H)) === false)
+  // 🔴 10-06 事故二：live 时抓过一次只存了 1 局，打完 3:0 后「有数据但局数不足」也必须补抓
+  check('详情：KPL 有数据但局数不足会补抓（3:0 的比赛只存 1 局 = 缺一半）',
+    md.needsFetch(Object.assign(km(1 * H), { home: { score: 3 }, away: { score: 0 } }),
+      kcap({ list: [{}] }, t0 - 3 * H)) === true)
+  check('详情：KPL 局数不足的补抓同样受 2 小时节流',
+    md.needsFetch(Object.assign(km(1 * H), { home: { score: 3 }, away: { score: 0 } }),
+      kcap({ list: [{}] }, t0 - 10 * 60 * 1000)) === false)
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误
   // 赛事从「抓详情」名单里去掉后，云端老行必须被清掉 —— 详情桶是打进包的，占体积

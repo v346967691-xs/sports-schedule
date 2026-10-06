@@ -360,6 +360,38 @@ async function main() {
     console.warn('[cloud-sync] ⚠ 本次没有可用的射手榜数据，跳过推送')
   }
 
+  // 2d) KPL 选手数据榜（9 张官方榜 → data/kpl-rank.js → 云表 kpl_rank）
+  //        ⚠️ `kpl-rank.js` 自带 12 小时新鲜度闸门，绝大多数班次会直接打印一行
+  //        「跳过抓取」就返回，不会给上游发请求（省额度）。
+  //     ⚠️ exit 3 = 「上游没返回任何榜单」，沿用 match-detail 的约定：不算失败，
+  //        保持原文件不动 —— 这里照常用现有 data/kpl-rank.js 推送。
+  let kplRank = null
+  try {
+    execFileSync(process.execPath, [path.join(__dirname, 'kpl-rank.js')], { stdio: 'inherit' })
+  } catch (err) {
+    log(`KPL 选手榜抓取跳过/无新增（${(err && err.status) || ''}），改用现有 data/kpl-rank.js 推送`)
+  }
+  try {
+    delete require.cache[require.resolve('../data/kpl-rank.js')]
+    kplRank = require('../data/kpl-rank.js')
+  } catch (err) {
+    kplRank = null
+    console.warn('[cloud-sync] ⚠ KPL 选手榜数据文件不可用，本次跳过推送：', (err && err.message) || err)
+  }
+
+  if (kplRank && Array.isArray(kplRank.boards) && kplRank.boards.length) {
+    log('推送云端 kpl_rank(id=latest) …')
+    const pkr = await pushRow(cloud, 'kpl_rank', {
+      id: 'latest',
+      data: kplRank,
+      generated_at: new Date().toISOString(),
+    })
+    if (!pkr.ok) console.warn('[cloud-sync] ⚠ KPL 选手榜推送云端失败：', pkr.problem)
+    else log(`已写入云端 kpl_rank：${kplRank.boards.length} 张榜`)
+  } else {
+    console.warn('[cloud-sync] ⚠ 本次没有可用的 KPL 选手榜，跳过推送')
+  }
+
   // ⚠️ 详情独立节流：--force（ageMin 为 null）时照常推。
   const detailDue = verdict.ageMin == null || verdict.ageMin >= DETAIL_MIN_INTERVAL_MIN
   if (details && details.buckets && details.buckets.length && !detailDue) {

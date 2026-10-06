@@ -1223,15 +1223,41 @@ async function run() {
   const nbaZone = (nbaGroups[0].rows[6] && nbaGroups[0].rows[6].zone && nbaGroups[0].rows[6].zone.label) || ''
   check('积分榜：NBA 第 7 名在附加赛区', nbaZone === '附加赛区', nbaZone)
 
-  /* ---------- 欧国联分区（2026-10-02 用户发现 A1 色块错位） ---------- */
+  /* ---------- 欧国联分区（2026-10-02 用户发现 A1 色块错位） ----------
+   * 🔴 别把「某一轮过后」的四队顺序写死成断言 —— 2026-10-06 就踩了：
+   *    ESPN 把原本同分的意大利/比利时改成了 意大利第 2（+3 分）、比利时第 3，
+   *    我们的输出跟着官方走是对的，但写死的断言把它判成失败。
+   *    → 这里只校验**不变量**：① 榜首/垫底稳定 ② 同分时采信 ESPN 官方名次。
+   */
   const nations = stData.nations
   const a1 = nations && nations.groups.find((g) => g.name === 'A1 组')
   const a1Names = a1 ? a1.rows.map((r) => r.zh || r.name) : []
-  check('积分榜：欧国联 A1 按官方名次排（比利时第 2、意大利第 3）',
-    a1Names.join('/') === '法国/比利时/意大利/土耳其', a1Names.join('/'))
+  check('积分榜：欧国联 A1 榜首法国、垫底土耳其（中间两队会随轮次互换）',
+    a1Names[0] === '法国' && a1Names[a1Names.length - 1] === '土耳其', a1Names.join('/'))
   check('积分榜：欧国联 A1 四队都有分区且与前二/第3/第4 对应',
     !!a1 && a1.rows.map((r) => (r.zone && r.zone.label) || '').join('/') === '晋级八强/晋级八强/降级附加赛/降级区',
     a1 ? a1.rows.map((r) => (r.zone && r.zone.label) || '无').join('/') : '无')
+
+  // 🔴 同分时「积分 → 官方名次 → 净胜球 → 进球」这条链对了，色带才不会挂错人头。
+  //    逐组查一遍：同分相邻两行的官方名次不许倒挂。
+  const rankBreaks = []
+  Object.keys(stData).forEach((ck) => {
+    const t = stData[ck]
+    if (!t || !t.groups) return
+    t.groups.forEach((g) => {
+      ;(g.rows || []).forEach((r, i) => {
+        const n = g.rows[i + 1]
+        if (!n) return
+        // ⚠️ 只查有积分列的足球组：篮球按胜率排，且季前赛 `playoffSeed` 会整体退化成同一个值
+        if (!Number.isFinite(r.pts) || !Number.isFinite(n.pts)) return
+        if (r.pts === n.pts && r._esRank && n._esRank && r._esRank > n._esRank) {
+          rankBreaks.push(`${ck}/${g.name}: ${r.zh || r.name}(#${r._esRank}) 压在 ${n.zh || n.name}(#${n._esRank}) 上面`)
+        }
+      })
+    })
+  })
+  check('积分榜：同分时采信 ESPN 官方名次（不被自己算的净胜球/进球顶翻）',
+    rankBreaks.length === 0, rankBreaks.slice(0, 3).join('；') || 'ok')
   const a2 = nations && nations.groups.find((g) => g.name === 'A2 组')
   check('积分榜：欧国联其他组也有分区（不再只有 A1 独有）',
     !!a2 && a2.rows.every((r) => !!r.zone),
@@ -1460,6 +1486,47 @@ async function run() {
       !!kv && kv.homeLabel === '主队甲' && kv.awayLabel === '客队乙')
   } else {
     check('KPL 视图：本地 payload 里有 KPL 场次可供测试', false, 'data/match-details.js 里没有 kpl 数据，跑 node tools/match-detail.js --force')
+  }
+
+  /* ------------------ KPL 选手数据榜（getPlayerRank，9 张官方榜） ------------------
+   * 数据是纯数据层产物：tools/kpl-rank.js → data/kpl-rank.js → 云表 kpl_rank。
+   * 页面层还没做，所以这里的守卫只管「数据抓得对不对」，不管展示。
+   */
+  const krSrc = fs.readFileSync(path.join(ROOT, 'tools/kpl-rank.js'), 'utf8')
+  const krSyncSrc = fs.readFileSync(path.join(ROOT, 'tools/cloud-sync.js'), 'utf8')
+
+  check('KPL 选手榜：9 张官方榜全部登记（漏一张就等于永远抓不到）',
+    ['mvp_list', 'total_kills_list', 'total_assists_list', 'five_kill_list', 'top_solo_kills_list',
+      'jug_count_list', 'mid_lane_roam_count_list', 'adc_teamfight_damage_list', 'sup_initiation_count_list']
+      .every((k) => krSrc.indexOf(`'${k}'`) !== -1))
+  check('KPL 选手榜：请求头三件套齐（与 getScheduleDetail 同一套，缺一个 404）',
+    /Referer: 'https:\/\/kpl\.qq\.com\/'/.test(krSrc) && /Origin: 'https:\/\/kpl\.qq\.com'/.test(krSrc))
+  check('KPL 选手榜：自带新鲜度闸门（不带门就每个班次都打一次上游，白烧额度）',
+    /FRESH_HOURS\s*=/.test(krSrc) && /跳过抓取/.test(krSrc))
+  // 🔴 「上海EDGM.风箫」这种「队名.选手名」串**不能按第一个点切** ——
+  //    队名自己带点（长沙TES.A），一切就变成「长沙TES」+「A书源」。
+  check('KPL 选手榜：不按点号切队名/选手名（队名本身带点，切了必错）',
+    !/player_name\.split\('\.'\)/.test(krSrc) && !/split\('\\.'\)/.test(krSrc)
+      && /不要用第一个点去切/.test(krSrc))
+  check('KPL 选手榜：cloud-sync 会推 kpl_rank，且抓取无新增不算失败',
+    krSyncSrc.indexOf("'kpl_rank'") !== -1 && /kpl-rank\.js/.test(krSyncSrc))
+
+  const krFile = path.join(ROOT, 'data/kpl-rank.js')
+  if (fs.existsSync(krFile)) {
+    const kr = require(krFile)
+    const rows = (kr.boards || []).reduce((n, b) => n + b.rows.length, 0)
+    check('KPL 选手榜：本地产物非空且每条字段齐全',
+      kr.boards.length > 0 && rows > 0
+        && kr.boards.every((b) => b.rows.every((r) => r.id && r.name && Number.isFinite(r.num) && Number.isFinite(r.rank) && /^https:\/\//.test(r.av))),
+      `${kr.boards.length} 榜 / ${rows} 条 / 赛季 ${kr.season || '(未知)'}`)
+    check('KPL 选手榜：空榜不产出（0 条的榜别在表里留空壳）',
+      kr.boards.every((b) => b.rows.length > 0))
+    check('KPL 选手榜：记录赛季（换赛季时数据要跟着换，不然张冠李戴）',
+      !!kr.season && /^KPL\d{4}/.test(kr.season), kr.season || '(空)')
+    check('KPL 选手榜：体积受控（一行 ≈ 160 字节，40 行应小于 10KB）',
+      JSON.stringify(kr).length < 10240, `${JSON.stringify(kr).length} 字节`)
+  } else {
+    check('KPL 选手榜：data/kpl-rank.js 存在', false, '缺文件，跑 node tools/kpl-rank.js --force')
   }
 
   check('射手榜：playerZh 只吃 id，不按名字查（同名球员很多）',

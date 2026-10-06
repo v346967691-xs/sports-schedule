@@ -1433,9 +1433,34 @@ async function run() {
   check('KPL 详情页：hasKpl 门控 + WXML 有渲染块（没数据整块隐藏，不留白块）',
     /hasKpl: !!kpl/.test(kpJs) && kpWxml.indexOf('detail.hasKpl') !== -1)
   check('KPL 详情页：英雄图标按 hero_id 拼URL直出（不落库、不进包）',
-    /kplHeroIcon\(p\.h\)/.test(kpJs))
+    kpJs.indexOf('kpl-view') !== -1 && kpWxml.indexOf('row.l.icon') !== -1)
   check('详情页样式：不用 flex gap（老 WebView 不支持，踩过的坑）',
     !/gap\s*:/.test(kpWxss))
+
+  // 🔴 渲染口径抽到 utils/kpl-view.js 共享（页面里测不了），这里拿真实 payload 直接跑：
+  //    布局必须是「局 tab + 对位卡」，第一版那种三局十人整列铺下来的竖排被用户否了。
+  const kplView = require(path.join(ROOT, 'utils/kpl-view.js'))
+  let kplPayload = null
+  require(path.join(ROOT, 'data/match-details.js')).buckets.forEach((b) => Object.keys(b.payload || {}).forEach((k) => {
+    if (b.payload[k].kpl && !kplPayload) kplPayload = b.payload[k]
+  }))
+  if (kplPayload) {
+    const kv = kplView.buildKpl(kplPayload, '主队甲', '客队乙')
+    check('KPL 视图：默认落在最后一局（点开已结束比赛最想看决胜局）',
+      !!kv && kv.active === kv.rounds.length - 1,
+      kv ? `active=${kv.active}/${kv.rounds.length - 1}` : 'null')
+    check('KPL 视图：每局两队都按位置对位成行（不许再出现整列竖排）',
+      !!kv && kv.rounds.every((r) => r.rows.length === 5
+        && r.rows.every((row) => row.l && row.r && row.pos)),
+      kv ? `${kv.rounds.length} 局 × ${kv.rounds[0].rows.length} 行` : 'null')
+    check('KPL 视图：局分是逐局累计（不是击杀比分，上游没这个数据）',
+      !!kv && kv.rounds[kv.rounds.length - 1].hs + kv.rounds[kv.rounds.length - 1].as === kv.rounds.length,
+      kv ? `终局 ${kv.rounds[kv.rounds.length - 1].hs}:${kv.rounds[kv.rounds.length - 1].as}` : 'null')
+    check('KPL 视图：队名标签由页面传入（别在数据层写死队名）',
+      !!kv && kv.homeLabel === '主队甲' && kv.awayLabel === '客队乙')
+  } else {
+    check('KPL 视图：本地 payload 里有 KPL 场次可供测试', false, 'data/match-details.js 里没有 kpl 数据，跑 node tools/match-detail.js --force')
+  }
 
   check('射手榜：playerZh 只吃 id，不按名字查（同名球员很多）',
     znMod.playerZh('253989') === '哈兰德' && znMod.playerZh(253989) === '哈兰德' && znMod.playerZh('no-such-id') === '')

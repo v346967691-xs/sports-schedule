@@ -151,28 +151,55 @@
     <view class="foot-note tight">数据来自 ESPN 官方技术统计，未出场球员不列入。</view>
   </view>
 
-  <!-- ③c KPL 单局详情（只有 KPL 有。逐局胜方 + 十名选手的英雄；未开赛抓不到 → 整块隐藏） -->
+  <!-- ③c KPL 单局战报（只有 KPL 有）：局 tab 一次只看一局，局内两队按位置对位。
+       布局对齐 KPL 官方 App 的「数据」页（10-06 用户参考图），没有击杀/经济数据就不硬造。 -->
   <view class="section card" wx:if="{{detail.hasKpl}}">
     <view class="sec-title">单局战报</view>
-    <view class="kp-round" wx:for="{{detail.kpl.roundRows}}" wx:for-item="r" wx:key="idx">
-      <view class="kp-head">
-        <text class="kp-no">第 {{r.n}} 局</text>
-        <text class="kp-win">{{r.w}} 胜</text>
-      </view>
-      <view class="kp-side" wx:for="{{r.teams}}" wx:for-item="t" wx:key="side">
-        <view class="kp-p" wx:for="{{t.players}}" wx:for-item="p" wx:key="n">
-          <image class="kp-hero" src="{{p.icon}}" mode="aspectFill" lazy-load="{{true}}" />
-          <view class="kp-meta">
-            <view class="kp-line1">
-              <text class="kp-hero-name">{{p.hero}}</text>
-              <text class="kp-pos">{{p.pos}}</text>
+    <scroll-view class="kp-tabs" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}">
+      <view
+        class="kp-tab {{detail.kpl.active === idx ? 'on' : ''}}"
+        wx:for="{{detail.kpl.rounds}}"
+        wx:for-item="r"
+        wx:for-index="idx"
+        wx:key="idx"
+        data-idx="{{idx}}"
+        bindtap="onKplRound"
+      >第 {{r.n}} 局</view>
+    </scroll-view>
+
+    <block wx:for="{{detail.kpl.rounds}}" wx:for-item="r" wx:for-index="idx" wx:key="idx">
+      <view wx:if="{{detail.kpl.active === idx}}" class="kp-round">
+        <!-- 局条：胜方一侧高亮 + 到这局为止的累计局分（从逐局胜方推出，不是击杀比分） -->
+        <view class="kp-bar">
+          <text class="kp-side-name {{r.s === 'h' ? 'win' : 'dim'}}">{{detail.kpl.homeLabel}}</text>
+          <text class="kp-score">{{r.hs}} : {{r.as}}</text>
+          <text class="kp-side-name rt {{r.s === 'a' ? 'win' : 'dim'}}">{{detail.kpl.awayLabel}}</text>
+        </view>
+
+        <!-- 对位：左右两队各 5 人，按位置对齐；胜方一侧头像带描边 -->
+        <view class="kp-row" wx:for="{{r.rows}}" wx:for-item="row" wx:for-index="pi" wx:key="pi">
+          <view class="kp-cell" wx:if="{{row.l}}">
+            <image class="kp-hero {{r.s === 'h' ? 'win' : ''}}" src="{{row.l.icon}}" mode="aspectFill" lazy-load="{{true}}" />
+            <view class="kp-meta">
+              <view class="kp-hero-name">{{row.l.hero}}</view>
+              <view class="kp-sub">{{row.l.n}}<text wx:if="{{row.l.real}}" class="kp-real">（{{row.l.real}}）</text></view>
             </view>
-            <view class="kp-player">{{p.n}}<text class="kp-real" wx:if="{{p.real}}">（{{p.real}}）</text></view>
           </view>
+          <view class="kp-pos" wx:if="{{!row.l}}">—</view>
+          <view class="kp-mid">{{row.pos}}</view>
+          <view class="kp-cell right" wx:if="{{row.r}}">
+            <view class="kp-meta rt">
+              <view class="kp-hero-name">{{row.r.hero}}</view>
+              <view class="kp-sub rt">{{row.r.n}}<text wx:if="{{row.r.real}}" class="kp-real">（{{row.r.real}}）</text></view>
+            </view>
+            <image class="kp-hero {{r.s === 'a' ? 'win' : ''}}" src="{{row.r.icon}}" mode="aspectFill" lazy-load="{{true}}" />
+          </view>
+          <view class="kp-pos" wx:if="{{!row.r}}">—</view>
         </view>
       </view>
-    </view>
-    <view class="foot-note tight">英雄与选手信息来自 KPL 官方赛报，头像与英雄头像需联网加载。</view>
+    </block>
+
+    <view class="foot-note tight">英雄与选手信息来自 KPL 官方赛报；左右两侧按对抗路 / 中路 / 发育路 / 打野 / 游走对位。</view>
   </view>
 
   <!-- ④ 双方近况 -->

@@ -789,78 +789,124 @@
   color: var(--muted);
 }
 
-/* ===== KPL 单局战报 ===== */
-/* ⚠️ 全程不用 flex gap —— 老 WebView 不支持（项目里踩过），间距一律用 margin */
-.kp-round {
-  padding: 18rpx 0;
-  border-top: 1rpx solid var(--line);
+/* ===== KPL 单局战报 =====
+   布局对齐 KPL 官方 App 的「数据」页：局 tab 一次只看一局 + 局内两队对位。
+   ⚠️ 全程不用 flex gap —— 老 WebView 不支持（项目踩过），间距一律用 margin。 */
+
+/* 局 tab：横滑，当前项品牌色下划线 */
+.kp-tabs {
+  white-space: nowrap;
+  margin: 4rpx -24rpx 16rpx;
+  padding: 0 24rpx;
 }
 
-.kp-round:first-of-type {
-  border-top: 0;
-  padding-top: 4rpx;
-}
-
-.kp-head {
-  display: flex;
-  align-items: baseline;
-  margin-bottom: 14rpx;
-}
-
-.kp-no {
+.kp-tab {
+  display: inline-block;
+  padding: 12rpx 22rpx;
+  margin-right: 8rpx;
   font-size: 25rpx;
-  font-weight: 600;
-  margin-right: 16rpx;
+  color: var(--muted);
+  border-radius: 999rpx;
+  background: rgba(128, 128, 128, 0.08);
 }
 
-.kp-win {
-  font-size: 23rpx;
+.kp-tab.on {
   color: var(--brand);
-  font-weight: 500;
+  background: var(--brand-soft);
+  font-weight: 600;
 }
 
-.kp-p {
+/* 局条：胜方一侧亮、败方降透明度；中间是累计局分（非击杀比分） */
+.kp-bar {
   display: flex;
   align-items: center;
-  width: 50%;
-  box-sizing: border-box;
-  padding: 4rpx 10rpx 4rpx 0;
+  justify-content: space-between;
+  padding: 16rpx 22rpx;
+  margin-bottom: 14rpx;
+  border-radius: 14rpx;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.14), rgba(239, 68, 68, 0.14));
 }
 
-.kp-hero {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 12rpx;
-  background: rgba(128, 128, 128, 0.14);
-  flex: none;
-  margin-right: 12rpx;
-}
-
-.kp-meta {
-  min-width: 0;
-}
-
-.kp-line1 {
-  display: flex;
-  align-items: baseline;
-}
-
-.kp-hero-name {
+.kp-side-name {
+  flex: 1;
   font-size: 25rpx;
   font-weight: 500;
-  margin-right: 8rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kp-pos {
-  flex: none;
-  font-size: 20rpx;
+.kp-side-name.rt {
+  text-align: right;
+}
+
+.kp-side-name.win {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.kp-side-name.dim {
   color: var(--muted);
 }
 
-.kp-player {
+.kp-score {
+  flex: none;
+  margin: 0 18rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 对位行：左队靠左、右队靠右，中间位置标签 */
+.kp-row {
+  display: flex;
+  align-items: center;
+  padding: 10rpx 0;
+}
+
+.kp-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.kp-cell.right {
+  justify-content: flex-end;
+}
+
+.kp-hero {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 14rpx;
+  background: rgba(128, 128, 128, 0.14);
+  flex: none;
+}
+
+.kp-hero.win {
+  box-shadow: 0 0 0 3rpx var(--brand);
+}
+
+.kp-meta {
+  min-width: 0;
+  margin-left: 14rpx;
+}
+
+.kp-meta.rt {
+  margin-left: 0;
+  margin-right: 14rpx;
+  text-align: right;
+}
+
+.kp-hero-name {
+  font-size: 25rpx;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kp-sub {
   margin-top: 2rpx;
   font-size: 21rpx;
   color: var(--muted);
@@ -870,5 +916,21 @@
 }
 
 .kp-real {
+  color: var(--faint, #b0b3b8);
+}
+
+.kp-mid {
+  flex: none;
+  width: 96rpx;
+  text-align: center;
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+/* 人数不齐时的占位（有人没上场），保持左右对齐不塌 */
+.kp-pos {
+  flex: 1;
+  text-align: center;
+  font-size: 20rpx;
   color: var(--faint, #b0b3b8);
 }

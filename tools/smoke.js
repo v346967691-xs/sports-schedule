@@ -2183,8 +2183,13 @@ async function run() {
             && b.rows.every((r) => r.rank && r.name && /^https:\/\//.test(r.avatar) && r.num !== '')),
         `${(ctxKpl.data.boards || []).length}/${krReal.boards.length} 张榜`)
       const dmg = (ctxKpl.data.boards || []).find((b) => b.key === 'adc_teamfight_damage_list')
-      check('积分榜页：选手榜数值带千分位（团战输出 619020 → 619,020，不擅自换算单位）',
-        !!dmg && dmg.rows[0].num === '619,020', dmg ? dmg.rows[0].num : '未找到该榜')
+      // ⚠️ 别把具体数值写死（榜每 12 小时刷新一次，数值会变 —— 2026-10-07 就红过一次）。
+      //    验的是**不变量**：原样加千分位、去掉逗号后必须等于上游原始值（不换算单位、不四舍五入）。
+      const dmgRaw = (krReal.boards.find((b) => b.key === 'adc_teamfight_damage_list') || { rows: [] }).rows[0]
+      check('排行页：选手榜数值原样加千分位（不换算单位、不四舍五入）',
+        !!dmg && !!dmgRaw && Number(String(dmg.rows[0].num).replace(/,/g, '')) === Number(dmgRaw.num)
+          && /,/.test(dmg.rows[0].num),
+        dmg ? `${dmgRaw.num} → ${dmg.rows[0].num}` : '未找到该榜')
       check('积分榜页：选手榜档的「更新于」用的是它自己的生成时间（不是积分榜的）',
         !!ctxKpl.data.updatedAt && !!krReal.generatedAt, ctxKpl.data.updatedAt)
     } finally {

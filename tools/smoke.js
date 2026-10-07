@@ -1638,7 +1638,7 @@ async function run() {
 
   /* 增量抓取策略：全量重抓一天 1~2GB 会被 ESPN 限流，所以每种状态各有一条规则 */
   const t0 = Date.now()
-  const cap = (v, ts) => ({ x: { v, ts } })
+  const cap = (v, ts, extra) => ({ x: Object.assign({ v, ts }, extra) })
   check('详情：进行中的比赛每班都重抓（比分在变）',
     md.needsFetch({ id: 'x', status: 'live' }, cap(md.SCHEMA, t0)) === true)
   check('详情：已结束的比赛抓过一次就不再抓（事件不会变）',
@@ -1680,19 +1680,49 @@ async function run() {
   //    那一刻 events/stats 是空的、payload 里 fin=false；等它打完「已结束不重抓」
   //    把它锁死 → 永远补不回来。**所有赛事都中招，不只是 KPL。**
   const fm = (startAgo) => ({ id: 'x', comp: 'nations', status: 'finished', start: new Date(t0 - startAgo).toISOString() })
-  const fcap = (fin, ts) => ({ x: { v: md.SCHEMA, ts, fin } })
+  const fcap = (fin, ts, extra) => ({ x: Object.assign({ v: md.SCHEMA, ts, fin }, extra) })
+  // ⚠️ 事故四之后「已完赛但一块内容都没有」= 残缺响应，属于**要补抓**的那一类。
+  //    所以凡是断言「不重抓」的用例，payload 必须带上内容才代表真实场景。
+  const GOT = { events: [{ t: "10'", txt: '进球' }] }
   check('详情：开赛前抓的空壳（fin=false）打完会补抓（否则进球/红黄牌/技术统计永远为空）',
     md.needsFetch(fm(10 * H), fcap(false, t0 - 3 * H)) === true)
-  check('详情：已经抓到完赛数据（fin=true）的比赛照常不重抓（不加大请求量）',
-    md.needsFetch(fm(10 * H), fcap(true, t0 - 3 * H)) === false)
+  check('详情：已经抓到完赛数据（fin=true 且有内容）的比赛照常不重抓（不加大请求量）',
+    md.needsFetch(fm(10 * H), fcap(true, t0 - 3 * H, GOT)) === false)
   check('详情：老 payload 没有 fin 字段时不被误判成要重抓（undefined ≠ false）',
-    md.needsFetch(fm(10 * H), cap(md.SCHEMA, t0 - 3 * H)) === false)
+    md.needsFetch(fm(10 * H), cap(md.SCHEMA, t0 - 3 * H, GOT)) === false)
   check('详情：空壳补抓同样受 2 小时节流（不是每班都打上游）',
     md.needsFetch(fm(10 * H), fcap(false, t0 - 10 * 60 * 1000)) === false)
   check('详情：空壳补抓有 48 小时窗口（开赛三天后就认了，桶也要过期）',
     md.needsFetch(fm(72 * H), fcap(false, t0 - 3 * H)) === false)
   check('详情：空壳补抓不限于 KPL（足球同样会补）',
     md.needsFetch(Object.assign(fm(10 * H), { comp: 'epl' }), fcap(false, t0 - 3 * H)) === true)
+
+  // 🔴 10-07 事故四（全盘体检发现）：`fin` 只表示「抓那一刻比赛已结束」，**不代表抓到了内容**。
+  //    上游偶发残缺响应（header 有、boxscore/plays/head2head 全无）时，我们会存一份
+  //    全空 payload 且 fin=true —— 前面三类判据全部不成立 → 永久锁死，永远补不回来。
+  //    实测：nba-401914127 / nba-401918010 在包里就是这种全空壳，而直连 ESPN 上游数据齐全。
+  const EMPTY = { v: md.SCHEMA, ts: t0 - 3 * H, fin: true, events: [], stats: [], box: null, lineups: null }
+  check('详情：hasContent 认得全空壳（events/stats/box/lineups/h2h/form 全空）',
+    md.hasContent(EMPTY) === false && md.hasContent(null) === false)
+  // ⚠️ 这条是防「补抓逻辑」和「box/lineups 裁剪」打架：超期桶的 box 是被**主动摘掉**的，
+  //    看起来和残缺响应一模一样。若不卡 24h 窗口，这类桶会被 48h 内每 2h 重抓一次、
+  //    抓回来又被裁掉 —— 纯浪费请求量。实测 10-05 那两场 NBA 就是这样，不是数据丢了。
+  check('详情：超过 24 小时的全空壳不再补抓（否则和 lineups/box 裁剪打架，反复重抓）',
+    md.needsFetch(fm(30 * H), { x: EMPTY }) === false
+    && md.needsFetch(fm(10 * H), { x: EMPTY }) === true)
+  check('详情：hasContent 认得篮球的 box（NBA 的 stats 恒为空，不能拿它当唯一判据）',
+    md.hasContent({ box: { l: ['MIN'], home: [{ n: 'A', s: '1' }], away: [{ n: 'B', s: '2' }] } }) === true)
+  check('详情：hasContent 认得足球的 events / stats / lineups 任一块',
+    md.hasContent({ events: [{ t: '1' }] }) === true
+    && md.hasContent({ stats: [{ k: '控球率' }] }) === true
+    && md.hasContent({ lineups: { home: [] } }) === true)
+  check('详情：KPL 的 hasContent 看 kpl.list（不是 events/stats —— 电竞那两块本来就空）',
+    md.hasContent({ kpl: { list: [{}] } }) === true && md.hasContent({ kpl: { list: [] } }) === false)
+  check('详情：事故四 —— 已完赛却整份全空的 payload 会补抓（否则残缺响应永久锁死）',
+    md.needsFetch(fm(10 * H), { x: EMPTY }) === true)
+  check('详情：事故四 —— 全空壳补抓同样受 24 小时窗口与 2 小时节流约束',
+    md.needsFetch(fm(72 * H), { x: EMPTY }) === false
+    && md.needsFetch(fm(10 * H), { x: Object.assign({}, EMPTY, { ts: t0 - 10 * 60 * 1000 }) }) === false)
 
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误

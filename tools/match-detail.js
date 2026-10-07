@@ -129,9 +129,36 @@ const BASKET_STAT_LABELS = [
  *     ⚠️ 必须是 `=== false` 而不是 `!== true`：老 payload 里没有 fin 字段（undefined），
  *        用 `!== true` 会把所有历史数据都判成要重抓，请求量直接翻几倍。
  *     补抓一次后 fin 就变 true，不会反复打上游 —— 加的请求量约等于「完赛场次数」。
+ *
+ * 🔴 事故四（2026-10-07 全盘体检发现，**与前三类都不同，且是防御性的**）：
+ *    上面三类的 `fin` 语义是「抓那一刻比赛是否已结束」，但**它并不代表抓到了内容**。
+ *    于是存在第四种壳：请求本身"成功"了（没抛错、JSON 合法），但上游返回的是一份
+ *    **残缺响应** —— header 有、boxscore / plays / head2head 全没有（ESPN 偶发，
+ *    尤其 `--force` 一次性重抓上百场被限流时）。它的 `fin` 照样是 true →
+ *    前面三类判据全部不成立 → **永久锁死，永远不会重抓**。
+ *
+ *    ⚠️⚠️ 排查结论要如实记下来（别让下一个人再查一遍）：
+ *    最初怀疑的实证案例 —— 10-05 的 `nba-401914127`（掘金 97-109 爵士）与
+ *    `nba-401918010`（快船 104-101 勇士）在包里确实是全空壳 —— **后来查明不是残缺响应**，
+ *    而是下面「box / lineups 裁剪」的正常结果：这两场在 `d-20261005` 桶，
+ *    超过 `LINEUP_KEEP_DAYS`，`box` 在推送前被主动摘掉了，球员数据当天存在过。
+ *    所以事故四目前**没有实证案例**，属于防御性补丁 —— 但代价极低，留着。
+ *
+ * → 两道补丁：
+ *   · **写入侧**：已完赛的比赛若 `hasContent()` 为假，视为抓取失败（返回 null），
+ *     不覆盖云端已有的旧值，也不制造新的永久空壳。
+ *   · **读取侧**：`needsFetch` 增加第 ④ 类 —— 已完赛且 `prev` 是空壳 → 补抓。
+ *     ⚠️ 窗口是 **24h**（不是前面三类的 48h），且必须小于 `lineups` 裁剪窗口，
+ *       否则会把「被裁掉 box 的老桶」误判成残缺响应而反复重抓，详见 needsFetch 内注释。
+ *
+ * ⚠️ 顺带记一条**容易误判为 bug 的设计**：`lineups` / `box` 只保留 `LINEUP_KEEP_DAYS` 天，
+ *    超期的桶在推送前会被摘掉这两块（包体积红线，见下方 `staleLineups`）。
+ *    表现是「NBA 比赛完赛一天后，详情页的球员数据整块消失」—— 这是刻意的，不是数据丢了。
  */
 const RETRY_WINDOW_MS = 48 * 3600 * 1000
 const RETRY_GAP_MS = 2 * 3600 * 1000
+// 第 ④ 类（全空壳）的窗口比上面三类短：见 needsFetch 里与 box/lineups 裁剪的冲突说明
+const EMPTY_RETRY_WINDOW_MS = 24 * 3600 * 1000
 
 /* ------------------------- 阵容球员池（给球员字典播种） -------------------------
  *
@@ -627,6 +654,32 @@ function detailCapable(comp) {
   return !!SLUG[comp] || comp === 'chn' || comp === 'kpl'
 }
 
+/**
+ * 这份详情里**有实质内容吗**（事故四的判据，详见文件头）。
+ *
+ * 判的是"有没有任何一块非空"，不是"全不全"：
+ *   足球已完赛 → events / stats / lineups 至少有一块非空；
+ *   篮球已完赛 → box（boxscore.players）非空（⚠️ NBA 的 `stats` 恒为空，见 pickBasketballPlayers 注释，
+ *                所以**不能**拿 stats 当篮球的唯一判据）；
+ *   KPL 已完赛  → kpl.list 非空；
+ *   未开赛      → 至少还有 form / h2h（ESPN 赛前也给 lastFiveGames / seasonseries）。
+ *
+ * ⚠️ 只对**已完赛**的比赛用。未开赛的比赛本来就没有 events/stats/box，
+ *    有些新赛季首轮连 form/h2h 都没有，判成空壳会让它被无休止地重抓。
+ */
+function hasContent(d) {
+  if (!d) return false
+  if (Array.isArray(d.events) && d.events.length) return true
+  if (Array.isArray(d.stats) && d.stats.length) return true
+  if (d.box) return true
+  if (d.lineups) return true
+  if (d.kpl && Array.isArray(d.kpl.list) && d.kpl.list.length) return true
+  if (d.h2h && Array.isArray(d.h2h.list) && d.h2h.list.length) return true
+  const f = d.form || {}
+  if ((Array.isArray(f.home) && f.home.length) || (Array.isArray(f.away) && f.away.length)) return true
+  return false
+}
+
 /* --------------------------- KPL 单局详情 ---------------------------
  *
  * KPL 没有 ESPN summary，走官方 `getScheduleDetail`：
@@ -734,7 +787,7 @@ async function fetchDetail(m) {
     h2h.total = h2h.list.length
     h2h.summary = parts.length ? `近 ${h2h.list.length} 次交手 ${parts.join(' · ')}` : ''
   }
-  return {
+  const out = {
     id: m.id,
     comp: m.comp,
     fin: m.status === 'finished',
@@ -748,6 +801,10 @@ async function fetchDetail(m) {
     // 🔴 只有篮球有（足球的球员维度数据在 `rosters` 里，已由 lineups 覆盖）
     box: BASKETBALL[m.comp] ? pickBasketballPlayers(j, homeId) : null,
   }
+  // 🔴 事故四（写入侧）：已完赛却一块内容都没有 = 上游给了残缺响应，
+  //    当成失败返回 null —— 这样既不会覆盖云端已有的好数据，也不会造出新的永久空壳。
+  if (out.fin && !hasContent(out)) return null
+  return out
 }
 
 /* --------------------------- 云端已抓名单 --------------------------- */
@@ -804,16 +861,24 @@ function needsFetch(m, captured) {
   // 老版本抽出来的数据（比如早期没过滤未开赛交锋）强制重抓一次
   if (prev.v !== SCHEMA) return true
   if (m.status === 'finished') {
-    // 🔴 补抓三类「壳数据」（详见文件头注释）：
+    // 🔴 补抓四类「壳数据」（详见文件头注释）：
     //   ① 所有赛事：抓的时候比赛还没结束（prev.fin === false）→ 打完必须补一次
     //   ② KPL：空值（上游结算延迟，抓早了 round_details 是空的）
     //   ③ KPL：局数不足（live 时抓过一次只存了已打完的局）
+    //   ④ 所有赛事：已完赛但整份 payload 一块内容都没有（上游残缺响应，事故四）
     //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
     const inWindow = Number.isFinite(t) && Date.now() - t < RETRY_WINDOW_MS
     const gapOk = Date.now() - (prev.ts || 0) > RETRY_GAP_MS
     if (!inWindow || !gapOk) return false
     if (prev.fin === false) return true
+    // ⚠️ 放在 ① 之后、KPL 分支之前：空壳连 fin 判断都靠不住（残缺响应里 fin 也可能写 true）
+    // ⚠️⚠️ 必须卡在 EMPTY_RETRY_WINDOW_MS 内，否则会和「box / lineups 裁剪」打架：
+    //    超过 LINEUP_KEEP_DAYS 的桶在推送前会被**主动摘掉** lineups 和 box（包体积红线），
+    //    摘完的 payload 看起来跟「残缺响应」一模一样（实测 10-05 两场 NBA 就是这种）。
+    //    若不限制，这类桶会在 48h 内每 2h 被重抓一次，抓回来又被裁掉 —— 纯浪费请求量。
+    //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
+    if (Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)) return true
     if (m.comp === 'kpl') {
       if (prev.kpl == null) return true
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）
@@ -938,4 +1003,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, posGroup, resolveSlug, detailCapable, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, posGroup, resolveSlug, detailCapable, hasContent, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

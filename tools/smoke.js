@@ -1744,6 +1744,23 @@ async function run() {
   // 精简赛事赛前抓出来必然是纯空壳（没有 events/stats），白打上游 —— 直接跳过
   check('详情：精简赛事赛前不抓（否则抓回来是纯空壳，被 hasContent 丢掉，白打一次上游）',
     /SLIM_DETAIL\[m\.comp\] && m\.status === 'upcoming'/.test(mdSrc2))
+  // 🔴 **覆盖度守卫**（2026-10-07 加）：加新 ESPN 赛事时如果忘了在 `SLUG` 里配一行，
+  //    详情会**静默没有** —— 不报错、不告警，只有用户翻到那场比赛才发现。
+  //    friendly / cnl 就是这样静默缺了两项，直到用户来报才补上。
+  //    这条把「漏配」变成 smoke 直接变红。**改成故意不抓前先改这条断言。**
+  const mdEspn = require(path.join(ROOT, 'tools/sync.js')).COMPETITIONS
+    .filter((c) => c.source === 'espn')
+    .map((c) => c.key)
+  const mdMissing = mdEspn.filter((k) => !md.detailCapable(k))
+  check('详情：所有 ESPN 赛事都能抓详情（漏配 SLUG 会静默没数据，别等用户来报）',
+    mdMissing.length === 0,
+    mdMissing.length ? '漏了：' + mdMissing.join(',') : `${mdEspn.length} 个 ESPN 赛事全覆盖`)
+  // ⚠️ 反过来也守住已知缺口：LoL 系 + CBA **不是 ESPN 源**，没有 summary 端点可打，
+  //    缺详情是上游硬缺口而非配置遗漏。哪天真补上了，先改这条断言。
+  const mdNoSrc = ['worlds', 'lpl', 'lck', 'lec', 'msi', 'demacia', 'agames', 'cba']
+  check('详情：LoL 系 + CBA 缺详情是上游硬缺口（非 ESPN 源，无 summary 端点；补上就改这条）',
+    mdNoSrc.every((k) => md.detailCapable(k) === false)
+    && md.detailCapable('kpl') === true)
   check('详情：交锋只保留已打过的比赛（未开赛的 0-0 会被误当战绩）',
     md.isPlayed({ statusType: { state: 'post' } }) === true
     && md.isPlayed({ statusType: { state: 'pre' } }) === false

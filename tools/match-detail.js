@@ -112,14 +112,26 @@ const BASKET_STAT_LABELS = [
  *    比赛还 live 的时候抓过一次（那时只打了 1 局，存了 1 局），打完后因为
  *    「prev.kpl 不是 null」而永远不重抓 → 局数缺一半。**有数据 ≠ 数据完整。**
  *
- * → 空值和「局数不足」都要补抓，但控制代价：
- *   · 只在开赛后 `KPL_RETRY_WINDOW_MS` 内重试（超出就认了，再往后桶也要过期了）
- *   · 每 `KPL_RETRY_GAP_MS` 才试一次（不跟着 15 分钟一班白打上游）
+ * 🔴 事故三（2026-10-07，用户报「今天结束的足球赛事都没有进球/红黄牌/技术统计」）：
+ *    **同一类问题，但不只是 KPL —— 所有赛事都一样。**
+ *    比赛**还没开打时**就被抓过一次（增量规则里 upcoming 也要抓，为了拿交锋/近况），
+ *    那一刻 `events` / `stats` 是空的、`box` 是 null，payload 里 `fin: false`。
+ *    等它打完，`needsFetch` 的「已结束 → 不重抓」直接把它锁死 → **永远补不回来**。
+ *    实测：10-07 那批欧国联的 payload 抓于 10-06 22:31（开赛前 4 小时），
+ *    events=[] / stats=[] / box=null，用户在详情页什么都看不到。
+ *
+ * → 三类壳数据都要补抓（空值 / 局数不足 / 未结束时抓的空壳），统一控制代价：
+ *   · 只在开赛后 `RETRY_WINDOW_MS` 内重试（超出就认了，再往后桶也要过期了）
+ *   · 每 `RETRY_GAP_MS` 才试一次（不跟着 15 分钟一班白打上游）
  *   · 「局数不足」的判据：已存局数 < 双方最终比分之和（3:0 → 该有 3 局）。
  *     比分本身也可能滞后（那轮快照里还是 1:0）→ 比分补齐后的下一轮自然触发。
+ *   · 「未结束时抓的空壳」判据：`prev.fin === false`（抓那一刻比赛还没结束）。
+ *     ⚠️ 必须是 `=== false` 而不是 `!== true`：老 payload 里没有 fin 字段（undefined），
+ *        用 `!== true` 会把所有历史数据都判成要重抓，请求量直接翻几倍。
+ *     补抓一次后 fin 就变 true，不会反复打上游 —— 加的请求量约等于「完赛场次数」。
  */
-const KPL_RETRY_WINDOW_MS = 48 * 3600 * 1000
-const KPL_RETRY_GAP_MS = 2 * 3600 * 1000
+const RETRY_WINDOW_MS = 48 * 3600 * 1000
+const RETRY_GAP_MS = 2 * 3600 * 1000
 
 /* ------------------------- 阵容球员池（给球员字典播种） -------------------------
  *
@@ -791,21 +803,26 @@ function needsFetch(m, captured) {
   if (!prev) return true
   // 老版本抽出来的数据（比如早期没过滤未开赛交锋）强制重抓一次
   if (prev.v !== SCHEMA) return true
-  // 🔴 KPL 补抓：① 空值（上游结算延迟，抓早了 round_details 是空的）
-  //    ② 局数不足（live 时抓过一次只存了已打完的局，打完后不再重抓就永远缺局）。
-  //    ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
-  if (m.comp === 'kpl' && m.status === 'finished') {
+  if (m.status === 'finished') {
+    // 🔴 补抓三类「壳数据」（详见文件头注释）：
+    //   ① 所有赛事：抓的时候比赛还没结束（prev.fin === false）→ 打完必须补一次
+    //   ② KPL：空值（上游结算延迟，抓早了 round_details 是空的）
+    //   ③ KPL：局数不足（live 时抓过一次只存了已打完的局）
+    //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
-    if (Number.isFinite(t) && Date.now() - t < KPL_RETRY_WINDOW_MS
-      && Date.now() - (prev.ts || 0) > KPL_RETRY_GAP_MS) {
+    const inWindow = Number.isFinite(t) && Date.now() - t < RETRY_WINDOW_MS
+    const gapOk = Date.now() - (prev.ts || 0) > RETRY_GAP_MS
+    if (!inWindow || !gapOk) return false
+    if (prev.fin === false) return true
+    if (m.comp === 'kpl') {
       if (prev.kpl == null) return true
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）
       const need = Number((m.home && m.home.score) || 0) + Number((m.away && m.away.score) || 0)
       const have = Array.isArray(prev.kpl.list) ? prev.kpl.list.length : 0
       if (need > 0 && have < need) return true
     }
+    return false
   }
-  if (m.status === 'finished') return false
   return Date.now() - (prev.ts || 0) > UPCOMING_REFRESH_MS
 }
 

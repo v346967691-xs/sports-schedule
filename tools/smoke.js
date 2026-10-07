@@ -1675,6 +1675,25 @@ async function run() {
   check('详情：KPL 局数不足的补抓同样受 2 小时节流',
     md.needsFetch(Object.assign(km(1 * H), { home: { score: 3 }, away: { score: 0 } }),
       kcap({ list: [{}] }, t0 - 10 * 60 * 1000)) === false)
+  // 🔴 10-07 事故三（用户报「今天结束的足球赛事都没有进球/红黄牌/技术统计」）：
+  //    比赛开打前就被抓过一次（增量规则里 upcoming 也要抓，为了拿交锋/近况），
+  //    那一刻 events/stats 是空的、payload 里 fin=false；等它打完「已结束不重抓」
+  //    把它锁死 → 永远补不回来。**所有赛事都中招，不只是 KPL。**
+  const fm = (startAgo) => ({ id: 'x', comp: 'nations', status: 'finished', start: new Date(t0 - startAgo).toISOString() })
+  const fcap = (fin, ts) => ({ x: { v: md.SCHEMA, ts, fin } })
+  check('详情：开赛前抓的空壳（fin=false）打完会补抓（否则进球/红黄牌/技术统计永远为空）',
+    md.needsFetch(fm(10 * H), fcap(false, t0 - 3 * H)) === true)
+  check('详情：已经抓到完赛数据（fin=true）的比赛照常不重抓（不加大请求量）',
+    md.needsFetch(fm(10 * H), fcap(true, t0 - 3 * H)) === false)
+  check('详情：老 payload 没有 fin 字段时不被误判成要重抓（undefined ≠ false）',
+    md.needsFetch(fm(10 * H), cap(md.SCHEMA, t0 - 3 * H)) === false)
+  check('详情：空壳补抓同样受 2 小时节流（不是每班都打上游）',
+    md.needsFetch(fm(10 * H), fcap(false, t0 - 10 * 60 * 1000)) === false)
+  check('详情：空壳补抓有 48 小时窗口（开赛三天后就认了，桶也要过期）',
+    md.needsFetch(fm(72 * H), fcap(false, t0 - 3 * H)) === false)
+  check('详情：空壳补抓不限于 KPL（足球同样会补）',
+    md.needsFetch(Object.assign(fm(10 * H), { comp: 'epl' }), fcap(false, t0 - 3 * H)) === true)
+
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误
   // 赛事从「抓详情」名单里去掉后，云端老行必须被清掉 —— 详情桶是打进包的，占体积

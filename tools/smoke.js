@@ -3179,9 +3179,28 @@ async function run() {
   check('云同步：快通道剔除「故意不抓详情」的赛事（friendly/cnl 永远不会有详情）',
     /MD\.detailCapable\(String\(id\)\.split\('-'\)\[0\]\)/.test(csSrc))
   check('云同步：快通道剔除已不在本地快照窗口里的比赛（match-detail 压根不会抓它们）',
-    /known\.has\(id\)/.test(csSrc) && /decodeSnapshot\(require\('\.\.\/data\/matches\.js'\)\)/.test(csSrc))
+    /const start = known\.get\(id\)/.test(csSrc) && /new Map\(\)/.test(csSrc)
+    && /decodeSnapshot\(require\('\.\.\/data\/matches\.js'\)\)/.test(csSrc))
   check('云同步：快通道没真抓到场次就不推送（省掉一整轮日桶写入）',
     /!details\.stats\.fetched/.test(csSrc))
+  // KPL 走官方接口，不在 live_scores 里 → 不单独补一次，快通道对它等于不存在
+  check('云同步：快通道单独拉 KPL 官方赛程补状态（live_scores 里没有 KPL）',
+    /MD\.fetchKplStatus\(\)/.test(csSrc) && /async function fetchKplStatus/.test(mdSrcLocal)
+    && /getScheduleList/.test(mdSrcLocal))
+  // 状态语义只准有一份，别在 match-detail 里复制一套
+  check('详情：KPL 状态语义与 sync.js 共用同一份（不是复制的第二实现）',
+    /require\('\.\/sync\.js'\)/.test(mdSrcLocal) && /KPL_STATE: STATE/.test(mdSrcLocal)
+    && /module\.exports = \{ COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED \}/.test(syncSrc))
+  // 实测：不卡开赛日的话，KPL 整赛季那批 W1/W2 老场次会被当成壳（桶根本没读）
+  check('云同步：快通道只认今天/昨天开赛的场次（更早的桶没读，会被误判成空壳）',
+    /const inRange = /.test(csSrc) && /dk === todayKey \|\| dk === ydayKey/.test(csSrc))
+  // 实测：W6D2 已抓全 4 局、只是 fin 还是 false —— 只看 fin 会白补抓一次
+  check('云同步：判空壳不能只看 fin（内容齐全但 fin=false 不算壳；KPL 局数不足才算）',
+    /const isShell = /.test(csSrc) && /want > 0 && have < want/.test(csSrc)
+    && !/d\.fin === true && MD\.hasContent\(d\)/.test(csSrc))
+  // 实测：常规 2h 间隔会让快通道「报了壳却一场都不抓」（刚抓过 → gapOk 恒 false）
+  check('详情：快通道把补抓间隔压到 15 分钟（否则刚抓过的场次永远够不到 2 小时门槛）',
+    /FAST \? FAST_GAP_MS : RETRY_GAP_MS/.test(mdSrcLocal) && /'--fast', '--status-json='/.test(csSrc))
 
   const gi = csSrc.indexOf('async function gate(cloud)')
   const gateBody = gi < 0 ? '' : csSrc.slice(gi, csSrc.indexOf('\n}', gi))

@@ -257,6 +257,12 @@ async function detailFastLane(cloud) {
       if (!r || !r.id || r.st !== 'finished') return
       live[r.id] = { status: 'finished', hs: r.hs, as: r.as }
     })
+    // ⚠️ KPL 不在 live_scores 里（那张表只有 ESPN 赛事），单独问一次官方赛程补上。
+    //    否则快通道对 KPL 等于不存在，它的赛后详情还是只能等主闸那 97 分钟。
+    const kpl = await MD.fetchKplStatus()
+    const kplN = Object.keys(kpl).length
+    if (kplN) log(`详情快通道：KPL 官方赛程 ${kplN} 场已结束`)
+    Object.keys(kpl).forEach((id) => { live[id] = kpl[id] })
     if (!Object.keys(live).length) return
 
     const now = Date.now()
@@ -272,30 +278,59 @@ async function detailFastLane(cloud) {
       if (b && b.payload) Object.keys(b.payload).forEach((k) => { payload[k] = b.payload[k] })
     })
 
+    // ⚠️ 只认「今天 / 昨天开赛」的场次。原因有二，都是实测踩的：
+    //   · 上面只读了这两个日桶，更早的场次 `payload[id]` 必然是 undefined → 会被误判成空壳
+    //     （实测 KPL 一次返回整赛季，W1/W2 那批 10-02、10-03 的老场全被当成了壳）；
+    //   · 空壳补抓本来就有 48h / 24h 窗口，更早的场次交给主闸那一班更合适。
+    const todayKey = MD.dayKey(new Date(now).toISOString())
+    const ydayKey = MD.dayKey(new Date(now - 86400000).toISOString())
+    const inRange = (start) => {
+      const dk = MD.dayKey(start)
+      return dk === todayKey || dk === ydayKey
+    }
+
     // ⚠️ `match-detail.js` 的 targets 来自 `data/matches.js`，不在快照窗口里的比赛
     //    它压根不会抓。而 live_scores 实测会残留一些这样的老场次（10 场 chn-*），
     //    不剔除的话每班都会白跑一趟补抓 + 推两个桶。
     const local = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'))
-    const known = new Set((Array.isArray(local) ? local : (local && local.matches) || []).map((m) => m.id))
+    const known = new Map()
+    ;(Array.isArray(local) ? local : (local && local.matches) || []).forEach((m) => known.set(m.id, m.start))
+
+    /**
+     * 这份详情还算「空壳」吗？
+     * ⚠️ 不能只看 `fin`：实测 KPL 的 W6D2 已经抓全 4 局、只差 `fin` 还是 false，
+     *    判成壳就会白补抓一次。反过来，**局数不足**也是壳（3:0 却只存了 1 局）。
+     */
+    const isShell = (d, id, o) => {
+      if (!d) return true
+      if (!MD.hasContent(d)) return true
+      if (String(id).indexOf('kpl-') === 0) {
+        const want = Number(o && o.hs || 0) + Number(o && o.as || 0)
+        const have = d.kpl && Array.isArray(d.kpl.list) ? d.kpl.list.length : 0
+        if (want > 0 && have < want) return true
+      }
+      return false
+    }
 
     const need = {}
     Object.keys(live).forEach((id) => {
-      if (!known.has(id)) return
+      const start = known.get(id)
+      if (!start || !inRange(start)) return
       // ⚠️ 国际友谊赛、中北美国家联赛这类**故意不抓详情**的赛事永远不会出现在桶里，
       //    别把它们当成「空壳」—— 否则每班都会白白触发一次补抓。
       if (!MD.detailCapable(String(id).split('-')[0])) return
-      const d = payload[id]
-      if (d && d.fin === true && MD.hasContent(d)) return // 已经有内容，不用管
+      if (!isShell(payload[id], id, live[id])) return
       need[id] = live[id]
     })
     const n = Object.keys(need).length
     if (!n) return
 
-    log(`详情快通道：${n} 场已完赛仍是空壳，立即补抓`)
+    log(`详情快通道：${n} 场已完赛仍是空壳，立即补抓 → ${Object.keys(need).slice(0, 5).join(', ')}${n > 5 ? ' …' : ''}`)
     tmp = path.join(__dirname, '..', '.detail-status.json')
     require('fs').writeFileSync(tmp, JSON.stringify(need))
     try {
-      execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js'), '--status-json=' + tmp], { stdio: 'inherit' })
+      // ⚠️ --fast 一起传：常规 2 小时补抓间隔会让快通道「报了壳却一场都不抓」
+      execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js'), '--fast', '--status-json=' + tmp], { stdio: 'inherit' })
     } catch (err) {
       log(`详情快通道：补抓未产出（${(err && err.status) || (err && err.message) || ''}）`)
       return

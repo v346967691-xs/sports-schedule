@@ -875,4 +875,6 @@ if (require.main === module) {
   })
 }
 
-module.exports = { COMPETITIONS, beijingDay, beijingTime }
+// ⚠️ KPL_STATE / KPL_CANCELED 一并导出：match-detail.js 的快通道也要判 KPL 状态，
+//    别让两边各写一份语义（第二处实现的老毛病）。
+module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED }

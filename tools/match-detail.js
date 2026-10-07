@@ -56,6 +56,20 @@ const STATUS_JSON = (function () {
   const hit = process.argv.slice(2).find((a) => a.indexOf('--status-json=') === 0)
   return hit ? hit.slice('--status-json='.length) : ''
 })()
+
+/**
+ * 快通道模式：把补抓间隔从 `RETRY_GAP_MS`(2h) 压到 `FAST_GAP_MS`(15 分钟)。
+ *
+ * 🔴 为什么必须压（2026-10-07 实测）：快通道的触发条件本身就是
+ *    「刚完赛、且详情还是空壳」，就是要**立刻**补。可常规间隔是 2 小时，
+ *    而这些场往往在几十分钟前（比赛进行中或刚结束）才被抓过 → `gapOk` 恒为 false
+ *    → 快通道报了 13 场空壳、`needsFetch` 却判 0 场要抓，等于什么都没干。
+ *    15 分钟 = 一个班次，够密；抓成功了就不再是壳，下一班自然不会重复触发。
+ *    ⚠️ 上游真没结算完（KPL 常见）时会每班重试一次，48h 窗口 + `hasContent` 写入侧
+ *       判据保证它不会无限写空壳。
+ */
+const FAST = process.argv.slice(2).includes('--fast')
+const FAST_GAP_MS = 15 * 60 * 1000
 /** 只有 ESPN 源的赛事有 summary 端点；LoL / CBA / KPL 没有 */
 const SLUG = {
   ucl: 'uefa.champions',
@@ -752,6 +766,41 @@ function pickKplDetail(j, m) {
   return { list, picks, people, heroes }
 }
 
+/**
+ * KPL 官方赛程列表 → `{id: {status, hs, as}}`（只含**已结束**的场次）。
+ *
+ * 🔴 为什么需要它（2026-10-07）：快通道靠云表 `live_scores` 拿最新状态，但那张表
+ *    只有 ESPN 赛事 —— KPL 走的是官方接口，压根不在里面 → 不加这一段的话，
+ *    KPL 的赛后详情仍然只能等主闸那一班（实测 97 分钟），快通道对它等于不存在。
+ *    这里直接问一次官方 `getScheduleList`（**1 个请求**，整赛季一次返回），
+ *    把已结束的场次补进状态表。
+ *
+ * ⚠️ 状态语义与 `sync.js: fetchKpl()` **共用同一份 KPL_STATE**，别各写一套
+ *    （从 sync.js 导出来的，不是复制的）。
+ * ⚠️ 失败返回空对象：KPL 官方接口无 SLA，快通道不能因为它挂掉。
+ */
+async function fetchKplStatus() {
+  try {
+    const { KPL_STATE: STATE, KPL_CANCELED: CANCELED } = require('./sync.js')
+    const j = await postJSON(`${KPL}/getScheduleList`, { seasonid: '' })
+    const list = (j && j.data && j.data.list) || []
+    const out = {}
+    list.forEach((ev) => {
+      if (!ev || !ev.scheduleid || ev.schedule_status === CANCELED) return
+      const hs = Number(ev.team_a_score || 0)
+      const as = Number(ev.team_b_score || 0)
+      let status = STATE[ev.schedule_status] || 'upcoming'
+      // 与 sync.js 一致的兜底：上游滞后（打完了还报 1）时按比分补成已结束
+      if (status === 'upcoming' && hs + as > 0) status = 'finished'
+      if (status !== 'finished') return
+      out[`kpl-${ev.scheduleid}`] = { status: 'finished', hs, as }
+    })
+    return out
+  } catch (err) {
+    return {}
+  }
+}
+
 async function fetchKplDetail(m) {
   const scheduleid = String(m.id).replace(/^kpl-/, '')
   const seasonid = m.seasonid || ''
@@ -888,7 +937,7 @@ function needsFetch(m, captured) {
     //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
     const inWindow = Number.isFinite(t) && Date.now() - t < RETRY_WINDOW_MS
-    const gapOk = Date.now() - (prev.ts || 0) > RETRY_GAP_MS
+    const gapOk = Date.now() - (prev.ts || 0) > (FAST ? FAST_GAP_MS : RETRY_GAP_MS)
     if (!inWindow || !gapOk) return false
     if (prev.fin === false) return true
     // ⚠️ 放在 ① 之后、KPL 分支之前：空壳连 fin 判断都靠不住（残缺响应里 fin 也可能写 true）
@@ -1044,4 +1093,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, posGroup, resolveSlug, detailCapable, hasContent, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, fetchKplStatus, posGroup, resolveSlug, detailCapable, hasContent, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }

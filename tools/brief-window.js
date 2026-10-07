@@ -23,8 +23,26 @@
 // 保险条款：早报额外收「昨日晚报窗口内开赛、但昨日 21:00 仍未结束」的比赛。
 // 正常情况下这个集合是空集，只为防 BO5 拖到 4 小时这类异常长局，避免比赛彻底消失。
 
-const M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'));
+// 🔴 2026-10-07 修「早报说没赛事」：这份 M **不是最新数据**。
+//    它读的是仓库里提交的 data/matches.js，而那个文件只在「真的推送快照」的那一班
+//    （cloud-sync 通过 90 分钟节流闸之后）才会被 tools/sync.js 重写；
+//    被节流跳过的班次直接 return，快照原封不动。
+//    结果：06:00 出报那一班如果恰好是被跳过的班，日报拿到的是上一次提交时的旧快照
+//    —— 凌晨 02:45 开赛、04:40 结束的欧国联在旧快照里还是 upcoming，
+//       窗口内 fin = 0 → mode 落成 'preview'（前瞻），用户看到的就是「没赛事」。
+//    → 现在由 brief-push.js 先读云端 schedule_cache 再用 setMatches() 覆盖；
+//      读不到云端时才回落到这份本地快照（有总比没有强）。
+let M = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'))
 const { pick } = require('./brief-score.js');
+
+/**
+ * 用**最新的**比赛列表替换窗口计算用的数据源。
+ * @param {Array} list 扁平赛程数组（云端 schedule_cache 里就是这种形状）
+ */
+function setMatches(list) {
+  if (Array.isArray(list) && list.length) M = list
+  return M.length
+}
 
 const BJ = '+08:00';
 const MORNING_HOUR = 6;    // 早报出报时刻
@@ -118,6 +136,8 @@ function isDue(pubAtIso, now) {
 
 module.exports = {
   BJ, bjMs, inWindow, prevDay, nextDay,
-  morning, evening, carryOver, pubDays, isDue,
-  MORNING_HOUR, EVENING_HOUR, SPLIT_HOUR, M,
+  morning, evening, carryOver, pubDays, isDue, setMatches,
+  MORNING_HOUR, EVENING_HOUR, SPLIT_HOUR,
+  // ⚠️ 必须是 getter：setMatches() 会整体替换 M，直接导出值的话外部拿到的是旧引用
+  get M() { return M },
 };

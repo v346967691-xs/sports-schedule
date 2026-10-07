@@ -3112,6 +3112,26 @@ async function run() {
     && /case "\$H" in\s*\n\s*06\|07\|21\|22\)/.test(ymlSrc),
     'pushed 或 briefwin 取或')
 
+  /* ---------- 日报数据源（2026-10-07 修「早报说没赛事」） ----------
+   * 🔴 根因：brief-window 的 M 来自**仓库里提交的 data/matches.js**，而那个文件
+   *    只在 cloud-sync 通过 90 分钟节流闸、真的跑过 sync.js 之后才被重写；
+   *    被跳过的班次直接 return，文件原封不动 → 06:00 出报那一班若被节流跳过，
+   *    窗口内 0 场已完赛，mode 落成 'preview'，用户看到的就是「没赛事」。
+   *    （实测：旧快照下 2026-10-07 早报 mode=preview / 0 条简讯 / 无头条）
+   * → 现在 brief-push 必须先读云端 schedule_cache 再用 setMatches() 覆盖。
+   */
+  const bpushSrc = fs.readFileSync(path.join(ROOT, 'tools/brief-push.js'), 'utf8')
+  const bwinSrc = fs.readFileSync(path.join(ROOT, 'tools/brief-window.js'), 'utf8')
+  check('日报：brief-push 先读云端 schedule_cache 再生成（不依赖本地旧快照）',
+    /schedule_cache/.test(bpushSrc) && /setMatches\(/.test(bpushSrc)
+    && bpushSrc.indexOf('loadLiveMatches(cloud)') < bpushSrc.indexOf('B.build('),
+    '顺序：先 loadLiveMatches 后 build')
+  check('日报：读不到云端时回落本地快照而不是让日报挂掉',
+    /回落到本地/.test(bpushSrc))
+  check('日报：brief-window 的 M 可被替换且导出的是 getter（否则外部拿到旧引用）',
+    /function setMatches\(/.test(bwinSrc) && /get M\(\)/.test(bwinSrc)
+    && /setMatches,/.test(bwinSrc))
+
   // 实时比分：绝大多数轮次比分其实没变，那些 upsert 既没信息量又烧额度。
   // 🔴 但「不写」不能变成「永不写」—— 客户端要能区分「比分没变」和「同步挂了」。
   const lwSrc = fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')

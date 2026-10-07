@@ -9,8 +9,12 @@
  * 设计要点：
  *   1) 幂等 —— 每次运行都重算最近 N 天的全部期次。
  *      即使某一班 GitHub 定时没投递（实测会漏），下一班也会把缺的期补上。
- *   2) 依赖本地快照 data/matches.js，所以必须先跑过 cloud-sync 刷新数据，
- *      否则生成的是陈旧内容。workflow 里两个脚本前后串联。
+ *   2) 🔴 **不再依赖本地快照 data/matches.js**（2026-10-07 修「早报说没赛事」）：
+ *      本地文件只在 cloud-sync 通过 90 分钟节流闸、真的跑过 tools/sync.js 之后
+ *      才会被重写；被跳过的班次直接 return，文件原封不动。于是 06:00 出报那一班
+ *      若恰好被节流跳过，日报拿到的是上一次提交时的旧快照 —— 凌晨完赛的比赛
+ *      在旧快照里还是 upcoming，窗口内 0 场已完赛 → 落成「前瞻」，用户看到「没赛事」。
+ *      → 现在**先读云端 schedule_cache**（那里才是最新数据），读不到才回落本地文件。
  *   3) 不推图片 —— 分享图方案未定，日报页面暂不展示配图。
  *   4) 未到出报时刻的期次不落库 —— 本脚本幂等重算最近两天，若不拦这一道，
  *      下午 3 点跑的时候就会把「当天 21:00 的晚报」写进云表，而那一刻晚窗口
@@ -60,11 +64,43 @@ function shiftDay(dateStr, delta) {
   return new Date(Date.parse(dateStr + 'T00:00:00Z') + delta * 86400000).toISOString().slice(0, 10)
 }
 
+/**
+ * 把窗口计算用的数据源换成**云端最新快照**。
+ *
+ * 云表 schedule_cache 的 `data` 就是解码后的扁平数组（见 tools/cloud-sync.js 的注释：
+ * 刻意不推紧凑格式，为了兼容线上老版本），与 brief-window 需要的形状完全一致。
+ * 读不到就保留本地 data/matches.js —— 有旧数据总比没有强，绝不让它把日报搞挂。
+ *
+ * @returns {Promise<{ok:boolean, n:number, src:string}>}
+ */
+async function loadLiveMatches(cloud) {
+  try {
+    const res = await cloud.database
+      .from('schedule_cache')
+      .select('data')
+      .eq('id', 'latest')
+      .limit(1)
+    const row = res && res.data && res.data[0]
+    const list = row && row.data
+    if (!Array.isArray(list) || !list.length) {
+      return { ok: false, n: 0, src: '云端快照为空' }
+    }
+    return { ok: true, n: W.setMatches(list), src: '云端 schedule_cache' }
+  } catch (err) {
+    return { ok: false, n: 0, src: `读云端失败（${(err && err.message) || err}）` }
+  }
+}
+
 async function main() {
   const cloud = createWorkBuddyCloud({
     endpoint: publicConfig.endpoint,
     publishableKey: publicConfig.publishableKey,
   })
+
+  // 🔴 必须在任何 B.build() 之前 —— build 一进来就算窗口，晚一步就用的是旧数据
+  const src = await loadLiveMatches(cloud)
+  if (src.ok) log('数据源：' + src.src + '（' + src.n + ' 场）')
+  else log('⚠ 数据源回落到本地 data/matches.js —— ' + src.src)
 
   const today = todayBJ()
   const dates = []

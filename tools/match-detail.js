@@ -8,8 +8,12 @@
  *   ④ 技术统计    boxscore     —— 控球率 / 射门 / 射正 / 角球 / 犯规 / 传球成功率
  *   ⑤ 首发阵容    rosters      —— 两队首发 11 人 + 替补席（号码 / 位置），仅足球
  *
- * 用法：node tools/match-detail.js [--force]
+ * 用法：node tools/match-detail.js [--force] [--status-json=<path>]
  *   --force  连已结束的比赛也重抓一次。平常常规运行**不需要**它（已结束的抓一次就够）；
+ *   --status-json=<path>
+ *            用一份 `{id: {status, hs, as}}` 覆盖 `data/matches.js` 里的旧状态。
+ *            供 cloud-sync 的「详情快通道」使用 —— 那时本地快照最多是 97 分钟前的，
+ *            刚完赛的比赛在里头还是 live/upcoming，needsFetch 会走错分支。
  *            改过 SCHEMA 或想一次性把「阵容球员池」补齐时才用。
  * * ⚠️ 三个硬约束（改这个文件前先读）：
  *   1. **小程序不能直连 ESPN**，必须由本脚本预抓、抽取字段后落云表；
@@ -37,6 +41,21 @@ const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 
 /** 见文件顶部的 --force 说明 */
 const FORCE = process.argv.slice(2).includes('--force')
+
+/**
+ * 详情快通道用的「最新状态覆盖表」（一个 JSON 文件路径）。
+ *
+ * 🔴 为什么需要它（2026-10-07）：本脚本从 `data/matches.js` 读比赛状态，
+ *    而那份快照只在主闸放行时才被 `sync.js` 重写 —— 也就是**最多 97 分钟前**的状态。
+ *    快通道（主闸跳过的班次）跑进来时，刚完赛的比赛在旧快照里还是 `live` / `upcoming`：
+ *      · 判成 upcoming → needsFetch 走「12 小时刷一次」分支 → 根本不抓；
+ *      · 判成 live     → 虽然会抓，但 `fin=false` 存成壳，下次还得等 2 小时补抓门槛。
+ *    → 由 cloud-sync 把云端 `live_scores`（60 秒粒度的最新状态）喂进来覆盖掉。
+ */
+const STATUS_JSON = (function () {
+  const hit = process.argv.slice(2).find((a) => a.indexOf('--status-json=') === 0)
+  return hit ? hit.slice('--status-json='.length) : ''
+})()
 /** 只有 ESPN 源的赛事有 summary 端点；LoL / CBA / KPL 没有 */
 const SLUG = {
   ucl: 'uefa.champions',
@@ -895,6 +914,28 @@ async function main() {
   const matches = decodeSnapshot(require('../data/matches.js'))
   const list = Array.isArray(matches) ? matches : matches.matches || []
   const now = Date.now()
+
+  // 快通道：用最新状态覆盖旧快照（详见 STATUS_JSON 的注释）
+  if (STATUS_JSON) {
+    let ov = null
+    try {
+      ov = JSON.parse(fs.readFileSync(STATUS_JSON, 'utf8'))
+    } catch (err) {
+      console.warn('[match-detail] ⚠ 状态覆盖表读取失败，退回本地快照：', (err && err.message) || err)
+    }
+    if (ov && Object.keys(ov).length) {
+      let hit = 0
+      list.forEach((m) => {
+        const o = ov[m.id]
+        if (!o) return
+        if (o.status) m.status = o.status
+        if (m.home && o.hs != null) m.home.score = o.hs
+        if (m.away && o.as != null) m.away.score = o.as
+        hit += 1
+      })
+      console.log(`[match-detail] 快通道：${Object.keys(ov).length} 条最新状态，命中 ${hit} 场`)
+    }
+  }
 
   const targets = list.filter((m) => {
     // ⚠️ 必须走 resolveSlug（含比赛自带的 slug），只查 SLUG 表会把中国国字号漏掉

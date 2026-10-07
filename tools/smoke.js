@@ -3163,6 +3163,26 @@ async function run() {
   check('云同步：详情年龄探测查的是 match_detail 这张表（不是顺手复用主闸读到的 schedule_cache）',
     /from\('match_detail'\)\.select\('updated_at'\)/.test(csSrc))
   // 仍然守着「不额外发请求」这条初衷：探测只有一处，且不在 gate() 里（gate 里仍只有 1 次查询）
+  // 🔴 详情快通道（2026-10-07）：主闸跳过的班次，刚完赛的详情不能跟着等 97 分钟。
+  //    主闸 skip 时整班 return，sync / match-detail 都不跑 —— 详情是**赛后**才有人看的，
+  //    用户刚看完比赛点进去是空的，体验最差的就是这一段。
+  const mdSrcLocal = fs.readFileSync(path.join(ROOT, 'tools/match-detail.js'), 'utf8')
+  check('云同步：主闸跳过的班次不再直接 return，改走详情快通道',
+    /if \(verdict\.skip\)[\s\S]{0,400}?await detailFastLane\(cloud\)/.test(csSrc))
+  // ⚠️ 必须喂最新状态：否则 match-detail 用的还是 97 分钟前的 data/matches.js，
+  //    刚完赛的比赛在里头是 live/upcoming → needsFetch 走错分支 → 白跑一趟。
+  check('云同步：快通道把最新状态喂给 match-detail（否则它拿旧快照判断，等于白跑）',
+    /--status-json=/.test(csSrc) && /STATUS_JSON/.test(mdSrcLocal)
+    && /m\.status = o\.status/.test(mdSrcLocal))
+  // 实测踩过：live_scores 里既有「故意不抓详情」的 friendly/cnl，也有早不在快照窗口里的老 chn-*，
+  //    两者都会被误判成空壳 → 每班白白触发一次补抓 + 推两个桶。
+  check('云同步：快通道剔除「故意不抓详情」的赛事（friendly/cnl 永远不会有详情）',
+    /MD\.detailCapable\(String\(id\)\.split\('-'\)\[0\]\)/.test(csSrc))
+  check('云同步：快通道剔除已不在本地快照窗口里的比赛（match-detail 压根不会抓它们）',
+    /known\.has\(id\)/.test(csSrc) && /decodeSnapshot\(require\('\.\.\/data\/matches\.js'\)\)/.test(csSrc))
+  check('云同步：快通道没真抓到场次就不推送（省掉一整轮日桶写入）',
+    /!details\.stats\.fetched/.test(csSrc))
+
   const gi = csSrc.indexOf('async function gate(cloud)')
   const gateBody = gi < 0 ? '' : csSrc.slice(gi, csSrc.indexOf('\n}', gi))
   check('云同步：详情年龄探测只有一处且不在 gate 里（只在主闸放行的班次读，约 480 次/月）',

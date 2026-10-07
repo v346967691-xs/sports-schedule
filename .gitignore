@@ -20,3 +20,4 @@ tools/.lineup-players.json
 # AI 体检报告等一次性产物：只有本地查阅价值，且 .workbuddy/ 已被 packOptions 排除、不进包。
 # 不提交，免得公开仓库里堆一堆过期的体检存档。
 .workbuddy/reports/
+.detail-status.json

@@ -126,6 +126,8 @@ async function pushRow(cloud, table, row) {
  */
 const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
 const { isOutage } = require('./cloud-outage')
+// 快通道要用它的 dayKey / hasContent。⚠️ 本文件有 require.main 守卫，require 不会触发抓取
+const MD = require('./match-detail.js')
 
 /**
  * `match_detail` 的节流（分钟）。它按「天」分桶，一次推送要写 13 行，
@@ -227,6 +229,105 @@ async function detailAgeMin(cloud) {
 }
 
 /**
+ * 详情快通道：主闸跳过的班次，也别让「刚完赛的详情」干等 90 分钟。
+ *
+ * 🔴 为什么要有它（2026-10-07）：主闸 skip 时整班 return，`sync.js` / `match-detail.js`
+ *    都不跑，详情要等到下一次主闸放行（实测 97 分钟后）才更新。而详情恰恰是**赛后**
+ *    才有人看的东西 —— 用户刚看完比赛，点进去是空的，体验最差的时刻就是这一段。
+ *
+ * 快通道只做三件轻量事，然后才决定是否动重活：
+ *   1) 读 `live_scores`（~4KB，60 秒粒度的最新状态）—— 1 次请求；
+ *   2) 读「今天 + 昨天」两个日桶（~116KB），挑出**已完赛但仍是空壳**的场次 —— 1 次请求；
+ *   3) 一个都没有就立刻返回（凌晨 / 无比赛时段零开销）；
+ *      有才把最新状态喂给 `match-detail.js`（--status-json）补抓，并只推这两个桶。
+ *
+ * ⚠️ 必须喂最新状态：否则 match-detail 用的还是 97 分钟前的 `data/matches.js`，
+ *    刚完赛的比赛在里头是 live/upcoming → needsFetch 走错分支 → 白跑一趟。
+ * ⚠️ `live_scores` 只有 ESPN 赛事（KPL 不在里面）。KPL 走主闸那班，本通道覆盖不到。
+ */
+async function detailFastLane(cloud) {
+  let tmp = null
+  try {
+    const lr = await cloud.database.from('live_scores').select('data')
+    const rows = ((lr && lr.data && lr.data[0] && lr.data[0].data) || {}).rows || []
+    if (!Array.isArray(rows) || !rows.length) return
+
+    const live = {}
+    rows.forEach((r) => {
+      if (!r || !r.id || r.st !== 'finished') return
+      live[r.id] = { status: 'finished', hs: r.hs, as: r.as }
+    })
+    if (!Object.keys(live).length) return
+
+    const now = Date.now()
+    const ids = ['d-' + MD.dayKey(new Date(now).toISOString()), 'd-' + MD.dayKey(new Date(now - 86400000).toISOString())]
+    // ⚠️ 不用 `.in()`：本仓库从没用过这个 API，没把握；两次 eq 各拉一个日桶，总共还是 ~116KB
+    let buckets = []
+    for (const id of ids) {
+      const r = await cloud.database.from('match_detail').select('id, payload').eq('id', id)
+      if (r && Array.isArray(r.data)) buckets = buckets.concat(r.data)
+    }
+    const payload = {}
+    buckets.forEach((b) => {
+      if (b && b.payload) Object.keys(b.payload).forEach((k) => { payload[k] = b.payload[k] })
+    })
+
+    // ⚠️ `match-detail.js` 的 targets 来自 `data/matches.js`，不在快照窗口里的比赛
+    //    它压根不会抓。而 live_scores 实测会残留一些这样的老场次（10 场 chn-*），
+    //    不剔除的话每班都会白跑一趟补抓 + 推两个桶。
+    const local = require('../utils/snapshot').decodeSnapshot(require('../data/matches.js'))
+    const known = new Set((Array.isArray(local) ? local : (local && local.matches) || []).map((m) => m.id))
+
+    const need = {}
+    Object.keys(live).forEach((id) => {
+      if (!known.has(id)) return
+      // ⚠️ 国际友谊赛、中北美国家联赛这类**故意不抓详情**的赛事永远不会出现在桶里，
+      //    别把它们当成「空壳」—— 否则每班都会白白触发一次补抓。
+      if (!MD.detailCapable(String(id).split('-')[0])) return
+      const d = payload[id]
+      if (d && d.fin === true && MD.hasContent(d)) return // 已经有内容，不用管
+      need[id] = live[id]
+    })
+    const n = Object.keys(need).length
+    if (!n) return
+
+    log(`详情快通道：${n} 场已完赛仍是空壳，立即补抓`)
+    tmp = path.join(__dirname, '..', '.detail-status.json')
+    require('fs').writeFileSync(tmp, JSON.stringify(need))
+    try {
+      execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js'), '--status-json=' + tmp], { stdio: 'inherit' })
+    } catch (err) {
+      log(`详情快通道：补抓未产出（${(err && err.status) || (err && err.message) || ''}）`)
+      return
+    }
+    try {
+      delete require.cache[require.resolve('../data/match-details.js')]
+    } catch (err) { /* 没缓存就直接 require */ }
+    const details = require('../data/match-details.js')
+    // ⚠️ 没真抓到场次就不推（gap 节流挡住了）→ 省掉一整轮 13 桶写入
+    if (!details || !details.stats || !details.stats.fetched) return
+    const push = (details.buckets || []).filter((b) => ids.indexOf(b.id) > -1 && b.payload && Object.keys(b.payload).length)
+    if (!push.length) return
+    log(`详情快通道：推送 ${push.length} 个日桶…`)
+    const nowIso = new Date().toISOString()
+    let done = 0
+    for (const b of push) {
+      const r = await pushRow(cloud, 'match_detail', {
+        id: b.id, day: b.day, payload: b.payload, updated_at: nowIso, generated_at: nowIso,
+      })
+      if (r.ok) done += 1
+    }
+    log(`详情快通道：已写入 ${done}/${push.length} 个日桶（本轮抓取 ${details.stats.fetched} 场）`)
+  } catch (err) {
+    log(`详情快通道跳过（不影响主流程）：${(err && err.message) || err}`)
+  } finally {
+    if (tmp) {
+      try { require('fs').unlinkSync(tmp) } catch (e) { /* 清理失败无所谓 */ }
+    }
+  }
+}
+
+/**
  * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
  * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
  */
@@ -264,6 +365,8 @@ async function main() {
   if (verdict.skip) {
     log('⏭  本机跳过本班全量推送（约 0.8MB 落库已省下）；实时比分不受影响，仍在 60 秒粒度上跑')
     ghOut('pushed', 'false')
+    // 🔴 全量跳过 ≠ 详情也跟着等：刚完赛的比赛详情走快通道补上（详见 detailFastLane 注释）
+    await detailFastLane(cloud)
     return
   }
   ghOut('pushed', 'true')

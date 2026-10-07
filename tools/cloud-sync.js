@@ -128,12 +128,22 @@ const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
 const { isOutage } = require('./cloud-outage')
 
 /**
- * `match_detail` 的独立节流（分钟）。它按「天」分桶，一次推送要写 11 行，
- * 是单次全量推送里请求数最大的一块（16 班/天 × 11 = 176 次/天，占全量写入的 78%）。
- * 而详情（时间轴 / 近况 / 交锋 / 技术统计）本身变化就慢，3 小时刷一次足够。
- * ⚠️ 用的是主节流闸已经拿到的 ageMin，**不额外发一次请求**。
+ * `match_detail` 的节流（分钟）。它按「天」分桶，一次推送要写 13 行，
+ * 是单次全量推送里请求数最大的一块（详情写入占全量写入的 78%）。
+ *
+ * 🔴 2026-10-07 从 180 降到 **90**（用户拍板）：
+ *    180 分钟意味着「刚打完的比赛，详情可能要等 3 小时才出现在用户眼前」——
+ *    详情恰恰是**赛后**才有人看的东西，延迟 3 小时基本等于这个功能不实时。
+ *    代价测算：8 次/天 → 16 次/天，落库 +74MB/月；而烧穿线是 3.7GB/月
+ *    （`a4121e7` 之前的量），增量约占额度 **2%**，标准版 25000 点/月装得下。
+ *    → 90 分钟 = 与主快照同步刷新，赛后详情最多延迟 1.5 小时。
+ *
+ * 🔴🔴 判据必须读 match_detail **自己的** updated_at（`detailAgeMin()`），
+ *    不能用主闸的 `verdict.ageMin`（那是 schedule_cache 的年龄，上限只有 ~105 分钟，
+ *    拿去比 180 恒不成立 → 详情在自动班次下一次都没推过）。详见 detailAgeMin 注释。
+ * ⚠️ 探测器只在主闸已放行的班次调用（≈480 次请求/月），不是每 15 分钟一次。
  */
-const DETAIL_MIN_INTERVAL_MIN = Number(process.env.SYNC_DETAIL_INTERVAL_MIN || 180)
+const DETAIL_MIN_INTERVAL_MIN = Number(process.env.SYNC_DETAIL_INTERVAL_MIN || 90)
 
 /**
  * @returns {{skip:boolean, ageMin:number|null, reason:string}}

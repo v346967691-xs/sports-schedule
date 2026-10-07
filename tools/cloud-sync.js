@@ -179,6 +179,44 @@ async function gate(cloud) {
 }
 
 /**
+ * `match_detail` 距上次推送多少分钟（读不到返回 null = 当作必须推）。
+ *
+ * 🔴🔴 2026-10-07 事故（用户报「今天湖人对勇士、TES 对 KSG 的赛后数据不全」）：
+ *     原来这里是直接拿主闸的 `verdict.ageMin` 去比 `DETAIL_MIN_INTERVAL_MIN`(180)，
+ *     但 `verdict.ageMin` 是 **schedule_cache** 的年龄，不是 match_detail 的：
+ *       · 主闸只在 ageMin >= MIN_INTERVAL_MIN(90) 时放行；
+ *       · 放行的那一班**立刻**把 schedule_cache 重写 → ageMin 归零重新累积；
+ *       · 15 分钟一班，累积上限只有 ~105 分钟 → **永远够不到 180**。
+ *     → `detailDue` 恒为 false → **详情在自动班次下一次都没推过**，
+ *       只有 `--force`（ageMin=null）时才上云端 —— 这正是云端 match_detail 的
+ *       updated_at 停在 10:00（那次是手动 --force）而其余 4 张表 18:01 正常刷新的原因。
+ *     用户侧的后果：10:00 开赛的勇士vs湖人只存到开场那一下的壳，
+ *       14:00 开赛的 KPL 三场压根没进桶。
+ *     → 改成读 match_detail 自己的 updated_at。
+ *
+ * ⚠️ 只在「主闸已放行」的班次调用（约 16 次/天），不是每 15 分钟一次
+ *    → 约 480 次请求/月，不是每班都读的那种 2880 次/月。
+ * ⚠️ 不用 `.order()`：代码里从没用过这个 API，语法没把握；
+ *    直接把 15 个日桶的 updated_at 拉回来本地取最大值，同样是一次请求。
+ */
+async function detailAgeMin(cloud) {
+  try {
+    const res = await cloud.database.from('match_detail').select('updated_at')
+    const rows = (res && res.data) || []
+    let newest = 0
+    rows.forEach((r) => {
+      const t = Date.parse((r && r.updated_at) || '')
+      if (Number.isFinite(t) && t > newest) newest = t
+    })
+    if (!newest) return null
+    return Math.round((Date.now() - newest) / 60000)
+  } catch (err) {
+    // 读不到就当必须推 —— fail-open，比节流误跳过更安全
+    return null
+  }
+}
+
+/**
  * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
  * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
  */
@@ -392,10 +430,13 @@ async function main() {
     console.warn('[cloud-sync] ⚠ 本次没有可用的 KPL 选手榜，跳过推送')
   }
 
-  // ⚠️ 详情独立节流：--force（ageMin 为 null）时照常推。
-  const detailDue = verdict.ageMin == null || verdict.ageMin >= DETAIL_MIN_INTERVAL_MIN
+  // ⚠️ 详情独立节流：**必须读 match_detail 自己的时间**，不能用主闸的 verdict.ageMin
+  //    （理由见 detailAgeMin 的注释 —— 用主闸的年龄会导致它永远推不上去）。
+  //    --force 时不读、照常推。
+  const dAgeMin = FORCE ? null : await detailAgeMin(cloud)
+  const detailDue = dAgeMin == null || dAgeMin >= DETAIL_MIN_INTERVAL_MIN
   if (details && details.buckets && details.buckets.length && !detailDue) {
-    log(`⏭ match_detail 距上次推送 ${verdict.ageMin} 分钟 < ${DETAIL_MIN_INTERVAL_MIN}，本班跳过（省 11 次写入）`)
+    log(`⏭ match_detail 距上次推送 ${dAgeMin} 分钟 < ${DETAIL_MIN_INTERVAL_MIN}，本班跳过（省 ${details.buckets.length} 次写入）`)
   }
   if (details && details.buckets && details.buckets.length && detailDue) {
     log(`推送云端 match_detail（${details.buckets.length} 个日桶）…`)

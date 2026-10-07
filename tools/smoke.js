@@ -3149,8 +3149,26 @@ async function run() {
   // 否则「字典改了 + 跑了 --force」看起来天衣无缝，详情页却还是英文。
   check('云同步：--force 会传给 match-detail.js（否则改完中文名详情页还是英文）',
     /detailArgs\.push\('--force'\)/.test(csSrc) && /execFileSync\(process\.execPath, detailArgs/.test(csSrc))
-  check('云同步：match_detail 有独立节流且不额外发请求（复用主闸拿到的 ageMin）',
-    /const detailDue = verdict\.ageMin == null \|\| verdict\.ageMin >= DETAIL_MIN_INTERVAL_MIN/.test(csSrc))
+  // 🔴🔴 2026-10-07 事故：这条守卫**原来把错误实现固化成了断言** —— 一字不差地断言了
+  //    `verdict.ageMin >= DETAIL_MIN_INTERVAL_MIN`，于是每次改代码都被它顶回来。
+  //    `verdict.ageMin` 是 schedule_cache 的年龄：主闸只在它 >= 90 时放行，
+  //    而放行的那一班立刻重写 schedule_cache → 归零重来，上限 ~105 分钟，
+  //    永远够不到 180 → 详情在自动班次下**一次都没推过**（云端 updated_at 停在手动 --force 那次）。
+  //    用户侧就是「赛后详情不全」：今天 10:00 勇士vs湖人只存到开场壳、14:00 的 KPL 没进桶。
+  //    → 改成读 match_detail 自己的时间，守卫也反过来守住「不许再用主闸的年龄」。
+  check('云同步：详情节流读 match_detail 自己的时间（用主闸 ageMin 会永远推不上去）',
+    /const dAgeMin = FORCE \? null : await detailAgeMin\(cloud\)/.test(csSrc)
+    && /const detailDue = dAgeMin == null \|\| dAgeMin >= DETAIL_MIN_INTERVAL_MIN/.test(csSrc)
+    && !/verdict\.ageMin >= DETAIL_MIN_INTERVAL_MIN/.test(csSrc))
+  check('云同步：详情年龄探测查的是 match_detail 这张表（不是顺手复用主闸读到的 schedule_cache）',
+    /from\('match_detail'\)\.select\('updated_at'\)/.test(csSrc))
+  // 仍然守着「不额外发请求」这条初衷：探测只有一处，且不在 gate() 里（gate 里仍只有 1 次查询）
+  const gi = csSrc.indexOf('async function gate(cloud)')
+  const gateBody = gi < 0 ? '' : csSrc.slice(gi, csSrc.indexOf('\n}', gi))
+  check('云同步：详情年龄探测只有一处且不在 gate 里（只在主闸放行的班次读，约 480 次/月）',
+    (csSrc.match(/await detailAgeMin\(cloud\)/g) || []).length === 1
+    && /from\('schedule_cache'\)/.test(gateBody)
+    && !/match_detail/.test(gateBody))
 
   const ymlSrc = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
   check('工作流：实时比分那一步不受节流闸影响（60 秒粒度保持不变）',

@@ -88,20 +88,36 @@ const SLUG = {
   wucl: 'uefa.wchampions',
   mls: 'usa.1',
   lib: 'conmebol.libertadores',
-  // ⚠️ 北美国家联赛**故意不抓详情**（与国际友谊赛同一个理由）：
-  //    实测 10 天窗口 37 场 = **63KB** 包体积，是同期新增赛事里最大的一笔，
-  //    而中文语境下它的「历史交锋 / 双方近况」几乎没人看。赛程 + 比分已经够用。
-  //    cnl: 'concacaf.nations.league',
+  // 2026-10-07 重新加回来，走 SLIM_DETAIL 精简模式（只存事件 + 统计），理由见下方注释
+  cnl: 'concacaf.nations.league',
   asiacup: 'afc.asian.cup',
-  // ⚠️ 国际友谊赛**故意不抓详情**：友谊赛密集（未来 7 天就有 40 场），而且
-  //    它的「历史交锋 / 双方近况」本来就是最没参考价值的一类，
-  //    实测要占 38KB 包体积（详情桶是打进包的）。赛程 + 比分已经够用。
-  //    friendly: 'fifa.friendly',
+  friendly: 'fifa.friendly',
   u17: 'fifa.world.u17',
   u17w: 'fifa.wworld.u17',
   nba: 'nba',
 }
 const BASKETBALL = { nba: true }
+
+/**
+ * 精简模式：只存「进球 / 红黄牌 / 技术统计」，**不存**首发、双方近况、历史交锋。
+ *
+ * 🔴 历史：cnl 与国际友谊赛当初是**故意不抓详情**的 —— 实测 10 天窗口
+ *    37 场 = 63KB、友谊赛 7 天 40 场 = 38KB，而它们的「历史交锋 / 双方近况」
+ *    被判定为最没参考价值的一类，赛程 + 比分就够。
+ *
+ * 🔴 2026-10-07 用户提出「其他足球赛（友谊赛 / 中北美）没有详情」，重开：
+ *    真正想要的是**进球、红黄牌、技术统计**，而不是当初被否决的那两块。
+ *    → 分开处理：只存事件 + 统计，跳过首发 / 近况 / 交锋。
+ *    ✅ 实测（`node tools/packsize.js`，2026-10-07 晚）：
+ *       friendly 20 场 31KB（均 1.6KB）/ cnl 12 场 20KB（均 1.7KB）= **合计 51KB**
+ *       （同样场数全量存 ≈110KB，参照 nations 均 3.4KB）。
+ *       包体积 1.619MB / 80.9% → **1.675MB / 83.7%，余量 333KB**。
+ *
+ * ⚠️ 连带好处：精简后「赛前抓的那一次」等于纯空壳（没有 events/stats，
+ *    也不存 form/h2h），写入侧 `hasContent()` 判据会直接丢掉它 → 赛前不占体积。
+ *    配合 targets 里「精简赛事不抓 upcoming」，连那一次请求都省了。
+ */
+const SLIM_DETAIL = { friendly: true, cnl: true }
 
 /**
  * 抽取结果的 schema 版本。
@@ -855,6 +871,8 @@ async function fetchDetail(m) {
     h2h.total = h2h.list.length
     h2h.summary = parts.length ? `近 ${h2h.list.length} 次交手 ${parts.join(' · ')}` : ''
   }
+  // 精简模式：只留事件 + 统计（详见 SLIM_DETAIL 注释）
+  const slim = !!SLIM_DETAIL[m.comp]
   const out = {
     id: m.id,
     comp: m.comp,
@@ -862,10 +880,10 @@ async function fetchDetail(m) {
     v: SCHEMA, // 抽取逻辑版本，变了就重抓一次
     ts: Date.now(), // 抓取时刻：未开赛的场次据此判断要不要刷新
     events: pickEvents(j, homeId),
-    form: { home: form[String(homeId)] || [], away: form[String(awayId)] || [] },
-    h2h,
+    form: slim ? { home: [], away: [] } : { home: form[String(homeId)] || [], away: form[String(awayId)] || [] },
+    h2h: slim ? null : h2h,
     stats: pickStats(j, homeId),
-    lineups: pickLineups(j, homeId),
+    lineups: slim ? null : pickLineups(j, homeId),
     // 🔴 只有篮球有（足球的球员维度数据在 `rosters` 里，已由 lineups 覆盖）
     box: BASKETBALL[m.comp] ? pickBasketballPlayers(j, homeId) : null,
   }
@@ -996,6 +1014,10 @@ async function main() {
       // 单局信息只在开打之后才存在，未开赛抓不到任何东西
       return m.status === 'finished' || m.status === 'live' || m.status === 'inprogress'
     }
+    // 🔴 精简赛事（friendly / cnl）**赛前不抓**：它们只存事件 + 统计，
+    //    而未开赛时这两块都是空的 → 抓出来是纯空壳，写入侧 hasContent() 会直接丢掉，
+    //    等于白打一次上游。省掉这一整类无意义的请求。
+    if (SLIM_DETAIL[m.comp] && m.status === 'upcoming') return false
     if (m.status === 'finished') return now - t < FINISHED_MS + 6 * 3600 * 1000
     if (m.status === 'live' || m.status === 'inprogress') return true
     // 赛前预览：ESPN 对未开赛的比赛照样给 lastFiveGames / seasonseries，

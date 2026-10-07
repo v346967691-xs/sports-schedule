@@ -1727,9 +1727,23 @@ async function run() {
   // ESPN 会把「已排定但还没打」的比赛也算进 seasonseries（比分 0-0），
   // 赛季初尤其多 —— 直接显示会被当成数据错误
   // 赛事从「抓详情」名单里去掉后，云端老行必须被清掉 —— 详情桶是打进包的，占体积
-  check('详情：不抓详情的赛事（国际友谊赛）判定正确',
+  // ⚠️ 2026-10-07 反转：国际友谊赛 / 中北美国家联赛**重新加回**详情（走 SLIM_DETAIL 精简模式），
+  //    所以这条守卫不再断言 friendly 为 false。真正该守住的是「仍然不抓」的那些。
+  check('详情：抓/不抓详情的赛事判定正确',
     md.detailCapable('uecl') === true && md.detailCapable('chn') === true
-    && md.detailCapable('friendly') === false && md.detailCapable('worlds') === false)
+    && md.detailCapable('friendly') === true && md.detailCapable('cnl') === true
+    && md.detailCapable('worlds') === false)
+  // 精简模式：只留事件 + 统计。全量加会把包体积顶到 99.9%（+328KB），精简是 156KB。
+  const mdSrc2 = fs.readFileSync(path.join(ROOT, 'tools/match-detail.js'), 'utf8')
+  check('详情：国际友谊赛 / 中北美走精简模式（只存事件+统计，跳过首发/交锋/近况）',
+    /const SLIM_DETAIL = \{ friendly: true, cnl: true \}/.test(mdSrc2)
+    && /h2h: slim \? null : h2h/.test(mdSrc2)
+    && /lineups: slim \? null : pickLineups/.test(mdSrc2)
+    && /form: slim \? \{ home: \[\], away: \[\] \} :/.test(mdSrc2)
+    && /events: pickEvents\(j, homeId\)/.test(mdSrc2))
+  // 精简赛事赛前抓出来必然是纯空壳（没有 events/stats），白打上游 —— 直接跳过
+  check('详情：精简赛事赛前不抓（否则抓回来是纯空壳，被 hasContent 丢掉，白打一次上游）',
+    /SLIM_DETAIL\[m\.comp\] && m\.status === 'upcoming'/.test(mdSrc2))
   check('详情：交锋只保留已打过的比赛（未开赛的 0-0 会被误当战绩）',
     md.isPlayed({ statusType: { state: 'post' } }) === true
     && md.isPlayed({ statusType: { state: 'pre' } }) === false

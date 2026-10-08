@@ -198,14 +198,23 @@ Page({
    * 转发卡图：画「日期 + 共 N 场 + 前 4 场对阵」。
    * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
    */
-  async buildShareImage() {
-    const d = this.data
-    // 🔴 只取**第一个比赛日**的场次（2026-10-08 修）：
-    //    以前标题写的是「筛选结果的总场次数」（跨很多天），日期却写第一组的
-    //    dayLabel（「今天」/「明天」）→ 拼出「今天 NBA 84 场」这种误导性信息。
-    //    标题里的「N 场」必须和上面的日期严格对应，所以两者都取自同一组。
+  /**
+   * 分享用的「哪天 · 多少场」——**卡图和标题必须共用这一份**。
+   *
+   * 🔴 2026-10-08 修了两次才修全：
+   *    第一次只发现卡图上「日期写今天、场次数写总数」→ 拼出「今天 NBA 84 场」；
+   *    改完卡图后用户又发现**分享标题还是总数** —— 卡图说 4 场、标题说 84 场，
+   *    两条信息对不上，同样是误导。根因是两处各自取数，没有共用同一份。
+   */
+  shareHeadline() {
     const first = (this.allGroups || [])[0]
     const items = (first && first.items) || []
+    return { first, items, n: items.length, day: (first && first.dayLabel) || '' }
+  },
+
+  async buildShareImage() {
+    const d = this.data
+    const { first, items } = this.shareHeadline()
     if (!items.length) return
     const img = await poster.build(this, 'share-canvas', 'schedule', {
       dateText: (first && first.dayLabel) || '',
@@ -316,10 +325,11 @@ Page({
   },
   onShareAppMessage() {
     const d = this.data
-    // 有选中赛事就把赛事名写进标题，比通用文案更值得点
+    // ⚠️ 标题里的「N 场」必须和卡图一致（共用 shareHeadline），否则两条信息打架
+    const { n, day } = this.shareHeadline()
     const title = d.compName
-      ? `${d.compName} · ${d.totalMatches} 场赛程 · 闪现赛程助手`
-      : '闪现赛程助手 · 按赛事查赛程与比分'
+      ? `${d.compName} · ${day} ${n} 场 · 闪现赛程助手`
+      : `闪现赛程助手 · ${day} ${n} 场赛程`
     return share.message({
       title,
       path: d.activeComp
@@ -331,9 +341,10 @@ Page({
 
   onShareTimeline() {
     const d = this.data
+    const { n, day } = this.shareHeadline()
     const title = d.compName
-      ? `${d.compName} · ${d.totalMatches} 场赛程`
-      : '闪现赛程助手 · 按赛事查赛程与比分'
+      ? `${d.compName} · ${day} ${n} 场`
+      : `闪现赛程助手 · ${day} ${n} 场赛程`
     return share.timeline({
       title,
       query: d.activeComp ? `comp=${encodeURIComponent(d.activeComp)}` : '',

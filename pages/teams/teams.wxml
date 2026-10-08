@@ -60,6 +60,10 @@
     <view class="empty-desc">换个关键词，或切换到其他赛事看看</view>
   </view>
 
-  <view class="tf-foot">关注的球队会出现在「我的」，登录后换设备也能同步</view>
+  <!-- 🔴 这句文案一直在承诺「去我的」，但 `teams.js` 的 goMine() 从来没被接线
+       （2026-10-08 修）：把它变成可点的入口，配一个箭头让用户看得出能点。 -->
+  <view class="tf-foot" bindtap="goMine" hover-class="tf-foot-hover">
+    关注的球队会出现在「我的」，登录后换设备也能同步 ›
+  </view>
   <view class="safe-bottom"></view>
 </view>

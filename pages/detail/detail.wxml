@@ -72,6 +72,15 @@
     <view class="pre-tip-desc">开赛后这里会换成实时事件与技术统计</view>
   </view>
 
+  <!-- 🔴 赛后说明（2026-10-08 加）：超过 48 小时的比赛，事件 / 统计 / 阵容会被**主动裁掉**
+       （包体积取舍，见 tools/match-detail.js 的 staleLineups）—— 这是设计好的，
+       但以前只在源码注释里写了，用户看到的是「只剩比分卡、其他全没了」，
+       第一反应是没加载出来或者 App 坏了。这里显式说一句。 -->
+  <view class="pre-tip" wx:if="{{match.status === 'finished' && (!detail || !(detail.hasTimeline || detail.hasStats || detail.hasForm || detail.hasH2H || detail.hasBox || detail.hasKpl))}}">
+    <view class="pre-tip-title">赛后数据已归档</view>
+    <view class="pre-tip-desc">完赛超过 48 小时的比赛不再保留事件与技术统计，比分不受影响</view>
+  </view>
+
   <!-- ① 事件时间轴 -->
   <view class="section card" wx:if="{{detail.hasTimeline}}">
     <view class="sec-title">比赛事件</view>

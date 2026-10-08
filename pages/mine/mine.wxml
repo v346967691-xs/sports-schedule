@@ -129,7 +129,7 @@
   <view class="section">
     <view class="section-head">
       <view class="section-title">我关注的比赛</view>
-      <view class="section-more">{{favs.length}} 场</view>
+      <view class="section-more">{{loadingFavs ? '' : favs.length + ' 场'}}</view>
     </view>
 
     <view class="fav-list" wx:if="{{favs.length}}">
@@ -148,6 +148,13 @@
         </view>
         <view class="fav-arrow">›</view>
       </view>
+    </view>
+
+    <!-- 🔴 加载态必须单独一档：`favs` 在网络回来前是空数组，
+         直接 wx:else 会先闪一整块「还没有关注的比赛 + 去看看赛程」再变成列表（2026-10-08 修）。
+         三态口径跟 team 页的名单块一致。 -->
+    <view class="empty" wx:elif="{{loadingFavs}}">
+      <view class="empty-title">正在读取关注的比赛…</view>
     </view>
 
     <view class="empty" wx:else>

@@ -243,6 +243,19 @@ Page({
   },
 
   /**
+   * 下拉刷新。
+   * 🔴 `rank.json` 一直开着 `enablePullDownRefresh`，但这个方法**从来没实现过** ——
+   *    用户下拉是有手势和反馈的，内容却纹丝不动，看起来像卡住了（2026-10-08 修）。
+   * ⚠️ 必须 `wx.stopPullDownRefresh()`：不调用的话下拉的转圈会一直停在那儿不收起。
+   */
+  onPullDownRefresh() {
+    data.refresh()
+      .then(() => { this.render() })
+      .catch(() => {})
+      .then(() => wx.stopPullDownRefresh())
+  },
+
+  /**
    * 某个赛事**实际有哪几档**。
    *
    * 先按大类取模板，再逐档验数据 —— 拿不到内容的档位**根本不进这个数组**

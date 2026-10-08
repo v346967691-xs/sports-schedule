@@ -208,3 +208,8 @@
   color: #A0A7B4;
   line-height: 1.6;
 }
+
+/* 可点：整行是「去我的」的入口，按下给点反馈 */
+.tf-foot-hover {
+  color: var(--brand);
+}

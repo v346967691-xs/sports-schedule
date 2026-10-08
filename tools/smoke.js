@@ -654,6 +654,35 @@ async function run() {
     && !/\.mc-form\s*\{[^}]*gap\s*:/.test(schWxss)
     && /\.ff\s*\{[^}]*margin-right/.test(schWxss))
 
+  /* ── 2026-10-08 四项体验修复 ── */
+  // ① 排行页下拉刷新：rank.json 开了 enablePullDownRefresh 就必须实现 onPullDownRefresh，
+  //    否则用户下拉有手势有反馈、内容却不动，看起来像卡死
+  const rankJs = fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.js'), 'utf8')
+  const rankCfg = JSON.parse(fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.json'), 'utf8'))
+  check('下拉刷新：开了 enablePullDownRefresh 的页面必须实现 onPullDownRefresh（否则下拉是空转的）',
+    !rankCfg.enablePullDownRefresh || /onPullDownRefresh\s*\(/.test(rankJs))
+  check('下拉刷新：刷新完必须 stopPullDownRefresh（不调用转圈就不会收起）',
+    /wx\.stopPullDownRefresh/.test(rankJs))
+
+  // ② 我的页关注列表：JS 里算了 loadingFavs，WXML 必须消费，否则每次先闪空态
+  const mineWxml = fsMod.readFileSync(path.join(ROOT, 'pages/mine/mine.wxml'), 'utf8')
+  const mineJs = fsMod.readFileSync(path.join(ROOT, 'pages/mine/mine.js'), 'utf8')
+  check('我的页：关注列表三态齐全（有数据 / 加载中 / 空），加载中不落到空态',
+    /loadingFavs/.test(mineJs) && /loadingFavs/.test(mineWxml)
+    && /wx:elif="\{\{loadingFavs\}\}"/.test(mineWxml))
+
+  // ③ 老比赛（>48h）详情被裁是设计好的，但必须给用户一句话说明
+  const detailWxml = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
+  check('详情：已结束却没有任何内容时给出「已归档」说明（不然像没加载出来）',
+    detailWxml.indexOf('赛后数据已归档') > -1
+    && /match\.status === 'finished'/.test(detailWxml))
+
+  // ④ teams 页底注承诺了「去我的」，goMine 必须接线（以前是死代码）
+  const teamsWxml = fsMod.readFileSync(path.join(ROOT, 'pages/teams/teams.wxml'), 'utf8')
+  const teamsJs = fsMod.readFileSync(path.join(ROOT, 'pages/teams/teams.js'), 'utf8')
+  check('球队列表：底注「去我的」已接线（goMine 不能是死代码）',
+    /goMine\(\)\s*\{/.test(teamsJs) && /bindtap="goMine"/.test(teamsWxml))
+
   /* ── 2026-10-02 新增三个赛事源：KPL（腾讯官方 POST）、CBA（官方 GET）、中超（ESPN chn.1） ── */
   const syncSrc = fsMod.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')
   const compByKey = {}

@@ -90,12 +90,19 @@
             <view class="mc-dot" style="background: {{item.match.home.color}}"></view>
             <view class="mc-name {{item.match._homeWin ? 'win' : ''}}">{{item.match.home.zhName}}</view>
             <view class="mc-abbr">{{item.match.home.abbr}}</view>
+            <!-- 赛前前瞻：双方近 5 场胜平负。只在「看未来赛程」时给，已完赛的比分本身就在右边 -->
+            <view class="mc-form" wx:if="{{item.match._homeForm.length}}">
+              <view class="ff ff-{{f}}" wx:for="{{item.match._homeForm}}" wx:for-item="f" wx:key="*this"></view>
+            </view>
             <view class="mc-score {{item.match._homeWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.home.score}}</view>
           </view>
           <view class="mc-row">
             <view class="mc-dot" style="background: {{item.match.away.color}}"></view>
             <view class="mc-name {{item.match._awayWin ? 'win' : ''}}">{{item.match.away.zhName}}</view>
             <view class="mc-abbr">{{item.match.away.abbr}}</view>
+            <view class="mc-form" wx:if="{{item.match._awayForm.length}}">
+              <view class="ff ff-{{f}}" wx:for="{{item.match._awayForm}}" wx:for-item="f" wx:key="*this"></view>
+            </view>
             <view class="mc-score {{item.match._awayWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.away.score}}</view>
           </view>
         </view>

@@ -634,6 +634,26 @@ async function run() {
   })
   check('分享卡：四个页面的转发 / 朋友圈都带 imageUrl', noImg.length === 0, noImg.join(' '))
 
+  /* ── 2026-10-08 赛前前瞻：赛程卡片上直接显示双方近 5 场胜平负 ──
+     🔴 近况必须**从赛程快照算**（data.teamForm，60 场 × 2 队 = 6ms），
+        不能读 match_detail —— 详情里那份 form 覆盖不到 10% 的比赛。 */
+  const schJs = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.js'), 'utf8')
+  const schWxml = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.wxml'), 'utf8')
+  const schWxss = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.wxss'), 'utf8')
+  check('前瞻：近况取自赛程快照（teamForm），不读详情桶',
+    /data\.teamForm\(/.test(schJs) && !/_homeForm\s*=\s*.*matchDetail/.test(schJs))
+  // 只在「看未来赛程」时给，已完赛的比分本身就说明了结果
+  check('前瞻：只在 upcoming 模式挂近况（已完赛不挂，比分已在右边）',
+    /_showForm\s*=\s*mode\s*===\s*'upcoming'\s*&&\s*!fallback/.test(schJs))
+  check('前瞻：主客两行都渲染了近况色块',
+    (schWxml.match(/class="mc-form"/g) || []).length === 2
+    && schWxml.indexOf('_homeForm') > -1 && schWxml.indexOf('_awayForm') > -1)
+  // 三色 + 不用 flex gap（老 WebView 不支持）
+  check('前瞻：胜/平/负三色齐备且不用 flex gap（用 margin 撑间距）',
+    ['ff-W', 'ff-D', 'ff-L'].every((c) => schWxss.indexOf(c) > -1)
+    && !/\.mc-form\s*\{[^}]*gap\s*:/.test(schWxss)
+    && /\.ff\s*\{[^}]*margin-right/.test(schWxss))
+
   /* ── 2026-10-02 新增三个赛事源：KPL（腾讯官方 POST）、CBA（官方 GET）、中超（ESPN chn.1） ── */
   const syncSrc = fsMod.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')
   const compByKey = {}

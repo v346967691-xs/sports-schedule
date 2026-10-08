@@ -13,6 +13,8 @@ const CATS = [
 ]
 
 const PAGE_SIZE = 3
+/** 赛程卡片上给每队挂几个近况色块。5 个是足球 App 的通例，再多会挤到队名 */
+const FORM_N = 5
 /** 实时比分轮询间隔。服务端 live_scores 60 秒刷一次，客户端也按 60 秒拉，不多打接口 */
 const LIVE_POLL_MS = 60 * 1000
 
@@ -173,6 +175,8 @@ Page({
     // 赛季间歇期：没有未来赛程时自动展示最近对战，而不是丢给用户一个空列表
     const fallback = mode === 'upcoming' && list.length === 0
     if (fallback) list = data.finished({ cat: activeCat, comps, team: teamFilter }).slice(0, 40)
+    // 前瞻只在「看未来赛程」时有意义：已完赛的比赛结果就摆在比分上，再挂近况是噪声
+    this._showForm = mode === 'upcoming' && !fallback
 
     this.allGroups = view.groupByDate(list, { compOf: data.compOf })
     this.setData({
@@ -233,9 +237,19 @@ Page({
   buildRows(n) {
     const groups = this.allGroups || []
     const rows = []
+    const showForm = !!this._showForm
     groups.slice(0, Math.min(n, groups.length)).forEach((g) => {
       rows.push({ type: 'head', key: `h-${g.date}`, date: g.date, dayLabel: g.dayLabel, count: g.items.length })
-      g.items.forEach((m) => rows.push({ type: 'match', key: `m-${m.id}`, match: m }))
+      g.items.forEach((m) => {
+        if (showForm) {
+          // 🔴 近况**从赛程快照算**（data.teamForm），不读 match_detail ——
+          //    详情里那份 form 覆盖不到 10% 的比赛，而这里要覆盖所有未来赛程。
+          //    实测 60 场 × 2 队 = 6ms，性能完全够。
+          m._homeForm = data.teamForm(m.comp, m.home.id, FORM_N).map((f) => f.result)
+          m._awayForm = data.teamForm(m.comp, m.away.id, FORM_N).map((f) => f.result)
+        }
+        rows.push({ type: 'match', key: `m-${m.id}`, match: m })
+      })
     })
     return rows
   },

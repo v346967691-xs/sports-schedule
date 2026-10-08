@@ -239,3 +239,36 @@
   width: 500px;
   height: 400px;
 }
+
+/* 赛前前瞻：双方近 5 场胜平负色块（只在看未来赛程时出现）
+   ⚠️ 不用 flex `gap`（老 WebView 不支持），间距一律 margin-right */
+.mc-form {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-left: 10rpx;
+}
+
+.ff {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 3rpx;
+  margin-right: 4rpx;
+}
+
+.ff:last-child {
+  margin-right: 0;
+}
+
+/* 胜绿 / 平灰 / 负红 —— 足球通行口径，与 standings 的 zone、分享卡近况块同色系 */
+.ff-W {
+  background: #2F7A52;
+}
+
+.ff-D {
+  background: #8A93A6;
+}
+
+.ff-L {
+  background: #C33A3A;
+}

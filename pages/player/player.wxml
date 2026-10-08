@@ -1,3 +1,6 @@
+<!-- 离屏 canvas：只在转发前画分享卡用，移出屏幕而非 display:none（隐藏后取不到节点） -->
+<canvas type="2d" id="share-canvas" class="share-canvas"></canvas>
+
 <view class="page player">
   <view class="empty" wx:if="{{loadError}}">
     <view class="empty-title">打不开这名球员</view>

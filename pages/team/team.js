@@ -20,6 +20,7 @@ const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
 const nav = require('../../utils/nav')
 const rosterView = require('../../utils/roster')
+const poster = require('../../utils/poster')
 
 const FORM_N = 5
 const UPCOMING_N = 8
@@ -64,6 +65,8 @@ Page({
     rosterGroups: [],
     rosterSize: 0,
     rosterLoading: false,
+    /** 转发卡图：onShareAppMessage 是同步的，必须提前画好存这里 */
+    shareImage: '',
   },
 
   onLoad(query) {
@@ -165,7 +168,32 @@ Page({
       matches: view.decorateList(upcoming, { compOf: (k) => data.compOf(k) }),
       followed: follows.has(this.data.comp, this.data.id),
       _team: teamObj,
+    }, () => this.buildShareImage())
+  },
+
+  /**
+   * 转发卡图：画「队名 + 排名 + 近 5 场胜平负 + 下一场」。
+   * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
+   * ⚠️ 近况色块的顺序跟页面一致（`teamForm` 是最新一场在前），别在卡片里反转。
+   */
+  async buildShareImage() {
+    const d = this.data
+    if (!d.name || d.name === '-') return
+    const next = (d.matches || [])[0]
+    let nextText = ''
+    if (next) {
+      const opp = String(next.home.id) === String(d.id) ? next.away.zhName : next.home.zhName
+      nextText = [next._dayLabel || next.date, next.time, `vs ${opp}`].filter(Boolean).join(' ')
+    }
+    const img = await poster.build(this, 'share-canvas', 'team', {
+      comp: d.compName || '',
+      name: d.name,
+      sub: d.standingLine || '',
+      form: (d.form || []).map((f) => f.result),
+      nextText,
+      accent: d.accent || '#6B7280',
     })
+    if (img) this.setData({ shareImage: img })
   },
 
   onFollowTap() {
@@ -250,6 +278,7 @@ Page({
     return share.message({
       title: `${this.data.name} · ${this.data.compName}赛程${this.data.standingLine ? '（' + this.data.standingLine + '）' : ''}`,
       path: `/pages/team/team?comp=${encodeURIComponent(this.data.comp)}&id=${encodeURIComponent(String(this.data.id))}`,
+      imageUrl: this.data.shareImage,
     })
   },
 
@@ -257,6 +286,7 @@ Page({
     return share.timeline({
       title: `${this.data.name} · ${this.data.compName}赛程与排名`,
       query: `comp=${encodeURIComponent(this.data.comp)}&id=${encodeURIComponent(String(this.data.id))}`,
+      imageUrl: this.data.shareImage,
     })
   },
 })

@@ -19,6 +19,7 @@
  */
 const share = require('../../utils/share')
 const data = require('../../utils/data')
+const poster = require('../../utils/poster')
 
 /** 档案字段的展示口径：空的一律不显示，不写「未知」这种占位噪声 */
 function buildProfile(p) {
@@ -64,6 +65,8 @@ Page({
     loadError: '',
     loading: true,
     _noProfile: false,
+    /** 转发卡图：onShareAppMessage 是同步的，必须提前画好存这里 */
+    shareImage: '',
   },
 
   onLoad(query) {
@@ -116,7 +119,7 @@ Page({
             enName: fallback && fallback.z ? fallback.s || '' : '',
             profile: [],
             _noProfile: true,
-          })
+          }, () => this.buildShareImage())
           return
         }
         const p = res.player
@@ -129,11 +132,30 @@ Page({
           posZh: p.pn || '',
           profile: buildProfile(p),
           _noProfile: false,
-        })
+        }, () => this.buildShareImage())
       })
       .catch(() => {
         this.setData({ loading: false, _noProfile: true })
       })
+  },
+
+  /**
+   * 转发卡图：画「球员名 + 球队 + 出场/进球/助攻」。
+   * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
+   * ⚠️ 名字是异步来的（档案走云端），所以只在两条 setData 分支的回调里画。
+   */
+  async buildShareImage() {
+    const d = this.data
+    if (!d.name) return
+    const img = await poster.build(this, 'share-canvas', 'player', {
+      comp: d.compName || '',
+      name: d.name,
+      en: d.enName || '',
+      team: [d.teamName, d.posZh].filter(Boolean).join(' · '),
+      stats: (d.stats || []).slice(0, 3),
+      accent: d.accent || '#6B7280',
+    })
+    if (img) this.setData({ shareImage: img })
   },
 
   /** 回所属球队页 */
@@ -151,6 +173,7 @@ Page({
       path: `/pages/player/player?comp=${encodeURIComponent(this.data.comp)}`
         + `&team=${encodeURIComponent(String(this.data.teamId))}`
         + `&id=${encodeURIComponent(String(this.data.athleteId))}`,
+      imageUrl: this.data.shareImage,
     })
   },
 
@@ -160,6 +183,7 @@ Page({
       query: `comp=${encodeURIComponent(this.data.comp)}`
         + `&team=${encodeURIComponent(String(this.data.teamId))}`
         + `&id=${encodeURIComponent(String(this.data.athleteId))}`,
+      imageUrl: this.data.shareImage,
     })
   },
 })

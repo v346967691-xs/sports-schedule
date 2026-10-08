@@ -1,3 +1,6 @@
+<!-- 离屏 canvas：只在转发前画分享卡用，移出屏幕而非 display:none（隐藏后取不到节点） -->
+<canvas type="2d" id="share-canvas" class="share-canvas"></canvas>
+
 <view class="page schedule">
   <view class="cat-bar">
     <view

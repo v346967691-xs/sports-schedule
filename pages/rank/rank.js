@@ -22,6 +22,7 @@
 const share = require('../../utils/share')
 const data = require('../../utils/data')
 const fmt = require('../../utils/format')
+const poster = require('../../utils/poster')
 const { appInstance } = require('../../utils/app-instance')
 
 /** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
@@ -196,6 +197,8 @@ Page({
     emptyReason: '',
     totalTeams: 0,
     legend: [],
+    /** 转发卡图：onShareAppMessage 是同步的，必须提前画好存这里 */
+    shareImage: '',
   },
 
   onLoad(query) {
@@ -443,7 +446,54 @@ Page({
       totalTeams: cur.totalTeams,
       updatedAt: timeLabel(pickUpdatedAt(tier)),
       source: data.source() === 'cloud' ? '云端' : '本地',
+    }, () => {
+      this.buildShareImage()
     })
+  },
+
+  /**
+   * 转发卡图：画「赛事 + 榜名 + Top5」。
+   * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
+   */
+  async buildShareImage() {
+    const rows = this.shareRows()
+    if (!rows.length) return
+    const img = await poster.build(this, 'share-canvas', 'rank', {
+      comp: this.data.compName || '',
+      boardName: this.data.tierLabel || '排行榜',
+      rows,
+      accent: (data.compOf(this.data.activeComp) || {}).accent || '#2E7CF6',
+    })
+    if (img) this.setData({ shareImage: img })
+  },
+
+  /**
+   * 按当前档位取 Top5，统一成 { pos, name, val }。
+   * ⚠️ 四种档位的行结构不一样：积分榜是 cells 数组（按列取），
+   *    射手/助攻榜是 value，KPL 选手榜是 num + rank。
+   */
+  shareRows() {
+    const tk = this.data.tierKind
+    if (tk === 'standings') {
+      const g = (this.data.groups || [])[0]
+      const rows = (g && g.rows) || []
+      const cols = this.data.columns || []
+      // 主数值列 = strong 那列（积分），取不到就用最后一列
+      let ci = -1
+      cols.forEach((c, i) => { if (c.strong) ci = i })
+      if (ci < 0) ci = Math.max(cols.length - 1, 0)
+      return rows.slice(0, 5).map((r) => ({ pos: r.pos, name: r.name, val: (r.cells || [])[ci] || '' }))
+    }
+    if (tk === 'players') {
+      const b = (this.data.boards || [])[0]
+      return ((b && b.rows) || []).slice(0, 5).map((r) => ({ pos: r.rank, name: r.name, val: r.num }))
+    }
+    // scorer（足球射手/助攻）与 leader（篮球数据榜）都是 { pos, name, value }
+    return (this.data.rankRows || []).slice(0, 5).map((r) => ({
+      pos: r.pos,
+      name: r.name,
+      val: r.value == null ? '' : r.value,
+    }))
   },
 
   /**
@@ -511,6 +561,7 @@ Page({
       path: this.data.activeComp
         ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
         : '/pages/rank/rank',
+      imageUrl: this.data.shareImage,
     })
   },
 
@@ -522,6 +573,7 @@ Page({
       query: this.data.activeComp
         ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
         : '',
+      imageUrl: this.data.shareImage,
     })
   },
 })

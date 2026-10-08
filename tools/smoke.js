@@ -546,6 +546,94 @@ async function run() {
   check('卡图：BG 常量已指向底图',
     posterMod.BG.match === '/images/share-match.jpg' && posterMod.BG.brief === '/images/share-brief.jpg')
 
+  /* ── 2026-10-08 新增四张分享卡：榜单 / 球员 / 球队 / 赛程 ──
+     🔴 这四张**一律代码画、不配底图**：包体积余量只有 ~320KB，一张底图 ~110KB，
+        四张就是 440KB 直接超包。下面这条守卫守住「不许偷偷给它们配底图」。 */
+  const NEW_KINDS = ['rank', 'player', 'team', 'schedule']
+  check('卡图：四张新卡不配底图（包体积余量不够，加了就超包）',
+    NEW_KINDS.every((k) => !posterMod.BG[k]),
+    NEW_KINDS.filter((k) => posterMod.BG[k]).join(' '))
+  check('卡图：四张新卡的绘制函数都已导出',
+    ['drawRank', 'drawPlayer', 'drawTeam', 'drawSchedule']
+      .every((fn) => typeof posterMod[fn] === 'function'))
+
+  // 内容正确性：每张卡都要把自己的关键信息画出来
+  const ctxR = fakeCtx()
+  posterMod.drawRank(ctxR, {
+    comp: '英格兰超级联赛', boardName: '积分榜',
+    rows: [{ pos: 1, name: '阿森纳', val: '75' }, { pos: 2, name: '曼城', val: '73' }],
+  })
+  const rText = ctxR.texts.join(' | ')
+  check('卡图：榜单卡画出赛事 + 榜名 + 前两名',
+    rText.indexOf('英格兰超级联赛') > -1 && rText.indexOf('积分榜') > -1
+    && rText.indexOf('阿森纳') > -1 && rText.indexOf('曼城') > -1, rText.slice(0, 80))
+
+  const ctxP = fakeCtx()
+  posterMod.drawPlayer(ctxP, {
+    comp: '英超', name: '费兰·托雷斯', en: 'F. Torres', team: '巴黎圣日耳曼',
+    stats: [{ k: '进球', v: '3' }, { k: '助攻', v: '1' }],
+  })
+  const pText = ctxP.texts.join(' | ')
+  check('卡图：球员卡画出中文名 + 球队 + 进球助攻',
+    pText.indexOf('费兰·托雷斯') > -1 && pText.indexOf('巴黎圣日耳曼') > -1
+    && pText.indexOf('进球') > -1 && pText.indexOf('3') > -1, pText.slice(0, 80))
+
+  const ctxT = fakeCtx()
+  posterMod.drawTeam(ctxT, {
+    comp: '英超', name: '阿森纳', sub: '第 1 名 · 75 分',
+    form: ['W', 'W', 'D', 'L', 'W'], nextText: '10月12日 vs 曼城',
+  })
+  const tText = ctxT.texts.join(' | ')
+  check('卡图：球队卡画出队名 + 排�� + 近 5 场胜平负 + 下一场',
+    tText.indexOf('阿森纳') > -1 && tText.indexOf('第 1 名') > -1
+    && tText.indexOf('胜') > -1 && tText.indexOf('平') > -1 && tText.indexOf('负') > -1
+    && tText.indexOf('下一场') > -1, tText.slice(0, 90))
+
+  const ctxS = fakeCtx()
+  posterMod.drawSchedule(ctxS, {
+    dateText: '10月8日', title: '英超 · 8 场',
+    rows: [{ time: '19:30', home: '阿森纳', away: '切尔西', comp: '英超' }],
+  })
+  const sText = ctxS.texts.join(' | ')
+  check('卡图：赛程卡画出日期 + 场次数 + 时间对阵',
+    sText.indexOf('10月8日') > -1 && sText.indexOf('8 场') > -1
+    && sText.indexOf('19:30') > -1 && sText.indexOf('阿森纳') > -1, sText.slice(0, 80))
+
+  // 空数据不能画成 undefined / null（四类卡都要能扛住）
+  const junk = ['undefined', 'null', 'NaN']
+  const emptyCases = [
+    ['drawRank', {}],
+    ['drawPlayer', {}],
+    ['drawTeam', {}],
+    ['drawSchedule', {}],
+  ]
+  const junkHits = []
+  emptyCases.forEach(([fn, o]) => {
+    const c = fakeCtx()
+    posterMod[fn](c, o)
+    const t = c.texts.join(' | ')
+    junk.forEach((w) => { if (t.indexOf(w) > -1) junkHits.push(fn + ':' + w) })
+  })
+  check('卡图：四张新卡空数据时不画出 undefined / null / NaN',
+    junkHits.length === 0, junkHits.join(' '))
+
+  // 接线守卫：四个页面都要有离屏 canvas + 分享时带上 imageUrl
+  const cardPages = ['rank', 'player', 'team', 'schedule']
+  const noCanvas = cardPages.filter((p) => {
+    const w = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.wxml'), 'utf8')
+    const x = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.wxss'), 'utf8')
+    return w.indexOf('share-canvas') < 0 || x.indexOf('.share-canvas') < 0
+  })
+  check('分享卡：四个页面都挂了离屏 canvas（wxml 节点 + wxss 移出屏幕）',
+    noCanvas.length === 0, noCanvas.join(' '))
+  const noImg = cardPages.filter((p) => {
+    const s = fsMod.readFileSync(path.join(ROOT, 'pages', p, p + '.js'), 'utf8')
+    // onShareAppMessage 与 onShareTimeline 都要带 imageUrl
+    const msg = s.slice(s.indexOf('onShareAppMessage'))
+    return msg.indexOf('imageUrl') < 0 || msg.split('imageUrl').length < 3
+  })
+  check('分享卡：四个页面的转发 / 朋友圈都带 imageUrl', noImg.length === 0, noImg.join(' '))
+
   /* ── 2026-10-02 新增三个赛事源：KPL（腾讯官方 POST）、CBA（官方 GET）、中超（ESPN chn.1） ── */
   const syncSrc = fsMod.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')
   const compByKey = {}

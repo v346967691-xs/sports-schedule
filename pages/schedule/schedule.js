@@ -3,6 +3,7 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const nav = require('../../utils/nav')
+const poster = require('../../utils/poster')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -34,6 +35,8 @@ Page({
     loadError: '',
     hasStandings: false,
     compName: '',
+    /** 转发卡图：onShareAppMessage 是同步的，必须提前画好存这里 */
+    shareImage: '',
   },
 
   onLoad(query) {
@@ -184,7 +187,35 @@ Page({
       // 只在选中了具体赛事、且该赛事真有积分榜时才给入口（杯赛 / 国字号没有）
       hasStandings: !!activeComp && !!data.standingsOf(activeComp),
       compName: activeComp ? data.compOf(activeComp).name : '',
+    }, () => this.buildShareImage())
+  },
+
+  /**
+   * 转发卡图：画「日期 + 共 N 场 + 前 4 场对阵」。
+   * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
+   */
+  async buildShareImage() {
+    const d = this.data
+    const items = (d.rows || []).filter((r) => r.type === 'match')
+    if (!items.length) return
+    const head = (d.rows || []).find((r) => r.type === 'head')
+    const img = await poster.build(this, 'share-canvas', 'schedule', {
+      dateText: (head && head.dayLabel) || '',
+      title: d.compName
+        ? `${d.compName} · ${d.totalMatches} 场`
+        : `${d.totalMatches} 场赛程`,
+      rows: items.slice(0, 4).map((r) => {
+        const m = r.match || {}
+        return {
+          time: m.time || '',
+          home: (m.home && (m.home.zhName || m.home.name)) || '',
+          away: (m.away && (m.away.zhName || m.away.name)) || '',
+          comp: m._compName || '',
+        }
+      }),
+      accent: (d.activeComp && (data.compOf(d.activeComp) || {}).accent) || '#2E7CF6',
     })
+    if (img) this.setData({ shareImage: img })
   },
 
   /** 看赛程时顺手查排名：跳到该赛事的积分榜 */
@@ -267,10 +298,29 @@ Page({
     wx.stopPullDownRefresh()
   },
   onShareAppMessage() {
-    return share.message({ title: '闪现赛程助手 · 按赛事查赛程与比分', path: '/pages/schedule/schedule' })
+    const d = this.data
+    // 有选中赛事就把赛事名写进标题，比通用文案更值得点
+    const title = d.compName
+      ? `${d.compName} · ${d.totalMatches} 场赛程 · 闪现赛程助手`
+      : '闪现赛程助手 · 按赛事查赛程与比分'
+    return share.message({
+      title,
+      path: d.activeComp
+        ? `/pages/schedule/schedule?comp=${encodeURIComponent(d.activeComp)}`
+        : '/pages/schedule/schedule',
+      imageUrl: d.shareImage,
+    })
   },
 
   onShareTimeline() {
-    return share.timeline({ title: '闪现赛程助手 · 按赛事查赛程与比分' })
+    const d = this.data
+    const title = d.compName
+      ? `${d.compName} · ${d.totalMatches} 场赛程`
+      : '闪现赛程助手 · 按赛事查赛程与比分'
+    return share.timeline({
+      title,
+      query: d.activeComp ? `comp=${encodeURIComponent(d.activeComp)}` : '',
+      imageUrl: d.shareImage,
+    })
   },
 })

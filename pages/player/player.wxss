@@ -140,3 +140,12 @@
   border-radius: 20rpx;
   background: var(--card);
 }
+
+/* 离屏 canvas：只用于转发前绘制分享卡，移出屏幕而不是 display:none */
+.share-canvas {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 500px;
+  height: 400px;
+}

@@ -200,23 +200,26 @@ Page({
    */
   async buildShareImage() {
     const d = this.data
-    const items = (d.rows || []).filter((r) => r.type === 'match')
+    // 🔴 只取**第一个比赛日**的场次（2026-10-08 修）：
+    //    以前标题写的是「筛选结果的总场次数」（跨很多天），日期却写第一组的
+    //    dayLabel（「今天」/「明天」）→ 拼出「今天 NBA 84 场」这种误导性信息。
+    //    标题里的「N 场」必须和上面的日期严格对应，所以两者都取自同一组。
+    const first = (this.allGroups || [])[0]
+    const items = (first && first.items) || []
     if (!items.length) return
-    const head = (d.rows || []).find((r) => r.type === 'head')
     const img = await poster.build(this, 'share-canvas', 'schedule', {
-      dateText: (head && head.dayLabel) || '',
+      dateText: (first && first.dayLabel) || '',
       title: d.compName
-        ? `${d.compName} · ${d.totalMatches} 场`
-        : `${d.totalMatches} 场赛程`,
-      rows: items.slice(0, 4).map((r) => {
-        const m = r.match || {}
-        return {
-          time: m.time || '',
-          home: (m.home && (m.home.zhName || m.home.name)) || '',
-          away: (m.away && (m.away.zhName || m.away.name)) || '',
-          comp: m._compName || '',
-        }
-      }),
+        ? `${d.compName} · ${items.length} 场`
+        : `${items.length} 场赛程`,
+      // ⚠️ allGroups 里是**未 decorate 的原始 match**：队名字段是 `zh`（不是 `zhName`），
+      //    也没有 `_compName`（那是 view.decorateList 才加的）→ 这里自己取赛事中文名。
+      rows: items.slice(0, 4).map((m) => ({
+        time: m.time || '',
+        home: (m.home && (m.home.zh || m.home.name)) || '',
+        away: (m.away && (m.away.zh || m.away.name)) || '',
+        comp: (data.compOf(m.comp) || {}).name || '',
+      })),
       accent: (d.activeComp && (data.compOf(d.activeComp) || {}).accent) || '#2E7CF6',
     })
     if (img) this.setData({ shareImage: img })

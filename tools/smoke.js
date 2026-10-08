@@ -599,6 +599,25 @@ async function run() {
     sText.indexOf('10月8日') > -1 && sText.indexOf('8 场') > -1
     && sText.indexOf('19:30') > -1 && sText.indexOf('阿森纳') > -1, sText.slice(0, 80))
 
+  // 🔴 2026-10-08 用户报：标题写 totalMatches（跨很多天的总数）而日期写「今天」
+  //    → 拼出「今天 NBA 84 场」这种误导。场次数必须和日期取自**同一天**。
+  const schedJsSrc = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.js'), 'utf8')
+  // ⚠️ 用带缩进的 `'  onShareAppMessage()'` 定位真正的定义：
+  //    文件头注释里也出现过这四个字，用裸字符串会把切片起点算到注释里去，得到空串。
+  const schShare = schedJsSrc.slice(schedJsSrc.indexOf('async buildShareImage'), schedJsSrc.indexOf('  onShareAppMessage()'))
+  check('卡图：赛程卡的场次数与日期取自同一天（用 totalMatches 会写出「今天 84 场」）',
+    /allGroups/.test(schShare) && /items\.length/.test(schShare)
+    && schShare.indexOf('totalMatches') < 0, schShare.length ? '' : '切片为空，定位失败')
+  // 时间是赛程最重要的信息，不能比同行的队名弱
+  // （以前时间 18px/MUTED 灰、队名 21px/600 深色，主次完全颠倒）
+  const posterSrc = fsMod.readFileSync(path.join(ROOT, 'utils/poster.js'), 'utf8')
+  const schDraw = posterSrc.slice(posterSrc.indexOf('function drawSchedule'))
+  // 只取行循环那一段：font(18) 是顶部日期用的，正常，不能拿来判时间
+  const schLines = schDraw.slice(schDraw.indexOf('rows.forEach'))
+  check('卡图：赛程卡的时间比队名更重（时间 22px/700 主色，队名 20px/500）',
+    /font\(22, 700\)/.test(schLines) && /font\(20, 500\)/.test(schLines)
+    && schLines.indexOf('font(21, 600)') < 0 && schLines.indexOf('font(18)') < 0)
+
   // 空数据不能画成 undefined / null（四类卡都要能扛住）
   const junk = ['undefined', 'null', 'NaN']
   const emptyCases = [

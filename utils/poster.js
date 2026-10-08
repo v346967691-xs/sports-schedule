@@ -440,13 +440,16 @@ function drawSchedule(ctx, o) {
   const rows = (o.rows || []).slice(0, 4)
   rows.forEach((r, i) => {
     const y = 168 + i * 46
+    // 🔴 时间是赛程卡里**最重要的信息**（2026-10-08 用户提：不该比同行的队名更弱）
+    //    → 时间用 22px / 700 粗体 + 主色，队名降到 20px / 500。
+    //    以前时间是 18px 常规 + MUTED 灰，队名反而是 21px/600 深色，主次完全颠倒。
     ctx.textAlign = 'left'
-    ctx.fillStyle = MUTED
-    ctx.font = font(18)
+    ctx.fillStyle = INK
+    ctx.font = font(22, 700)
     ctx.fillText(String(r.time || ''), 32, y)
     ctx.fillStyle = INK
-    ctx.font = font(21, 600)
-    ctx.fillText(ellipsis(ctx, `${r.home || ''} VS ${r.away || ''}`, 292), 96, y)
+    ctx.font = font(20, 500)
+    ctx.fillText(ellipsis(ctx, `${r.home || ''} VS ${r.away || ''}`, 284), 104, y)
     if (r.comp) {
       ctx.textAlign = 'right'
       ctx.fillStyle = MUTED

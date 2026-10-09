@@ -242,6 +242,141 @@
   box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
 }
 
+/* ---------- 淘汰赛对阵树 ----------
+   🔴 卡片高 92rpx、同列卡间距 18rpx、两列之间走廊宽 36rpx，**必须与 utils/bracket.js 的
+      NODE_H / NODE_GAP / LINK_W 一致** —— 连线端点的纵坐标就是按这三个数算出来的。
+      改动任何一处都要同步改另一处，否则连线整体错位（与排行页 COLUMNS ↔ renderRow 同类）。
+   ⚠️ 不用 flex `gap`（老 WebView 不支持），列内间距一律用 margin。 */
+.ko {
+  margin: 16rpx 24rpx 0;
+  padding: 20rpx 16rpx 22rpx;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.ko-title {
+  margin: 0 8rpx 16rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.ko-heads {
+  display: flex;
+  align-items: center;
+  margin: 0 0 14rpx;
+}
+
+.ko-head {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 表头行的走廊占位：宽度必须与 .ko-gap 相同，否则列头和列身对不齐 */
+.ko-head-gap {
+  flex: none;
+  width: 36rpx;
+}
+
+.ko-tree {
+  display: flex;
+  align-items: flex-start;
+}
+
+.ko-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ko-gap {
+  position: relative;
+  flex: none;
+  width: 36rpx;
+}
+
+/* 一条连线线段。位置和长度全部由 bracket.js 算好，这里只负责画出来 */
+.ko-seg {
+  position: absolute;
+  background: var(--line);
+}
+
+.ko-node {
+  box-sizing: border-box;
+  height: 92rpx;
+  border: 2rpx solid var(--line);
+  border-radius: 12rpx;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ko-node + .ko-node {
+  margin-top: 18rpx;
+}
+
+.ko-node-hover {
+  background: var(--brand-soft);
+}
+
+.ko-row {
+  display: flex;
+  align-items: center;
+  height: 44rpx;
+  padding: 0 10rpx;
+}
+
+.ko-dot {
+  flex: none;
+  width: 8rpx;
+  height: 22rpx;
+  margin-right: 8rpx;
+  border-radius: 4rpx;
+}
+
+.ko-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ko-score {
+  flex: none;
+  min-width: 26rpx;
+  text-align: right;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 与比赛卡同一套口径：胜者更黑更重，负者留灰 */
+.ko-row.win .ko-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.ko-row.win .ko-score {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.ko-note {
+  margin: 18rpx 8rpx 0;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 /* 离屏 canvas：只用于转发前绘制分享卡，移出屏幕而不是 display:none */
 .share-canvas {
   position: fixed;

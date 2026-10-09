@@ -77,6 +77,63 @@
     该赛事暂无已公布的未来赛程，下面是最近的对战记录
   </view>
 
+  <!--
+    淘汰赛对阵树：选中八强 / 半决赛 / 决赛时出现。
+    🔴 连线是「同轮次内按开赛时间两两配对」**推断**出来的 —— 上游 previousMatchIds 恒为空，
+       官方根本不给晋级关系；因此每段连线都经过「胜者集合 ↔ 下一轮双方集合」自校验，
+       校验不过就整段不画线（只留分列），见 utils/bracket.js 的 canLink()。
+    ⚠️ 几何（卡片位置、连线端点）全部在 utils/bracket.js 里算完，模板只负责铺开。
+    ⚠️ 嵌套 wx:for 必须显式写 wx:for-index，否则内层 `index` 会盖掉外层。
+  -->
+  <view class="ko" wx:if="{{bracket}}">
+    <view class="ko-title">淘汰赛对阵</view>
+
+    <view class="ko-heads">
+      <block wx:for="{{bracket.items}}" wx:key="key" wx:for-item="it" wx:for-index="ii">
+        <view class="ko-head" wx:if="{{it.type === 'col'}}">{{it.label}}</view>
+        <view class="ko-head-gap" wx:else></view>
+      </block>
+    </view>
+
+    <view class="ko-tree">
+      <block wx:for="{{bracket.items}}" wx:key="key" wx:for-item="it" wx:for-index="ii">
+        <view class="ko-col" wx:if="{{it.type === 'col'}}" style="padding-top: {{it.padTop}}rpx">
+          <view
+            class="ko-node"
+            wx:for="{{it.nodes}}"
+            wx:for-item="n"
+            wx:for-index="ni"
+            wx:key="id"
+            data-id="{{n.id}}"
+            bindtap="goDetail"
+            hover-class="ko-node-hover"
+          >
+            <view class="ko-row {{r.win ? 'win' : ''}}" wx:for="{{n.rows}}" wx:for-item="r" wx:for-index="ri" wx:key="idx">
+              <view class="ko-dot" style="background: {{r.color}}"></view>
+              <view class="ko-name">{{r.name}}</view>
+              <view class="ko-score" wx:if="{{n.hasScore}}">{{r.score}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="ko-gap" wx:else style="height: {{it.height}}rpx">
+          <view
+            class="ko-seg"
+            wx:for="{{it.segs}}"
+            wx:for-item="sg"
+            wx:for-index="si"
+            wx:key="k"
+            style="left: {{sg.left}}rpx; top: {{sg.top}}rpx; width: {{sg.width}}rpx; height: {{sg.height}}rpx"
+          ></view>
+        </view>
+      </block>
+    </view>
+
+    <view class="ko-note">
+      连线为「同轮次按时间顺序两两配对」的推断结果，已用官方赛果自校验；点任一场看详情。
+    </view>
+  </view>
+
   <view class="summary" wx:if="{{totalMatches}}">
     共 {{totalMatches}} 场比赛，分布在 {{totalGroups}} 个比赛日
     <block wx:if="{{updatedAt}}"> · 数据 {{updatedAt}}{{source === 'cloud' ? '（云端）' : '（本地）'}}</block>

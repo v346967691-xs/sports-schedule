@@ -26,7 +26,7 @@
     档位分段控件：档位**按赛事大类给不同的集合**（2026-10-06 改）
       足球 = 积分榜 / 射手榜 / 助攻榜
       篮球 = 积分榜 + 得分榜 / 篮板榜 / 助攻榜 / 抢断榜 / 盖帽榜
-      电竞 = 只有积分榜（KPL 多一个选手榜）
+      电竞 = 积分榜（KPL 多一个选手榜；全球总决赛多一个瑞士轮战绩）
     ⚠️ 拿不到内容的档位**直接不渲染**，不再置灰占位 —— 与「空赛事入口隐藏」同一约定。
     ⚠️ 只剩一档时整条隐藏（一条只有一个按钮的分段控件没有意义）。
   -->
@@ -265,6 +265,41 @@
             <view class="foot-note">
               数据来自 KPL 官方数据榜（每张取前 5），官方结算有延迟时会按滞后状态显示。
               数值保留官方原始单位，不做换算。
+            </view>
+          </block>
+
+          <!-- 瑞士轮战绩档（tierKind = swiss）：按官方阶段战绩分组，不排名次 -->
+          <block wx:elif="{{tierKind === 'swiss'}}">
+            <view class="meta" wx:if="{{item.swissTeams}}">
+              <text class="meta-main">{{item.name}} · 瑞士轮 {{item.swissTeams}} 支队伍</text>
+              <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>
+            </view>
+
+            <view class="empty" wx:if="{{!item.swiss.length}}">
+              <view class="empty-title">该赛事暂无瑞士轮战绩</view>
+              <view class="empty-desc">赛事开打后才会生成，赛程页可以看具体对阵。</view>
+            </view>
+
+            <!--
+              ⚠️ 只有战绩分组，**没有名次列** —— 同战绩内官方本来就不排序（看小分/抽签），
+                 自己编一个 1..16 的名次就是造假。谁晋级由战绩本身说话。
+            -->
+            <view class="swiss-card card" wx:for="{{item.swiss}}" wx:for-item="g" wx:key="key">
+              <view class="swiss-side">
+                <view class="swiss-record">{{g.key}}</view>
+                <view class="swiss-count">{{g.teams.length}} 队</view>
+              </view>
+              <view class="swiss-teams">
+                <view class="swiss-team" wx:for="{{g.teams}}" wx:for-item="t" wx:key="id">
+                  <view class="swiss-dot" style="background: {{t.color}}"></view>
+                  <text class="swiss-name">{{t.name}}</text>
+                </view>
+              </view>
+            </view>
+
+            <view class="foot-note">
+              战绩取自上游官方给出的阶段战绩，不按比分自行累加 —— 赛事进行中显示当前战绩，打完后即为最终战绩。
+              同战绩内官方不排名次，所以这里只按战绩分组、不显示名次。
             </view>
           </block>
 

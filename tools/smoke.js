@@ -708,6 +708,183 @@ async function run() {
     && viewMod.nameOf({ name: 'Arsenal' }) === 'Arsenal'
     && viewMod.nameOf({ zh: '', name: '' }) === '待定')
 
+  /* ── 2026-10-09 S 赛对阵树 + 瑞士轮战绩 ──
+     🔴 上游**不给晋级关系**：`match.previousMatchIds` 在 2025 与 2026 的全球总决赛里
+        逐场查过，**恒为 `[]`**。所以「谁晋级到哪一场」只能按「同一轮次内按开赛时间
+        两两配对」推断；而推断必须能被证伪 —— 胜者集合对不上就整段不连线。
+     样本是 2025 全球总决赛的真实赛果（八强 HLE-GEN / CFO-KT / G2-TES / T1-AL，
+     半决赛 KT-GEN / TES-T1，决赛 T1-KT）与真实的瑞士轮 16 队最终战绩。 */
+  const brMod = require(path.join(ROOT, 'utils/bracket'))
+  const T = (code, w, l) => ({ id: code, name: code, zh: '', abbr: code, color: '#B99433', wins: w, losses: l })
+  const ko = (id, start, round, h, hs, a, as, done) => ({
+    id, comp: 'worlds', start, date: start.slice(0, 10), time: '15:00',
+    status: done ? 'finished' : 'upcoming', statusText: done ? '已结束' : '',
+    stage: '全球总决赛 · ' + round, venue: '', broadcast: [], bo: 5,
+    home: Object.assign(T(h), { score: hs }),
+    away: Object.assign(T(a), { score: as }),
+    historical: false,
+  })
+  const BR_QF = [
+    ko('qf0', '2025-10-28T07:00:00Z', '四分之一决赛', 'HLE', 1, 'GEN', 3, true),
+    ko('qf1', '2025-10-29T07:00:00Z', '四分之一决赛', 'CFO', 0, 'KT', 3, true),
+    ko('qf2', '2025-10-30T07:00:00Z', '四分之一决赛', 'G2', 1, 'TES', 3, true),
+    ko('qf3', '2025-10-31T07:00:00Z', '四分之一决赛', 'T1', 3, 'AL', 2, true),
+  ]
+  const BR_SF = [
+    ko('sf0', '2025-11-01T07:00:00Z', '半决赛', 'KT', 3, 'GEN', 1, true),
+    ko('sf1', '2025-11-02T07:00:00Z', '半决赛', 'TES', 0, 'T1', 3, true),
+  ]
+  const BR_FIN = [ko('f0', '2025-11-09T07:00:00Z', '决赛', 'T1', 3, 'KT', 2, true)]
+  const BR = BR_QF.concat(BR_SF, BR_FIN)
+  const tree = brMod.buildBracket(BR, '全球总决赛')
+  check('对阵树：三轮分别是 4 / 2 / 1 场，列头沿用上游自己的轮次名',
+    !!tree && tree.columns.length === 3
+    && tree.columns.map((c) => c.nodes.length).join(',') === '4,2,1'
+    && tree.columns.map((c) => c.label).join('/') === '四分之一决赛/半决赛/决赛')
+  check('对阵树：按时间顺序两两配对（八强 0/1 → 半决赛 0，2/3 → 半决赛 1）',
+    tree.columns[0].nodes.map((n) => n.feed).join(',') === '0,0,1,1'
+    && tree.columns[1].nodes.map((n) => n.feed).join(',') === '0,0')
+  check('对阵树：配对经过「胜者集合 ↔ 下一轮双方集合」自校验，通过才画线',
+    tree.gaps.every((g) => g.linked)
+    && tree.gaps[0].segs.length === 12 && tree.gaps[1].segs.length === 6)
+  // 🔴 证伪路径：把两场半决赛的对手对调（时间不变）—— 此时「按时间配对」必然推错，守卫必须拦住
+  const swapped = BR_QF.concat([
+    ko('sfA', '2025-11-01T07:00:00Z', '半决赛', 'TES', 0, 'T1', 3, true),
+    ko('sfB', '2025-11-02T07:00:00Z', '半决赛', 'KT', 3, 'GEN', 1, true),
+  ], BR_FIN)
+  const badTree = brMod.buildBracket(swapped, '全球总决赛')
+  check('对阵树：自校验失败的那一段连线整段不画（宁可少画一条，也不能画错一条）',
+    badTree.gaps[0].linked === false && badTree.gaps[0].segs.length === 0
+    && badTree.gaps[1].linked === true)
+  check('对阵树：场数不是 2:1 就不连线（三场八强配两场半决赛是结构性错误）',
+    brMod.buildBracket(BR_QF.slice(0, 3).concat(BR_SF, BR_FIN), '全球总决赛').gaps[0].linked === false)
+  check('对阵树：只有一个轮次时整块不渲染（一列不叫对阵图）',
+    brMod.buildBracket(BR_QF, '全球总决赛') === null)
+  // ⚠️ 几何常量是 bracket.js 与 schedule.wxss **共用**的，算错连线就整体错位
+  check('对阵树：几何与常量自洽（总高 = 4×卡高 + 3×间距；半决赛列居中）',
+    tree.totalH === brMod.NODE_H * 4 + brMod.NODE_GAP * 3
+    && tree.columns[1].padTop === Math.round((tree.totalH - (brMod.NODE_H * 2 + brMod.NODE_GAP)) / 2))
+  check('对阵树：列与走廊线性交替（模板铺一遍即可，不必去读不存在的 gaps[末位]）',
+    tree.items.map((i) => i.type).join(',') === 'col,gap,col,gap,col'
+    && !/bracket\.gaps\[/.test(schWxml))
+  check('对阵树：未开赛时按时间配对照样画线（那会儿整棵树都是「待定」，传不出错误信息）',
+    brMod.buildBracket(BR.map((m) => Object.assign({}, m, {
+      status: 'upcoming', statusText: '',
+      home: Object.assign({}, m.home, { score: null }), away: Object.assign({}, m.away, { score: null }),
+    })), '全球总决赛').gaps.every((g) => g.linked))
+
+  const SW = [
+    ['KT', 3, 0], ['AL', 3, 0], ['HLE', 3, 1], ['G2', 3, 1], ['GEN', 3, 1], ['CFO', 3, 2], ['T1', 3, 2], ['TES', 3, 2],
+    ['MKOI', 2, 3], ['BLG', 2, 3], ['FLY', 2, 3], ['VKS', 1, 3], ['TSW', 1, 3], ['100T', 1, 3], ['FNC', 0, 3], ['PSG', 0, 3],
+  ]
+  const swRow = (h, a, i) => ({
+    id: 'sw' + i, comp: 'worlds', start: `2025-10-${15 + i}T07:00:00Z`, date: '2025-10-15', time: '15:00',
+    status: 'finished', statusText: '已结束', stage: '全球总决赛 · 瑞士轮', venue: '', broadcast: [], bo: 1,
+    home: Object.assign(T(h[0], h[1], h[2]), { score: 1 }),
+    away: Object.assign(T(a[0], a[1], a[2]), { score: 0 }),
+    historical: false,
+  })
+  const swGroups = brMod.swissGroups(SW.slice(0, 8).map((h, i) => swRow(h, SW[i + 8], i)), '全球总决赛')
+  check('瑞士轮战绩：按官方 record 分组，不编名次（同战绩内官方本来就不排序）',
+    swGroups.length === 6
+    && swGroups.map((g) => g.key).join(' ') === '3-0 3-1 3-2 2-3 1-3 0-3'
+    && swGroups.reduce((n, g) => n + g.teams.length, 0) === 16)
+  // 🔴 平衡校验：每场恰好贡献 1 胜 1 负，所以同一个**连贯阶段**必然 Σwins === Σlosses。
+  //    2026 德玛西亚杯的 record 是**跨阶段混装**的（同一个 RED 在 10-03 那场是 1-2、
+  //    在 10-08 那场变成 0-1），拼出来 Σwins=15 / Σlosses=8，明显不平衡 —— 必须拦下。
+  //    上游没有任何可分阶段的字段（tournament 缺失、blockName 两段都叫「瑞士轮」），
+  //    这条不变量是唯一的兜底。
+  check('瑞士轮战绩：Σ胜场 ≠ Σ负场就整张表不返回（record 跨阶段混装时必须拦下）',
+    brMod.swissGroups([swRow(['RED', 1, 2], ['NAVI', 0, 1], 0)], '全球总决赛').length === 0
+    && brMod.swissGroups([swRow(['A', 1, 1], ['B', 1, 1], 0)], '全球总决赛').length === 1)
+  check('瑞士轮战绩：跳过 0-0 与缺 record 的行（官方对未开赛场次就给 0-0）',
+    brMod.swissGroups([
+      swRow(['A', 0, 0], ['B', 0, 0], 0),
+      {
+        id: 'x', comp: 'worlds', start: '2025-10-15T07:00:00Z', date: '2025-10-15', time: '15:00',
+        status: 'upcoming', statusText: '', stage: '全球总决赛 · 瑞士轮', bo: 1,
+        home: { id: 'C', name: 'C', abbr: 'C', color: '#000', score: null },
+        away: { id: 'D', name: 'D', abbr: 'D', color: '#000', score: null },
+      },
+    ], '全球总决赛').length === 0)
+  // 🔴 上游 blockName 真的会坏：2026-10-25 全球总决赛有一场是「全球总决赛 · \uFFFD\uFFFD士轮」。
+  //    这种半截词会被拼成「��士轮 1」这种垃圾阶段筛选条 —— 整段丢弃，宁可什么都不显示。
+  check('脏数据：坏编码的 blockName 整段丢弃，不把「��士轮」印到卡片和筛选条上',
+    viewMod.roundLabel('全球总决赛 · \uFFFD\uFFFD士轮', '全球总决赛') === ''
+    && viewMod.roundLabel('全球总决赛 · 瑞士轮', '全球总决赛') === '瑞士轮'
+    && viewMod.roundLabel('LPL · 第 4 周', 'LPL') === '第 4 周'
+    && viewMod.roundLabel('英超', '英超') === '英超')
+
+  check('赛程页：对阵树只在选中淘汰赛轮次时出现（挂在「全部阶段」上会常年占掉首屏）',
+    /bracket\.koIndexOf\(stage\) >= 0/.test(schJs))
+  check('赛程页：对阵树用**未被轮次筛过**的整份赛事赛程（拿筛过的 list 建树永远只有一列）',
+    /bracket\.buildBracket\(data\.query\(\{ comps: \[activeComp\], team: teamFilter \}\)/.test(schJs))
+  check('赛程页：模板只铺开算好的几何（列 / 走廊 / 线段位置全部来自 bracket.js）',
+    /wx:for="\{\{bracket\.items\}\}"/.test(schWxml)
+    && /it\.padTop/.test(schWxml) && /sg\.left/.test(schWxml) && /sg\.top/.test(schWxml))
+  check('赛程页：嵌套 wx:for 显式写 wx:for-index（内层 index 会盖掉外层）',
+    /wx:for-index="ni"/.test(schWxml) && /wx:for-index="ri"/.test(schWxml))
+  check('赛程页：对阵树不用 flex gap（老 WebView 不支持）',
+    /\.ko-tree\s*\{[^}]*display:\s*flex/.test(schWxss) && !/\.ko[a-z-]*\s*\{[^}]*\bgap\s*:/.test(schWxss))
+  check('赛程页：卡片高度 / 列内间距 / 走廊宽度与 bracket.js 常量一致（改一处要改两处）',
+    new RegExp('\\.ko-node \\{[^}]*height:\\s*' + brMod.NODE_H + 'rpx').test(schWxss)
+    && new RegExp('\\.ko-node \\+ \\.ko-node \\{[^}]*margin-top:\\s*' + brMod.NODE_GAP + 'rpx').test(schWxss)
+    && new RegExp('\\.ko-gap \\{[^}]*width:\\s*' + brMod.LINK_W + 'rpx').test(schWxss)
+    && new RegExp('\\.ko-head-gap \\{[^}]*width:\\s*' + brMod.LINK_W + 'rpx').test(schWxss))
+
+  const rankJsKo = fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.js'), 'utf8')
+  const rankWxmlKo = fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.wxml'), 'utf8')
+  const rankWxssKo = fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.wxss'), 'utf8')
+  check('排行页：电竞多了「瑞士轮战绩」一档（LoL 官方给不出排名，这是它在这一页唯一的入口）',
+    /\{ key: 'swiss', label: '瑞士轮战绩', kind: 'swiss' \}/.test(rankJsKo))
+  check('排行页：瑞士轮档位的可用性只看有没有分组数据（没有的档位压根不渲染）',
+    /if \(tier === 'swiss'\) return this\.swissOf\(key\)\.length > 0/.test(rankJsKo))
+  check('排行页：有瑞士轮战绩的赛事必须进赛事列表（否则 LoL 在这一页永远缺席）',
+    /const swiss = this\.swissIndex\(\)/.test(rankJsKo) && /\|\| swiss\[key\]/.test(rankJsKo))
+  check('排行页：瑞士轮更新时刻取赛程快照的生成时间（它不走任何一张榜）',
+    /if \(tier === 'swiss'\) return data\.generatedAt\(\)/.test(rankJsKo))
+  check('排行页：瑞士轮索引每次 render 作废重算（云端换过赛程后不能还拿旧组别）',
+    /this\._swiss = null/.test(rankJsKo) && /if \(!this\._swiss\)/.test(rankJsKo))
+  // 🔴 分享卡 drawRank 对空 pos 会自动补行号 —— 瑞士轮没有名次，pos 位必须放战绩，不能留空
+  check('排行页：瑞士轮分享卡的 pos 位放战绩（留空会被 drawRank 补成编造的名次）',
+    /if \(tk === 'swiss'\)/.test(rankJsKo) && /pos: g\.key/.test(rankJsKo))
+  check('排行页：瑞士轮模板按战绩分组渲染，不留名次列',
+    /tierKind === 'swiss'/.test(rankWxmlKo) && /swiss-record/.test(rankWxmlKo))
+  check('排行页：瑞士轮样式不用 flex gap（老 WebView 不支持）',
+    /\.swiss-card\s*\{[^}]*display:\s*flex/.test(rankWxssKo) && !/\.swiss[a-z-]*\s*\{[^}]*\bgap\s*:/.test(rankWxssKo))
+
+  /* 端到端：把赛程页切到全球总决赛、点中淘汰赛轮次，**真的**建出对阵树。
+     🔴 刻意不写成「一定有树」—— 淘汰赛是赛程日历上的事件，赛季过去后这一段会自然
+        退出快照窗口（`lolBack` 只有 14 天）。那样写会变成「样本非空」型守卫，
+        某一天会因为日历而假红（前面已经踩过一次），所以改成**与纯函数结果比对**：
+        树在不在这件事交给纯函数的夹具负责，这里只保证页面接线没错。 */
+  const dataForKo = require(path.join(ROOT, 'utils/data'))
+  const ctxKo = makeCtx(schOpts)
+  ctxKo.setData({ activeCat: 'esports', activeComp: 'worlds', mode: 'upcoming', shownGroups: 3, teamFilter: null })
+  schOpts.doReload.call(ctxKo)
+  const koChips = (ctxKo.data.stageChips || []).filter((c) => brMod.koIndexOf(c.key) >= 0)
+  const wantTree = brMod.buildBracket(dataForKo.query({ comps: ['worlds'] }), dataForKo.compOf('worlds').name)
+  if (wantTree && koChips.length) {
+    schOpts.onStageTap.call(ctxKo, { currentTarget: { dataset: { key: koChips[0].key } } })
+    const gotTree = ctxKo.data.bracket
+    check('赛程页：点中淘汰赛轮次后真的建出对阵树，且与纯函数结果逐列一致',
+      !!gotTree
+      && gotTree.columns.map((c) => c.nodes.length).join(',') === wantTree.columns.map((c) => c.nodes.length).join(','))
+    check('赛程页：轮次筛选只收敛列表，不收敛对阵树（树要看到八强→半决赛→决赛全貌）',
+      ctxKo.data.stageFilter === koChips[0].key
+      && gotTree.columns.length === wantTree.columns.length
+      && ctxKo.data.totalMatches === koChips[0].count)
+    const nonKo = (ctxKo.data.stageChips || []).filter((c) => brMod.koIndexOf(c.key) < 0)
+    if (nonKo.length) {
+      schOpts.onStageTap.call(ctxKo, { currentTarget: { dataset: { key: nonKo[0].key } } })
+      check('赛程页：切到瑞士轮 / 入围赛这类非淘汰赛轮次时对阵树消失（那一档要看的是列表）',
+        ctxKo.data.bracket === null)
+    }
+  } else {
+    check('赛程页：快照里没有淘汰赛轮次时不建树、也不报错',
+      ctxKo.data.bracket === null && ctxKo.data.loadError === '')
+  }
+
   /* ── 2026-10-08 四项体验修复 ── */
   // ① 排行页下拉刷新：rank.json 开了 enablePullDownRefresh 就必须实现 onPullDownRefresh，
   //    否则用户下拉有手势有反馈、内容却不动，看起来像卡死
@@ -2320,6 +2497,33 @@ async function run() {
     ctxRank.data.slides.length === ctxRank.data.comps.length
     && ctxRank.data.slides.every((s) => !!s.key),
     `${ctxRank.data.slides.length} 屏 / ${ctxRank.data.comps.length} 赛事`)
+
+  /* 瑞士轮战绩档（2026-10-09 加）。
+     🔴 用**假索引**验档位判定，不依赖快照里「此刻有没有瑞士轮数据」——
+        瑞士轮一年只存在一个月，写成「样本非空」型守卫迟早会因为日历假红。 */
+  const ctxSwiss = makeCtx(rankOpts)
+  ctxSwiss._rendered = {}
+  ctxSwiss._swiss = { worlds: [{ key: '3-0', wins: 3, losses: 0, teams: [{ id: 'KT', name: 'KT', abbr: 'KT', color: '#B99433' }] }] }
+  check('排行页：有瑞士轮分组的赛事才给出这一档，没有的压根不出现',
+    ctxSwiss.tierAvailable('worlds', 'swiss') === true
+    && ctxSwiss.tierAvailable('lpl', 'swiss') === false
+    && ctxSwiss.tierLabelOf('worlds', 'swiss') === '瑞士轮战绩'
+    && ctxSwiss.tierKindOf('worlds', 'swiss') === 'swiss')
+  check('排行页：瑞士轮档位下每一屏自带分组数据（横滑切屏那一帧也不会拿错榜）',
+    (function () {
+      const sl = ctxSwiss.buildSlide('worlds', 0, 0, 'swiss')
+      return sl.swiss.length === 1 && sl.swissTeams === 1 && sl.swiss[0].key === '3-0'
+    })())
+  // 🔴 分享卡的 drawRank 对空 pos 会 `String(r.pos || i + 1)` 自动补行号 ——
+  //    瑞士轮没有名次，pos 位必须显式塞战绩，留空就成了编造名次。
+  check('排行页：瑞士轮分享卡的 pos 位是战绩，不是（空着被补出来的）名次',
+    (function () {
+      ctxSwiss.setData({ tierKind: 'swiss', swiss: [{ key: '3-0', teams: [{ name: 'KT' }] }] })
+      const rows = ctxSwiss.shareRows()
+      return rows.length === 1 && rows[0].pos === '3-0' && rows[0].name === 'KT'
+    })())
+  check('排行页：瑞士轮战绩的来源是赛程快照，不是任何一张榜（更新时刻要跟着走）',
+    rankJs.indexOf("if (tier === 'swiss') return data.generatedAt()") > -1)
 
   // 内容区横滑 → 立刻换赛事（顶部标签由 scroll-into-view 跟着锚定）
   check('积分榜页：横滑内容区立刻切换赛事',

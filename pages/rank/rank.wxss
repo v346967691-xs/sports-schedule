@@ -407,6 +407,67 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------------- 瑞士轮战绩（第五档，LoL 全球总决赛专用） ----------------
+   🔴 只有「战绩分组」，**没有名次列** —— 同战绩内官方不排序（看小分/抽签），
+      自己编 1..16 就是造假。分组行首那个 3-0 / 2-3 就是官方给的 stage record。
+   ⚠️ 全站不用 flex `gap`（老 WebView 不支持），间距一律 margin。 */
+.swiss-card {
+  display: flex;
+  align-items: flex-start;
+  margin: 16rpx 24rpx 0;
+  padding: 20rpx 24rpx;
+}
+
+.swiss-side {
+  flex: none;
+  width: 108rpx;
+}
+
+.swiss-record {
+  font-size: 34rpx;
+  font-weight: 800;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.swiss-count {
+  margin-top: 2rpx;
+  font-size: 20rpx;
+  color: var(--muted);
+}
+
+.swiss-teams {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.swiss-team {
+  display: flex;
+  align-items: center;
+  width: 50%;
+  padding: 6rpx 12rpx 6rpx 0;
+}
+
+.swiss-dot {
+  flex: none;
+  width: 8rpx;
+  height: 22rpx;
+  margin-right: 10rpx;
+  border-radius: 4rpx;
+}
+
+.swiss-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* 离屏 canvas：只用于转发前绘制分享卡，移出屏幕而不是 display:none */
 .share-canvas {
   position: fixed;

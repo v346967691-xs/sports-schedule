@@ -4,6 +4,7 @@ const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const nav = require('../../utils/nav')
 const poster = require('../../utils/poster')
+const bracket = require('../../utils/bracket')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -62,6 +63,8 @@ Page({
     /** 阶段（轮次）筛选条：只有一个阶段时不渲染，见 stageChipsOf */
     stageChips: [],
     stageFilter: '',
+    /** 淘汰赛对阵树（只在选中淘汰赛轮次时有值，见 doReload） */
+    bracket: null,
     rows: [],
     shownGroups: PAGE_SIZE,
     totalGroups: 0,
@@ -221,6 +224,22 @@ Page({
     const stage = stageChips.some((c) => c.key === stageFilter) ? stageFilter : ''
     if (stage) list = list.filter((m) => stageOf(m) === stage)
 
+    const compName = activeComp ? data.compOf(activeComp).name : ''
+
+    /**
+     * 淘汰赛对阵树。
+     *
+     * 🔴 只在选中了淘汰赛轮次（八强 / 半决赛 / 决赛）时出现 —— 挂在「全部阶段」上会常年
+     *    占掉首屏一大块，而用户点「四分之一决赛」时才是真的想看整张树。
+     * 🔴 数据用**没被轮次筛过**的整份赛事赛程：树天生要跨轮次（八强 → 半决赛 → 决赛），
+     *    拿筛过的 list 去建永远只能出一列，直接返回 null。
+     * ⚠️ 用 data.query 而不是 data.upcoming/finished：对阵图跟「即将开赛 / 已结束」这个
+     *    标签无关，两种模式下都该看到同一张树。
+     */
+    const koTree = activeComp && bracket.koIndexOf(stage) >= 0
+      ? bracket.buildBracket(data.query({ comps: [activeComp], team: teamFilter }), compName)
+      : null
+
     this.allGroups = view.groupByDate(list, { compOf: data.compOf })
     this.setData({
       rows: this.buildRows(shownGroups),
@@ -228,6 +247,7 @@ Page({
       totalMatches: list.length,
       stageChips,
       stageFilter: stage,
+      bracket: koTree,
       fallback,
       updatedAt: this.updatedLabel(),
       stale: data.staleInfo().stale,
@@ -235,7 +255,7 @@ Page({
       source: data.source(),
       // 只在选中了具体赛事、且该赛事真有积分榜时才给入口（杯赛 / 国字号没有）
       hasStandings: !!activeComp && !!data.standingsOf(activeComp),
-      compName: activeComp ? data.compOf(activeComp).name : '',
+      compName,
     }, () => this.buildShareImage())
   },
 

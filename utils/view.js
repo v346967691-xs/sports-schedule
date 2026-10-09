@@ -18,6 +18,17 @@ function isRoundPart(s) {
 }
 
 /**
+ * 编码损坏的字符：U+FFFD 替换字符，以及不该出现在标签里的控制字符。
+ *
+ * 🔴 上游 blockName 真的会坏：2026-10-25 全球总决赛有一场的 blockName 是
+ *    「全球总决赛 · \uFFFD\uFFFD士轮」（`瑞` 被替换成两个替换字符）。这种半截词
+ *    **宁可什么都不显示，也不能把「��士轮」印到卡片上** —— 它还会额外拼出一个
+ *    只有一个场次的垃圾阶段筛选条。所以只要结果里沾到就整段丢弃。
+ *    （同一条红线：宁可都不写，也不要错的。）
+ */
+const BROKEN = /[\uFFFD\u0000-\u001F]/
+
+/**
  * 「赛事名 · 轮次」→「轮次」；拿不到轮次时退回「赛事名」
  *
  * 第一段不是轮次描述时视为赛事名前缀，削掉，避免「LPL · 第 1 周」在小字里
@@ -27,6 +38,8 @@ function isRoundPart(s) {
  * 因为 ESPN 各端点都不提供轮次号（见 sync.js 注释）。
  * 2026-09-30 用户决定：这种情况**小字显示赛事名**，不留空（曾短暂改成留空，
  * 卡片看着太空）。别再改回留空，也别去「推导」轮次（第几场=第几轮的算法已被否决）。
+ *
+ * ⚠️ 唯一例外是上面的 BROKEN：上游脏数据回空串，让调用方走「没有轮次就不渲染」的分支。
  */
 function roundLabel(stage, compName) {
   const raw = String(stage || '').trim()
@@ -34,7 +47,9 @@ function roundLabel(stage, compName) {
   if (!raw) return name
   const parts = raw.split('·').map((s) => s.trim()).filter(Boolean)
   if (parts.length > 1 && !isRoundPart(parts[0])) parts.shift()
-  return parts.join(' · ') || name
+  const out = parts.join(' · ') || name
+  // 脏数据整段丢弃 —— 返回空串而不是半截词，调用方（卡片小字 / 阶段筛选条）据此不渲染
+  return BROKEN.test(out) ? '' : out
 }
 
 /**

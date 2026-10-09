@@ -7,7 +7,7 @@
  * ⚠️ **档位按赛事大类给不同的集合**（2026-10-06 用户定：置灰体验不好，改成按类别给）：
  *    足球 = 积分榜 / 射手榜 / 助攻榜
  *    篮球 = 积分榜 + 得分榜 / 篮板榜 / 助攻榜 / 抢断榜 / 盖帽榜（有几张给几张）
- *    电竞 = 只有积分榜（LoL 各赛区），KPL 额外给「选手榜」
+ *    电竞 = 积分榜（LoL 各赛区），KPL 额外给「选手榜」，全球总决赛额外给「瑞士轮战绩」
  *    拿不到数据的档位**直接不渲染**，不再置灰 —— 与「空赛事入口隐藏」同一约定。
  *
  * ⚠️ 每一档各自判断可用性，不能「有积分榜就假设有射手榜」（欧协联就没有球员榜）。
@@ -17,10 +17,16 @@
  *    KPL 官方不给积分榜，所以它是 KPL 在这个页面的唯一入口 ——
  *    同理，赛事列表也不能只由 standingsKeys() 决定，要把有选手榜的赛事并进来。
  *
+ * ⚠️ 「瑞士轮战绩」是 **LoL 全球总决赛专用**，而且数据直接在赛程快照里（球队的
+ *    `wins` / `losses` 来自上游 `record`），不是一张独立的榜。它填的是电竞最大的那个缺口：
+ *    LoL 的 `getStandings` 给不出排名（`rankings` 恒空），所以此前 LoL 赛事在这一页
+ *    什么都看不到。数据来自 utils/bracket.js 的 swissGroups()。
+ *
  * ⚠️ 这是页面层：新增 / 改动都要发版。
  */
 const share = require('../../utils/share')
 const data = require('../../utils/data')
+const bracket = require('../../utils/bracket')
 const fmt = require('../../utils/format')
 const poster = require('../../utils/poster')
 const { appInstance } = require('../../utils/app-instance')
@@ -32,7 +38,8 @@ const SCORER_ROWS = 20
  * 档位模板：按**大类**给不同的集合，再逐档按数据可用性过滤。
  *
  * ⚠️ `kind` 决定 WXML 走哪一套模板：
- *    standings 积分榜表 / scorer 足球球员榜 / leader 篮球数据榜 / players KPL 选手榜。
+ *    standings 积分榜表 / scorer 足球球员榜 / leader 篮球数据榜 /
+ *    players KPL 选手榜 / swiss 瑞士轮战绩分组。
  * ⚠️ 篮球那几张数据榜**不写死在这里** —— 上游给几张就追加几张（见 tierDefs）。
  */
 const TIER_PLAN = {
@@ -48,6 +55,7 @@ const TIER_PLAN = {
   ],
   esports: [
     { key: 'standings', label: '积分榜', kind: 'standings' },
+    { key: 'swiss', label: '瑞士轮战绩', kind: 'swiss' },
   ],
 }
 
@@ -149,12 +157,14 @@ function fmtNum(n) {
 }
 
 /**
- * 每一档读的是**不同的生成时间**（四张表各自独立同步）：
- * 选手榜根本不在本地包里，用 standings/scorers 的时间会被误报成「几分钟前更新」。
+ * 每一档读的是**不同的生成时间**（各张表各自独立同步）：
+ * 选手榜根本不在本地包里，用 standings/scorers 的时间会被误报成「几分钟前更新」；
+ * 瑞士轮战绩更特殊 —— 它不走任何榜，直接来自**赛程快照**，所以用赛程的生成时间。
  */
 function pickUpdatedAt(tier) {
   if (tier === 'standings') return data.standingsGeneratedAt()
   if (tier === 'players') return data.kplRankGeneratedAt()
+  if (tier === 'swiss') return data.generatedAt()
   return data.scorersGeneratedAt()
 }
 
@@ -187,6 +197,9 @@ Page({
     tiers: [],
     /** 当前档位的榜单行（射手榜 / 助攻榜），积分榜档为空数组 */
     rankRows: [],
+    /** 当前档位的瑞士轮战绩分组（只有全球总决赛这类赛事有），其余为空数组 */
+    swiss: [],
+    swissTeams: 0,
     // 以下是当前激活赛事的镜像，供分享标题等使用
     columns: [],
     groups: [],
@@ -276,11 +289,41 @@ Page({
   },
 
   /**
+   * 瑞士轮战绩索引：一次遍历把**所有**赛事的瑞士轮分组都算出来。
+   *
+   * ⚠️ 单独建索引而不是按需算：tierAvailable 在 tierDefs / compKeys /
+   *    resolveTier 里会被反复调到，每次都去 query 一遍全量赛程（两千多场）纯属浪费。
+   * 🔴 每次 render 都要作废 —— 云端刷新后赛程换了，索引必须跟着换。
+   */
+  swissIndex() {
+    if (!this._swiss) {
+      const byComp = {}
+      data.matches().forEach((m) => {
+        if (!byComp[m.comp]) byComp[m.comp] = []
+        byComp[m.comp].push(m)
+      })
+      const out = {}
+      Object.keys(byComp).forEach((k) => {
+        const g = bracket.swissGroups(byComp[k], data.compOf(k).name)
+        if (g.length) out[k] = g
+      })
+      this._swiss = out
+    }
+    return this._swiss
+  },
+
+  /** 某个赛事的瑞士轮分组（没有就空数组，页面据此不出这一档） */
+  swissOf(key) {
+    return this.swissIndex()[key] || []
+  },
+
+  /**
    * 某一档有没有内容。判定只看**数据本身**：
    * 上游不给榜的赛事（欧协联没有球员榜、KPL 没有积分榜）自然就没有那一档。
    */
   tierAvailable(key, tier) {
     if (tier === 'standings') return !!data.standingsOf(key)
+    if (tier === 'swiss') return this.swissOf(key).length > 0
     const cat = data.catOf(key)
     // ⚠️ goals / assists 只在**足球**语境下是「射手榜 / 助攻榜」；
     //    篮球的「助攻榜」是数据榜里的一张（key 同样是 assists），
@@ -318,14 +361,17 @@ Page({
    * 这个页面要展示哪些赛事。
    * ⚠️ **不能只算 standingsKeys()** —— KPL 官方没有积分榜/射手榜，
    *    但它有选手榜；只用积分榜的名单会把 KPL 整个挡在门外。
+   *    同理，LoL 各赛区官方给不出排名（`getStandings` 的 `rankings` 恒空），
+   *    全球总决赛只有「瑞士轮战绩」这一档 —— 它也必须进名单，否则 LoL 在这一页永远缺席。
    */
   compKeys() {
     const has = data.standingsTables()
+    const swiss = this.swissIndex()
     const order = []
     data.categories().forEach((cat) => {
       ;(cat.competitions || []).forEach((key) => {
-        // 三种榜任意一种有内容，这个赛事才值得进来
-        if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length) order.push(key)
+        // 四种榜任意一种有内容，这个赛事才值得进来
+        if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length || swiss[key]) order.push(key)
       })
     })
     return order
@@ -373,11 +419,16 @@ Page({
       : slideKind === 'leader' ? buildLeaderRows(key, tier)
         : []
 
+    // 瑞士轮战绩：只有全球总决赛这类真打过瑞士轮的赛事才有；没有就是空数组
+    const swiss = this.swissOf(key)
+    const swissTeams = swiss.reduce((n, g) => n + g.teams.length, 0)
+
     const blank = {
       key, name, index, visible, empty: true,
       columns: [], groups: [], legend: [], rows: 0,
       season: '', totalTeams: 0, scrollTop: this.data.slideTop[key] || 0,
       goals: [], assists: [], rankRows,
+      swiss, swissTeams,
       hasGoals: goals.length > 0, hasAssists: assists.length > 0,
       boards: buildBoards(key),
       season: data.kplRankSeason() || '',
@@ -420,6 +471,8 @@ Page({
       goals,
       assists,
       rankRows,
+      swiss,
+      swissTeams,
       hasGoals: goals.length > 0,
       hasAssists: assists.length > 0,
       // KPL 选手数据榜（只有该赛事有）
@@ -428,6 +481,9 @@ Page({
   },
 
   render() {
+    // 🔴 数据可能刚被云端覆盖过（onShow / 下拉刷新都会走这里）→
+    //    瑞士轮索引必须作废重算，否则会拿着旧赛程的组别一直显示。
+    this._swiss = null
     const keys = this.compKeys()
     if (!keys.length) {
       this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], playerBoards: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
@@ -437,14 +493,14 @@ Page({
     // 数据可能在刷新后变化：档位要按最新数据再收敛一次，避免停在一个已经没内容的档
     const tier = this.resolveTier(this.data.activeComp, this.data.tier)
     const slides = keys.map((k, i) => this.buildSlide(k, i, idx, tier))
-    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [], boards: [] }
+    const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [], boards: [], swiss: [], swissTeams: 0 }
 
     this.setData({
       slides,
       swiperIndex: idx,
       emptyReason: '',
       tier,
-      // WXML 按 kind 选模板（standings / scorer / leader / players）
+      // WXML 按 kind 选模板（standings / scorer / leader / players / swiss）
       tierKind: this.tierKindOf(this.data.activeComp, tier),
       tierLabel: this.tierLabelOf(this.data.activeComp, tier),
       tiers: this.tierState(this.data.activeComp),
@@ -457,6 +513,8 @@ Page({
       legend: cur.legend,
       season: cur.season,
       totalTeams: cur.totalTeams,
+      swiss: cur.swiss || [],
+      swissTeams: cur.swissTeams || 0,
       updatedAt: timeLabel(pickUpdatedAt(tier)),
       source: data.source() === 'cloud' ? '云端' : '本地',
     }, () => {
@@ -482,8 +540,8 @@ Page({
 
   /**
    * 按当前档位取 Top5，统一成 { pos, name, val }。
-   * ⚠️ 四种档位的行结构不一样：积分榜是 cells 数组（按列取），
-   *    射手/助攻榜是 value，KPL 选手榜是 num + rank。
+   * ⚠️ 五种档位的行结构不一样：积分榜是 cells 数组（按列取），
+   *    射手/助攻榜是 value，KPL 选手榜是 num + rank，瑞士轮战绩是「分组」。
    */
   shareRows() {
     const tk = this.data.tierKind
@@ -500,6 +558,16 @@ Page({
     if (tk === 'players') {
       const b = (this.data.boards || [])[0]
       return ((b && b.rows) || []).slice(0, 5).map((r) => ({ pos: r.rank, name: r.name, val: r.num }))
+    }
+    if (tk === 'swiss') {
+      // 🔴 瑞士轮**没有名次**（同战绩内官方不排序），所以 pos 位放的是战绩
+      //    —— 真放 1/2/3 就是编造名次，而 drawRank 对空 pos 会自动补行号，
+      //    所以这里必须显式塞战绩进去，不能留空。
+      const flat = []
+      ;(this.data.swiss || []).forEach((g) => {
+        g.teams.forEach((t) => flat.push({ pos: g.key, name: t.name, val: '' }))
+      })
+      return flat.slice(0, 5)
     }
     // scorer（足球射手/助攻）与 leader（篮球数据榜）都是 { pos, name, value }
     return (this.data.rankRows || []).slice(0, 5).map((r) => ({

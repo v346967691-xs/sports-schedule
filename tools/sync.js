@@ -607,9 +607,56 @@ async function fetchKpl(comp) {
 
 /**
  * CBA 官方一次返回整赛季（490 场、280KB），本地按时间窗裁。
- * Status=1 是未开赛；赛后 Home/VisitingTeamScore 有值、Quarter 会回落到空；
- * 进行中时 Quarter 有值 —— 用这三条推断状态，比只信 Status 稳。
+ * 只返回当前赛季：?season= / ?seasonid= 实测无效（2026-10-09 验证）。
+ * /cbdl/game_detail 需要联赛权限，返回"没有该联赛的访问权限"，用不了。
+ *
+ * ⚠️ 状态推断 —— 2026-10-09 15:46 实测（赛季首场 15:00 开打，首次拿到非未开赛样本）：
+ *   未开赛：Status=1，StatusCNName="未开始"，
+ *           Quarter / Minutes / Seconds / 两队 Score 全是 null
+ *   进行中：Status=2，StatusCNName="进行中"，
+ *           Quarter=当前节次（实测 2），Minutes/Seconds=本节剩余倒计时（实测 3:05 → 2:26 递减），
+ *           两队 Score 实时填充（实测 天津41-32广州 / 浙江46-49江苏 等 5 场）
+ *   已结束：Status 推测为 3，StatusCNName 推测为"已结束"，比分保留 ——
+ *           ❗截止验证时全赛季 490 场里还没有任何一场打完（最早比赛就是今天 15:00），
+ *             所以"已结束"是**推测值，没有实测样本**，赛季首场打完后需回来复核。
+ *
+ * 判据优先级（不要再改回「Quarter 有值 → live」当首选）：
+ *   1. StatusCNName —— 上游自己给的中文态，最权威。但它只对临近日期的比赛返回
+ *      （实测 490 场里只有今天 10 场带这个字段，其余 480 场是 undefined）。
+ *   2. Status 数字 —— 兜底，覆盖没给 StatusCNName 的远端赛程。
+ *   3. 比分 / 节次 —— 最后兜底，Status 缺失或出现未知取值时才用。
+ *   ⚠️ 旧逻辑把 Quarter 放在 Status 之前判 live：一旦赛后 Quarter 仍停在 4，
+ *      已结束的比赛会被永久误判成"进行中"，所以必须让 Status/StatusCNName 先说话。
+ *
+ * 另外加了一道时间保险：开赛超过 5 小时还判成 live 的，一律按已结束处理。
+ * CBA 一场加时也不到 4 小时，这是防止上游 Status 卡住导致"进行中"永不落地。
  */
+const num_ = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+
+function cbaStatusRaw(ev, hasScore) {
+  // 1) 上游自带的中文态最可信
+  const cn = String(ev.StatusCNName || '').trim()
+  if (['已结束', '完场', '比赛结束', '已完场'].includes(cn)) return 'finished'
+  if (cn === '进行中') return 'live'
+  if (['未开始', '未开赛', '待定'].includes(cn)) return 'upcoming'
+
+  // 2) Status 数字兜底（远端比赛没有 StatusCNName）
+  const s = Number(ev.Status)
+  if (s === 2) return 'live'
+  if (s >= 3) return 'finished'      // 3 为推测的已结束码，>=3 一并兜住未知码
+  if (s === 1) return 'upcoming'
+
+  // 3) 都没给：退回比分与节次
+  return num_(ev.Quarter) != null ? 'live' : hasScore ? 'finished' : 'upcoming'
+}
+
+function cbaStatus(ev, hasScore, startedAtMs) {
+  const s = cbaStatusRaw(ev, hasScore)
+  // 时间保险：开赛超过 5 小时仍判成 live 的，一律落地为 finished
+  if (s === 'live' && startedAtMs != null && Date.now() - startedAtMs > 5 * 3600000) return 'finished'
+  return s
+}
+
 async function fetchCba(comp) {
   const from = beijingDay(new Date(Date.now() - daysBack * 86400000).toISOString())
   const to = beijingDay(new Date(Date.now() + daysForward * 86400000).toISOString())
@@ -635,9 +682,9 @@ async function fetchCba(comp) {
     // dates + time 都是北京时间，直接按 +08:00 组装
     const start = new Date(`${d}T${tm}:00+08:00`).toISOString()
     const hasScore = num(ev.HomeTeamScore) != null || num(ev.VisitingTeamScore) != null
-    const status = ev.Status === 1 ? 'upcoming' : (num(ev.Quarter) != null ? 'live' : hasScore ? 'finished' : 'upcoming')
-    const showScore = status !== 'upcoming'
-    const typeName = ev.ScheduleTypeID === 3 ? '季前赛' : '常规赛'
+    const status = cbaStatus(ev, hasScore, new Date(start).getTime())
+    const showScore = status !== 'upcoming' || hasScore
+    const typeName = ev.ScheduleTypeDesc || (ev.ScheduleTypeID === 3 ? '季前赛' : '常规赛')
 
     out.push({
       id: `${comp.key}-${ev.ScheduleID}`,
@@ -648,7 +695,7 @@ async function fetchCba(comp) {
       status,
       statusText: status === 'finished' ? '已结束' : status === 'live' ? '进行中' : '',
       stage: `${comp.name} · ${ev.GroupName || typeName}`,
-      venue: '',
+      venue: ev.stadium || '',
       broadcast: [],
       bo: null,
       home: {

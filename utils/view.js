@@ -37,6 +37,23 @@ function roundLabel(stage, compName) {
   return parts.join(' · ') || name
 }
 
+/**
+ * 队名归一，落不到中文时回落英文名。
+ *
+ * 🔴 未确定的对阵必须显示「待定」而不是接口占位符：LoL 的赛程接口在抽签前
+ *    对所有场次返回 `TBD`，一个淘汰赛阶段能占十几行 —— 卡片上「TBD vs TBD」
+ *    对用户等于没信息，而「待定 vs 待定」至少说明"是对阵未定，不是数据坏了"。
+ *    （2026-10-09 全球总决赛 40 场全 TBD 时发现。）
+ *
+ * ⚠️ 规则内联在这里，不能 require tools/zh-names.js —— `tools/` 不进小程序包。
+ *    两处判定要保持一致：`tools/zh-names.js` 的 placeholderZh 也认 TBD/TBD Home/TBD Away。
+ */
+function nameOf(t) {
+  const raw = String((t && (t.zh || t.name)) || '').trim()
+  if (!raw || /^TBD([\s_-]*(home|away))?$/i.test(raw)) return '待定'
+  return raw
+}
+
 function decorate(m) {
   const ctx = this || {}
   const comp = ctx.compOf ? ctx.compOf(m.comp) : { name: m.comp, accent: '#6B7280' }
@@ -64,8 +81,8 @@ function decorate(m) {
     statusLabel = m.statusText || '已结束'
   }
 
-  // 中文名优先，取不到再回落英文名
-  const withZh = (t) => Object.assign({}, t, { zhName: t.zh || t.name })
+  // 中文名优先，取不到再回落英文名；未定对阵统一成「待定」
+  const withZh = (t) => Object.assign({}, t, { zhName: nameOf(t) })
 
   // 卡片小字只展示「轮次/阶段」，不重复 tag 上已经写着的赛事名。
   // 数据里的 stage 形如「全球总决赛 · 瑞士轮」「LEC · 第 4 周」——
@@ -117,4 +134,5 @@ function groupByDate(list, ctx) {
 }
 
 // roundLabel 一并导出：冒烟测试要用它验证「小字只写轮次、不重复赛事名」
-module.exports = { decorate, decorateList, groupByDate, roundLabel }
+// nameOf 导出：赛程分享卡直接读原始 match（没有 zhName），要与卡片显示同一套规则
+module.exports = { decorate, decorateList, groupByDate, roundLabel, nameOf }

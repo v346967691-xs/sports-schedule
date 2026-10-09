@@ -675,6 +675,39 @@ async function run() {
     && !/\.mc-form\s*\{[^}]*gap\s*:/.test(schWxss)
     && /\.ff\s*\{[^}]*margin-right/.test(schWxss))
 
+  /* ── 2026-10-09 阶段（轮次）筛选 + 未定对阵文案 ──
+     全球总决赛 46 场平铺在赛程页里没法用（入围赛 6 / 瑞士轮 33 / 淘汰赛 7），
+     按轮次收敛成一段；顺手把接口的 TBD 占位符显示成「待定」。 */
+  check('赛程页：阶段筛选条只在该赛事真有多个轮次时渲染（足球联赛只有 1 个阶段，整条不出现）',
+    /wx:if="\{\{stageChips\.length\s*>\s*1\}\}"/.test(schWxml)
+    && schWxml.indexOf('onStageTap') > -1)
+  // 🔴 选项必须在**筛选前**的列表上算：先筛再算选项，选完某阶段后选项本身就没了，切不回来
+  check('赛程页：阶段选项在筛选之前算（选完还要能切回别的阶段）',
+    /const stageChips = activeComp \? stageChipsOf\(list\)/.test(schJs)
+    && /if \(stage\) list = list\.filter/.test(schJs))
+  // 只有选了具体赛事才给选项：选「全部」时各赛事 stage 混在一起，而足球那些 stage
+  // 就是赛事名本身 → 会拼出一条把每个联赛都列一遍的垃圾筛选条
+  check('赛程页：选「全部赛事」时不给阶段选项（否则会把每个联赛都列成一遍阶段）',
+    /const stageChips = activeComp \? stageChipsOf\(list\) : \[\]/.test(schJs))
+  const chipsFn = schJs.slice(schJs.indexOf('function stageChipsOf'), schJs.indexOf('Page({'))
+  check('赛程页：阶段按「各阶段最早一场」排序（已结束模式的列表是倒序的，照列表顺序会把决赛排最前）',
+    /Date\.parse\(m\.start\)/.test(chipsFn) && /\.sort\(/.test(chipsFn))
+  check('赛程页：切阶段重置分页（各阶段比赛日数量差很多，沿用上一个阶段的页码会直接看到空白）',
+    /stageFilter: next, shownGroups: PAGE_SIZE/.test(schJs))
+  check('赛程页：换赛事 / 分类 / 模式 / 取消看队时都清掉阶段筛选（阶段池子跟着换）',
+    (schJs.match(/stageFilter: ''/g) || []).length >= 3,
+    '清掉阶段筛选的处数 ' + (schJs.match(/stageFilter: ''/g) || []).length)
+  // 分享三个出口都要带阶段：筛到「瑞士轮」后只说「8 场」等于没说清是哪 8 场
+  check('分享：标题与卡图都带上阶段（三个出口共用 shareHeadline 的 head）',
+    /head = \[this\.data\.compName, stage, day\]/.test(shareBlock)
+    && (shareBlock.match(/\bhead\b/g) || []).length >= 3)
+  check('未定对阵显示「待定」而不是接口的 TBD（一个淘汰赛阶段能连占十几行）',
+    viewMod.nameOf({ name: 'TBD' }) === '待定'
+    && viewMod.nameOf({ name: 'TBD Home' }) === '待定'
+    && viewMod.nameOf({ zh: '阿森纳' }) === '阿森纳'
+    && viewMod.nameOf({ name: 'Arsenal' }) === 'Arsenal'
+    && viewMod.nameOf({ zh: '', name: '' }) === '待定')
+
   /* ── 2026-10-08 四项体验修复 ── */
   // ① 排行页下拉刷新：rank.json 开了 enablePullDownRefresh 就必须实现 onPullDownRefresh，
   //    否则用户下拉有手势有反馈、内容却不动，看起来像卡死
@@ -2714,9 +2747,37 @@ async function run() {
   check('首发阵容：没有阵容时 hasLineups=false（wxml 据此隐藏整块）',
     decNoLu.hasLineups === false && !decNoLu.lineups)
 
+  // 🔴 「无首发就不落库」这条规则必须用**夹具**钉死，不能只靠真实数据凑样本。
+  //    原先只有下面那条数据级断言，而它要求 `luStored > 0`；国际比赛周转场那两天
+  //    （2026-10-08 / 10-09 只有 NBA + 未开赛的中超）一场足球都没有、`lineups` 合法为 0，
+  //    断言就无理由判红（当天实测 636 passed / 1 failed，红的是守卫不是代码）。
+  const rosterJson = (starter) => ({
+    rosters: [
+      { team: { id: '1' }, roster: [{ athlete: { id: 'a', shortName: '甲' }, starter, position: { name: 'Goalkeeper' } }] },
+      { team: { id: '2' }, roster: [{ athlete: { id: 'b', shortName: '乙' }, starter, position: { name: 'Forward' } }] },
+    ],
+  })
+  const luOk = mdMod.pickLineups(rosterJson(true), '1')
+  const luPre = mdMod.pickLineups(rosterJson(false), '1')
+  const luOneSide = mdMod.pickLineups({
+    rosters: [
+      { team: { id: '1' }, roster: [{ athlete: { id: 'a', shortName: '甲' }, starter: true }] },
+      { team: { id: '2' }, roster: [{ athlete: { id: 'b', shortName: '乙' }, starter: false }] },
+    ],
+  }, '1')
+  check('首发阵容：两队都标首发才落库（全 0 / 单边有首发一律 null）',
+    !!luOk && luOk.home[0].st === 1
+    && luPre === null && luOneSide === null,
+    `正常=${luOk ? 'ok' : 'null'} 全0=${luPre === null ? 'null' : 'ok'} 单边=${luOneSide === null ? 'null' : 'ok'}`)
+  check('首发阵容：没有 rosters 的比赛返回 null（NBA 走的就是这条路）',
+    mdMod.pickLineups({}, '1') === null
+    && mdMod.pickLineups({ rosters: [] }, '1') === null
+    && mdMod.pickLineups({ rosters: [{}] }, '1') === null)
+
   // 落到真实数据上的不变量：**存下来的阵容一定含首发**。
   // 未开赛的比赛上游也会给 rosters，但 starter 全是 0 —— pickLineups 对这种情况返回 null，
   // 所以只要有人在抓取侧放宽了这个判断，这条就会红。
+  // ⚠️ 这里**不再要求 `luStored > 0`**（样本可能合法为空，见上）；非空性由上面两条夹具保证。
   const detailBundle = require(path.join(ROOT, 'data/match-details.js'))
   let luStored = 0
   let luNoStarter = 0
@@ -2732,8 +2793,8 @@ async function run() {
       if (detMod.buildLineups(d, () => '主')) luRenderable += 1
     })
   })
-  check('首发阵容：云端存下来的阵容一定含首发（未开赛的名单不会被存进来）',
-    luStored > 0 && luNoStarter === 0, `存了 ${luStored} 场，其中零首发 ${luNoStarter} 场`)
+  check('首发阵容：存下来的阵容一定含首发（未开赛的名单不会被存进来）',
+    luNoStarter === 0, `存了 ${luStored} 场，其中零首发 ${luNoStarter} 场`)
   check('首发阵容：存下来的每一场都能渲染出分组（不会存了却画不出来）',
     luRenderable === luStored, `${luRenderable}/${luStored}`)
 

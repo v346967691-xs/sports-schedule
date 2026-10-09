@@ -123,6 +123,17 @@
   border-radius: 50%;
 }
 
+/* 阶段（轮次）筛选条：接在模式开关下面，样式沿用赛事 chip，只是更轻一档 */
+.stage-row-wrap {
+  padding-top: 14rpx;
+}
+
+.chip.stage-chip {
+  margin-right: 12rpx;
+  padding: 8rpx 20rpx;
+  font-size: 24rpx;
+}
+
 .mode-switch {
   display: flex;
   margin: 8rpx 24rpx 0;

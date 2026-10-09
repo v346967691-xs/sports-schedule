@@ -32,6 +32,22 @@
       <view class="mode {{mode === 'upcoming' ? 'active' : ''}}" data-mode="upcoming" bindtap="onModeTap">即将开赛</view>
       <view class="mode {{mode === 'finished' ? 'active' : ''}}" data-mode="finished" bindtap="onModeTap">已结束</view>
     </view>
+
+    <!-- 阶段（轮次）筛选：只在这项赛事真有多个轮次时出现。
+         足球联赛 / NBA 常规赛的 stage 就是赛事名本身，只有一个取值 → stageChips.length 为 1，整条不渲染。
+         有轮次的赛事（全球总决赛 / LPL 周赛 / KPL）用它把一屏几十场收敛到「入围赛」「瑞士轮」这样一段。 -->
+    <scroll-view class="chip-row-wrap stage-row-wrap" scroll-x enable-flex wx:if="{{stageChips.length > 1}}">
+      <view class="chip-row">
+        <view class="chip stage-chip {{stageFilter === '' ? 'active' : ''}}" data-key="" bindtap="onStageTap">全部阶段</view>
+        <view
+          wx:for="{{stageChips}}"
+          wx:key="key"
+          class="chip stage-chip {{stageFilter === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onStageTap"
+        >{{item.key}} {{item.count}}</view>
+      </view>
+    </scroll-view>
   </view>
 
   <!-- 有排行榜的赛事才出现：看赛程的时候顺手能查排名 -->

@@ -367,13 +367,31 @@ async function fetchEspn(comp) {
 function lolTeam(raw, accent, compKey) {
   const code = (raw.code || raw.name || '?').slice(0, 6)
   const isNational = compKey === 'agames'
-  return {
+  const team = {
     id: code,
     name: isNational ? (raw.name || '待定') : code,
     zh: isNational ? (zhNames.lolZh(code) || TEAM_CN[code] || '') : '',
     abbr: code,
     color: accent,
   }
+  /**
+   * 阶段战绩（2026-10-09 加）。
+   *
+   * 上游 `match.teams[].record` 是该队**在该阶段的战绩**，而且是官方口径：
+   * 实测同一支队在瑞士轮各场次里取值完全一致（= 该阶段的最终战绩），
+   * 3-x 即晋级、x-3 即淘汰。
+   *
+   * 🔴 为什么不自己从比分累加：我们的快照只覆盖有限时间窗，一旦有场次被窗口裁掉，
+   *    累加结果就会**静默算错**；而这个字段永远是上游给的精确值。
+   *    瑞士轮战绩表与「谁晋级」一律读它，不自己算（跟「只拉官方榜」同一条红线）。
+   *
+   * ⚠️ 只在有值时写入，未开赛的场次上游给 `record: null` → 不写，不占快照字节。
+   */
+  if (raw.record && typeof raw.record.wins === 'number') {
+    team.wins = raw.record.wins
+    team.losses = typeof raw.record.losses === 'number' ? raw.record.losses : null
+  }
+  return team
 }
 
 /**

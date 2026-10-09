@@ -83,7 +83,23 @@ function encodeSnapshot(list, extra) {
     if (!Object.prototype.hasOwnProperty.call(teams, key)) {
       teams[key] = [t.zh || '', t.name || '', t.abbr || '', hex(t.color)]
     }
-    return t.score == null ? [key] : [key, t.score]
+    // 尾部可选段固定为 [比分, 胜, 负]，**按需增长**：
+    //   · 既没比分也没战绩 → `[key]`
+    //   · 只有比分（足球 / NBA 的绝大多数）→ `[key, score]`，一字节都不多花
+    //   · 有战绩（英雄联盟）→ 补齐 4 段，位置不能变，否则解码会把胜场当比分
+    // 🔴 加这两段对**已发布的线上版本是安全的**：老解码器只读 ref[1] 拿比分，
+    //    多出来的元素会被忽略（见 decTeam）。所以不用升格式版本号 V。
+    // ⚠️ 注意别为了「格式统一」把只有比分的场次也补成 4 段 —— 那会因为两串 null
+    //    给近千场足球/NBA 各多花 9 字节，白白涨十几 KB 包体积。
+    const hasRec = t.wins != null || t.losses != null
+    if (t.score == null && !hasRec) return [key]
+    if (!hasRec) return [key, t.score]
+    return [
+      key,
+      t.score == null ? null : t.score,
+      t.wins == null ? null : t.wins,
+      t.losses == null ? null : t.losses,
+    ]
   }
 
   ;(list || []).forEach((m) => {
@@ -114,12 +130,16 @@ function encodeSnapshot(list, extra) {
 
 function decTeam(ref, teams) {
   const key = Array.isArray(ref) ? String(ref[0]) : String(ref || '')
-  const score = Array.isArray(ref) && ref.length > 1 ? ref[1] : null
+  // ref 尾部是可选段：1=比分、2=胜、3=负。老快照只到 ref[1]，缺的位置取到 undefined → null。
+  const slot = (i) => (Array.isArray(ref) && ref[i] != null ? ref[i] : null)
+  const score = slot(1)
+  const wins = slot(2)
+  const losses = slot(3)
   const row = teams[key]
   const id = key.split('|')[0]
   // 字段顺序与 tools/sync.js 的 normTeam 保持一致，方便直接 diff 两边的输出
   if (!row) {
-    return { id, name: id, zh: '', abbr: id, color: '#6B7280', score: score == null ? null : score }
+    return { id, name: id, zh: '', abbr: id, color: '#6B7280', score, wins, losses }
   }
   return {
     id,
@@ -127,7 +147,9 @@ function decTeam(ref, teams) {
     zh: row[0] || '',
     abbr: row[2] || id,
     color: row[3] ? `#${row[3]}` : '#6B7280',
-    score: score == null ? null : score,
+    score,
+    wins,
+    losses,
   }
 }
 

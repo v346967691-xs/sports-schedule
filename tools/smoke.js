@@ -3706,6 +3706,11 @@ async function run() {
     && !/pushRow\(cloud, 'schedule_cache'/.test(sflBody))
   check('积分榜快通道：抓到的榜为空时拒绝推送（避免把云端清空）',
     /!fresh\.tables/.test(csSrc))
+  // 🔴 判据是拿云端 generated_at 比 `start+110` —— 若把「没重写文件」的旧榜推上去，
+  //    等于把 generated_at 往前拨，该赛事后面几次快通道就全被挡掉了。
+  check('积分榜快通道：只推本次真抓到的榜（否则会把 generated_at 拨快、挡掉后续快通道）',
+    /const freshAt = Date\.parse\(fresh\.generatedAt/.test(csSrc)
+    && /Date\.now\(\) - freshAt > 30 \* 60000/.test(csSrc))
   // 🔴 快通道读的是「云端 standings_cache」的 generated_at，不是主闸的 schedule_cache 年龄 ——
   //    主闸放行时会立刻重写 schedule_cache → 拿它当基准，快通道就永远算不出「上次榜是什么时候」。
   check('积分榜快通道：以云端 standings_cache 的 generated_at 为基准（用主闸年龄会算错）',

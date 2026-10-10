@@ -481,6 +481,14 @@ async function standingsFastLane(cloud, rows) {
       log('积分榜快通道：抓到的榜为空，不推（避免把云端清空）')
       return
     }
+    // ⚠️ 必须确认这份榜是**本次真抓到的**。抓取脚本没重写文件时（上游失败但退出码仍是 0
+    //    之类的怪状态）推上去只会把 generated_at 往前拨 —— 而判据正是拿它比 `start+110`，
+    //    拨快之后这个赛事后面几次快通道就全被挡掉了。
+    const freshAt = Date.parse(fresh.generatedAt || '')
+    if (!Number.isFinite(freshAt) || Date.now() - freshAt > 30 * 60000) {
+      log('积分榜快通道：抓到的榜不是本次新生成的，不推（避免把 generated_at 拨快）')
+      return
+    }
     const r = await pushRow(cloud, 'standings_cache', {
       id: 'latest',
       data: fresh,

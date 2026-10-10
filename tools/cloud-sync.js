@@ -229,6 +229,24 @@ async function detailAgeMin(cloud) {
 }
 
 /**
+ * 读 `live_scores`（~4KB，60 秒粒度的最新比分/状态）。
+ *
+ * 🔴 两条快通道（详情 / 积分榜）共用这一次请求 —— 各读一次的话，
+ *    80 个被跳过的班次 × 多做 1 次 = 每月多烧约 2400 次请求。
+ * ⚠️ 读失败当作「没有数据」返回空数组：快通道只是优化，不该让主流程失败。
+ */
+async function readLiveRows(cloud) {
+  try {
+    const lr = await cloud.database.from('live_scores').select('data')
+    const rows = ((lr && lr.data && lr.data[0] && lr.data[0].data) || {}).rows || []
+    return Array.isArray(rows) ? rows : []
+  } catch (err) {
+    log(`快通道：读 live_scores 失败，本轮跳过（${(err && err.message) || err}）`)
+    return []
+  }
+}
+
+/**
  * 详情快通道：主闸跳过的班次，也别让「刚完赛的详情」干等 90 分钟。
  *
  * 🔴 为什么要有它（2026-10-07）：主闸 skip 时整班 return，`sync.js` / `match-detail.js`
@@ -236,7 +254,7 @@ async function detailAgeMin(cloud) {
  *    才有人看的东西 —— 用户刚看完比赛，点进去是空的，体验最差的时刻就是这一段。
  *
  * 快通道只做三件轻量事，然后才决定是否动重活：
- *   1) 读 `live_scores`（~4KB，60 秒粒度的最新状态）—— 1 次请求；
+ *   1) 读 `live_scores`（调用方传入，见 readLiveRows）—— 已在外面读过一次；
  *   2) 读「今天 + 昨天」两个日桶（~116KB），挑出**已完赛但仍是空壳**的场次 —— 1 次请求；
  *   3) 一个都没有就立刻返回（凌晨 / 无比赛时段零开销）；
  *      有才把最新状态喂给 `match-detail.js`（--status-json）补抓，并只推这两个桶。
@@ -245,11 +263,9 @@ async function detailAgeMin(cloud) {
  *    刚完赛的比赛在里头是 live/upcoming → needsFetch 走错分支 → 白跑一趟。
  * ⚠️ `live_scores` 只有 ESPN 赛事（KPL 不在里面）。KPL 走主闸那班，本通道覆盖不到。
  */
-async function detailFastLane(cloud) {
+async function detailFastLane(cloud, rows) {
   let tmp = null
   try {
-    const lr = await cloud.database.from('live_scores').select('data')
-    const rows = ((lr && lr.data && lr.data[0] && lr.data[0].data) || {}).rows || []
     if (!Array.isArray(rows) || !rows.length) return
 
     const live = {}
@@ -362,6 +378,121 @@ async function detailFastLane(cloud) {
   }
 }
 
+/* 足球终场哨的**最早**可能时刻：90 分钟 + 中场 15 分钟 + 补时，取 110 留 5 分钟余量。
+   ⚠️ 刻意取「最早」而不是「典型」—— 见 standingsDueIds 的注释，这决定了它能不能自终止。 */
+const SETTLED_MIN = 110
+
+/**
+ * 纯判定：这批 live_scores 行里，有没有「值得重推一次积分榜」的场次。
+ *
+ * 🔴 判据只有一条：**这场已完赛，且上次积分榜生成于 `start + 110 分钟` 之前。**
+ *    直觉：**上次生成榜的时候，这场比赛的最终比分还没定型** → 那次榜必然不含最终结果。
+ *
+ * 为什么不是一个「各赛事时长表」：那样要为 22 个赛事维护常量，还怕加赛事时忘记加。
+ * 为什么不是「独立 30 分钟节流」：那是 +4MB/天 ≈ +120MB/月，是本方案的数倍。
+ *
+ * ✅ 自终止：推一次后 `generated_at` 就变成 now > start+110 → 条件不再成立 → **每场至多推 1 次**，
+ *    所以不需要额外防抖。比赛短于 110 分钟时会多推一次（now 恰好还 < start+110），无害。
+ * ⚠️ 已知不覆盖：比赛**超长**（>110 分钟）且主闸恰好在「开赛后 110 分钟之后、终场之前」推了榜，
+ *    这场就等下一次主闸（≤105 分钟）。这是**优化**不是正确性保证 —— 主闸永远兜底。
+ *
+ * @param {Array} rows            live_scores 的行（`{id, st, hs, as}`）
+ * @param {Map}   startById       比赛 id → 开赛时刻（ISO）
+ * @param {Object} compsWithTable 有积分榜的赛事 key 集合（`data/standings.js` 的 tables 键）
+ * @param {string} standingsAt    上次积分榜生成时刻（ISO）
+ * @returns {string[]} 命中的比赛 id
+ */
+function standingsDueIds(rows, startById, compsWithTable, standingsAt) {
+  const at = Date.parse(standingsAt || '')
+  // ⚠️ 读不到上次生成时刻就**不要**触发：否则每班都会重推一次 129KB（正是要避免的事）。
+  if (!Number.isFinite(at)) return []
+  const out = []
+  ;(rows || []).forEach((r) => {
+    if (!r || !r.id || r.st !== 'finished') return
+    const comp = String(r.id).split('-')[0]
+    // 该赛事没有积分榜 → 推了也没变化，白烧 129KB
+    if (!compsWithTable || !compsWithTable[comp]) return
+    const start = startById instanceof Map ? startById.get(r.id) : (startById || {})[r.id]
+    const t = Date.parse(start || '')
+    if (!Number.isFinite(t)) return
+    if (at < t + SETTLED_MIN * 60000) out.push(r.id)
+  })
+  return out
+}
+
+/**
+ * 积分榜快通道：主闸跳过的班次，别让「刚打完 → 积分榜没变」拖到 105 分钟。
+ *
+ * 🔴 为什么要有它（2026-10-10，用户报「阿森纳又赢了，榜里还是 4 胜 1 负」）：
+ *    `standings_cache`(129KB) / `scorers_cache`(108KB) 都挂在主闸**之后**，
+ *    和 891KB 的 `schedule_cache` 共用同一个 90 分钟节流 —— 小表被大表拖着。
+ *    实测：阿森纳 19:30 开赛，21:15 那班推的榜还把它算作 5 场 4 胜 1 负；
+ *    而同一时刻上游 ESPN 早已是 6 场 5 胜 1 负（我直连站点确认过）。
+ *    用户要等到 ~105 分钟后的下一班才看到 —— 这就是「排行榜没体现」的全部原因。
+ *
+ * 只做两件轻量事，然后才决定是否动抓取：
+ *   1) 用调用方读到的 `live_scores` 行 + 本地 `data/matches.js` 的开赛时刻做判定（0 请求）；
+ *   2) 读云端 `standings_cache` 的 `generated_at`（只取时间字段，很小）—— 1 次请求；
+ *      没有命中的场次就立刻返回（凌晨 / 无比赛时段只剩这 1 次小请求）。
+ *
+ * ⚠️ 只推 `standings_cache` 一张表，**绝不动 891KB 的 schedule_cache** ——
+ *    这正是它便宜的原因（一次 129KB vs 一次 1.1MB）。
+ * ⚠️ 它**不会**重置主闸：主闸读的是 `schedule_cache.generated_at`，两张表互不影响。
+ */
+async function standingsFastLane(cloud, rows) {
+  try {
+    if (!Array.isArray(rows) || !rows.length) return
+
+    // 有积分榜的赛事清单：从仓库里的 data/standings.js 读，**不发请求**。
+    // （这份文件每次主闸那班都会重写，赛事的集合不会变。）
+    let compsWithTable = null
+    try {
+      const st = require('../data/standings.js')
+      compsWithTable = (st && st.tables) || null
+    } catch (err) {
+      log(`积分榜快通道跳过：本地 data/standings.js 不可用（${(err && err.message) || err}）`)
+      return
+    }
+    if (!compsWithTable || !Object.keys(compsWithTable).length) return
+
+    // 开赛时刻只从本地快照取 —— start 不会变，所以即使这份快照是上一班主闸写的也照样准。
+    const local = decodeSnapshot(require('../data/matches.js'))
+    const startById = new Map()
+    ;(Array.isArray(local) ? local : (local && local.matches) || []).forEach((m) => {
+      if (m && m.id) startById.set(m.id, m.start)
+    })
+    if (!startById.size) return
+
+    const sr = await cloud.database
+      .from('standings_cache')
+      .select('generated_at')
+      .eq('id', 'latest')
+      .maybeSingle()
+    const standingsAt = sr && sr.data && sr.data.generated_at
+
+    const due = standingsDueIds(rows, startById, compsWithTable, standingsAt)
+    if (!due.length) return
+
+    log(`积分榜快通道：${due.length} 场在上次生成榜时还没定型，立即重推 → ${due.slice(0, 5).join(', ')}${due.length > 5 ? ' …' : ''}`)
+    execFileSync(process.execPath, [path.join(__dirname, 'standings.js')], { stdio: 'inherit' })
+    delete require.cache[require.resolve('../data/standings.js')]
+    const fresh = require('../data/standings.js')
+    if (!fresh || !fresh.tables || !Object.keys(fresh.tables).length) {
+      log('积分榜快通道：抓到的榜为空，不推（避免把云端清空）')
+      return
+    }
+    const r = await pushRow(cloud, 'standings_cache', {
+      id: 'latest',
+      data: fresh,
+      generated_at: new Date().toISOString(),
+    })
+    if (r.ok) log(`积分榜快通道：已写入云端（${Object.keys(fresh.tables).length} 个赛事）`)
+    else console.warn('[cloud-sync] ⚠ 积分榜快通道推送失败：', r.problem)
+  } catch (err) {
+    log(`积分榜快通道跳过（不影响主流程）：${(err && err.message) || err}`)
+  }
+}
+
 /**
  * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
  * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
@@ -400,8 +531,11 @@ async function main() {
   if (verdict.skip) {
     log('⏭  本机跳过本班全量推送（约 0.8MB 落库已省下）；实时比分不受影响，仍在 60 秒粒度上跑')
     ghOut('pushed', 'false')
-    // 🔴 全量跳过 ≠ 详情也跟着等：刚完赛的比赛详情走快通道补上（详见 detailFastLane 注释）
-    await detailFastLane(cloud)
+    // 🔴 全量跳过 ≠ 详情 / 积分榜也跟着等：各走自己的快通道（详见各自函数的注释）。
+    //    `live_scores` 只读一次，两条通道共用 —— 各读一次的话每月多约 2400 次请求。
+    const liveRows = await readLiveRows(cloud)
+    await detailFastLane(cloud, liveRows)
+    await standingsFastLane(cloud, liveRows)
     return
   }
   ghOut('pushed', 'true')
@@ -624,7 +758,11 @@ function dayStamp(ms) {
 
 // 🔴 为什么加这道 require.main 守卫：2026-10-05 给节流闸写单测时要 require 本文件，
 //    而它原本在模块顶层直接跑 main() —— 一 require 就真的发起一轮云端同步。
-module.exports = { gate, MIN_INTERVAL_MIN, DAYS_BACK, DAYS_FORWARD }
+module.exports = {
+  gate, MIN_INTERVAL_MIN, DAYS_BACK, DAYS_FORWARD,
+  // 积分榜快通道的纯判定 —— 导出只为 smoke 能打桩测它（见 tools/smoke.js）
+  standingsDueIds, SETTLED_MIN,
+}
 
 if (require.main === module) {
   main().catch((err) => {

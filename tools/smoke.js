@@ -3622,7 +3622,7 @@ async function run() {
   //    用户刚看完比赛点进去是空的，体验最差的就是这一段。
   const mdSrcLocal = fs.readFileSync(path.join(ROOT, 'tools/match-detail.js'), 'utf8')
   check('云同步：主闸跳过的班次不再直接 return，改走详情快通道',
-    /if \(verdict\.skip\)[\s\S]{0,400}?await detailFastLane\(cloud\)/.test(csSrc))
+    /if \(verdict\.skip\)[\s\S]{0,400}?await detailFastLane\(cloud, liveRows\)/.test(csSrc))
   // ⚠️ 必须喂最新状态：否则 match-detail 用的还是 97 分钟前的 data/matches.js，
   //    刚完赛的比赛在里头是 live/upcoming → needsFetch 走错分支 → 白跑一趟。
   check('云同步：快通道把最新状态喂给 match-detail（否则它拿旧快照判断，等于白跑）',
@@ -3655,6 +3655,61 @@ async function run() {
   // 实测：常规 2h 间隔会让快通道「报了壳却一场都不抓」（刚抓过 → gapOk 恒 false）
   check('详情：快通道把补抓间隔压到 15 分钟（否则刚抓过的场次永远够不到 2 小时门槛）',
     /FAST \? FAST_GAP_MS : RETRY_GAP_MS/.test(mdSrcLocal) && /'--fast', '--status-json='/.test(csSrc))
+
+  /* ---------- 积分榜快通道（2026-10-10，用户报「阿森纳赢了榜里还是 4 胜 1 负」） ----------
+     🔴 根因：`standings_cache`(129KB) 挂在主闸**之后**，和 891KB 的 `schedule_cache`
+        共用同一个 90 分钟节流 —— 小表被大表拖着，实测要等 ~105 分钟。
+        而同一时刻上游 ESPN 早已结算完（用户那晚阿森纳 6 场 5 胜 1 负，我们还在 5 场 4-1）。
+     判据只有一条：**已完赛 且 上次积分榜生成于 start+110 分钟之前**（那时最终比分还没定型）。 */
+
+  const T0 = Date.parse('2026-10-10T19:30:00+08:00') // 阿森纳 vs 利兹联真实开赛时刻
+  const iso = (ms) => new Date(ms).toISOString()
+  const brRows = [{ id: 'epl-401879268', st: 'finished', hs: 2, as: 1 }]
+  const brStart = new Map([['epl-401879268', iso(T0)]])
+  const brComps = { epl: {}, nba: {} }
+
+  check('积分榜快通道：已完赛 + 上次榜生成于开赛+110 分钟之前 → 判定需重推（这是用户那晚的真实数据）',
+    csMod.standingsDueIds(brRows, brStart, brComps, iso(T0 + 105 * 60000)).length === 1,
+    '21:15 那班推的榜（开赛后 105 分钟）不含终场结果')
+  check('积分榜快通道：上次榜生成于开赛+110 分钟之后 → 不重推（自终止，每场至多一次）',
+    csMod.standingsDueIds(brRows, brStart, brComps, iso(T0 + 115 * 60000)).length === 0)
+  check('积分榜快通道：比赛还在进行 → 不重推（未定型的是比分，不是榜）',
+    csMod.standingsDueIds([{ id: 'epl-401879268', st: 'live', hs: 2, as: 1 }], brStart, brComps, iso(T0)).length === 0)
+  check('积分榜快通道：该赛事没有积分榜 → 不重推（推了也没变化，白烧 129KB）',
+    csMod.standingsDueIds(brRows, brStart, { nba: {} }, iso(T0)).length === 0
+    && csMod.standingsDueIds(brRows, brStart, brComps, iso(T0)).length === 1)
+  check('积分榜快通道：读不到上次生成时刻 → 不重推（否则每班都重推一次 129KB，正是要避免的事）',
+    csMod.standingsDueIds(brRows, brStart, brComps, '').length === 0
+    && csMod.standingsDueIds(brRows, brStart, brComps, null).length === 0
+    && csMod.standingsDueIds(brRows, brStart, brComps, 'not-a-date').length === 0)
+  check('积分榜快通道：开赛时刻未知（不在本地快照窗口里）→ 不重推',
+    csMod.standingsDueIds(brRows, new Map(), brComps, iso(T0)).length === 0)
+  check('积分榜快通道：空 rows 不会炸（凌晨 / 无比赛时段）',
+    csMod.standingsDueIds([], brStart, brComps, iso(T0)).length === 0
+    && csMod.standingsDueIds(null, brStart, brComps, iso(T0)).length === 0)
+  // 🔴 110 必须 ≤ 足球终场哨的最早可能时刻（90 + 中场 15 + 补时）。调大会破坏自终止：
+  //    推完一次后 generated_at 仍 < start+常量 → 下一班又推一次。
+  check('积分榜快通道：SETTLED_MIN 落在足球终场哨的最早可能时刻附近（调大会破坏自终止）',
+    csMod.SETTLED_MIN >= 105 && csMod.SETTLED_MIN <= 120, `当前 ${csMod.SETTLED_MIN} 分钟`)
+
+  check('积分榜快通道：主闸跳过时也会跑（否则「刚完赛 → 榜没变」还是要等 105 分钟）',
+    /await standingsFastLane\(cloud, liveRows\)/.test(csSrc))
+  check('积分榜快通道：live_scores 只读一次，两条快通道共用（各读一次每月多约 2400 次请求）',
+    (csSrc.match(/from\('live_scores'\)/g) || []).length === 1
+    && /const liveRows = await readLiveRows\(cloud\)/.test(csSrc))
+  // ⚠️ 必须把待检查的范围**切到函数体结束**：直接 slice 到文件尾会把 main() 里的
+  //    `pushRow(cloud, 'schedule_cache')` 也算进来，断言必然误报。
+  const sflStart = csSrc.indexOf('async function standingsFastLane')
+  const sflBody = csSrc.slice(sflStart, csSrc.indexOf('\nfunction ghOut', sflStart))
+  check('积分榜快通道：只推 standings_cache，不碰 891KB 的 schedule_cache（这才是它便宜的原因）',
+    sflStart > 0 && /await pushRow\(cloud, 'standings_cache'/.test(sflBody)
+    && !/pushRow\(cloud, 'schedule_cache'/.test(sflBody))
+  check('积分榜快通道：抓到的榜为空时拒绝推送（避免把云端清空）',
+    /!fresh\.tables/.test(csSrc))
+  // 🔴 快通道读的是「云端 standings_cache」的 generated_at，不是主闸的 schedule_cache 年龄 ——
+  //    主闸放行时会立刻重写 schedule_cache → 拿它当基准，快通道就永远算不出「上次榜是什么时候」。
+  check('积分榜快通道：以云端 standings_cache 的 generated_at 为基准（用主闸年龄会算错）',
+    /from\('standings_cache'\)[\s\S]{0,120}?select\('generated_at'\)/.test(csSrc))
 
   const gi = csSrc.indexOf('async function gate(cloud)')
   const gateBody = gi < 0 ? '' : csSrc.slice(gi, csSrc.indexOf('\n}', gi))

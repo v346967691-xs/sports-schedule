@@ -333,6 +333,14 @@ const CLUB_ZH = {
   'Independiente Rivadavia': '里瓦达维亚独立', 'Cusco FC': '库斯科',
   'Deportivo La Guaira': '拉瓜伊拉', 'Always Ready': '时刻准备',
   'MLS All-Stars': '美职联全明星',
+  // ⚠️ 这三支阿根廷队**只能用英文名收**，别去 ESPN_ZH 里按 id 补：
+  //    上游在解放者杯的 leaderboard 里给的是**阿根廷联赛的 id**（5 / 8 / 17），
+  //    而这几个 id 正好落在 NBA 的 1~30 里 —— 按 id 查会译成「克利夫兰骑士 /
+  //    底特律活塞 / 布鲁克林篮网」（2026-10-11 实测，曾在线上显示过）。
+  //    nameZh 是 rowOf（tools/scorers.js）与 normTeam（tools/sync.js）的第三级兜底，
+  //    缺了这一级，射手榜的队名会整片空掉。
+  'Boca Juniors': '博卡青年', 'Estudiantes de La Plata': '拉普拉塔大学生',
+  'Rosario Central': '罗萨里奥中央',
 }
 
 /**

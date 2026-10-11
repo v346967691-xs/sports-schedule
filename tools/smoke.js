@@ -1752,12 +1752,30 @@ async function run() {
         return true
       })
     }))
-  // 🔴 队名绝不能空着 —— 页面拿到空 tz 就会回落显示裸数字 team id（"7115"），比英文名还糟。
-  //    根因：espnZh 只按 id 查 ESPN_ZH，亚冠那批俱乐部只在按**名字**索引的 CLUB_ZH 里。
+  // 🔴 队名绝不能空着。**注意口径**（2026-10-11 更正）：页面在 tz 为空时是
+  //    `wx:if="{{row.team}}"` **整行不渲染**（见 pages/rank/rank.wxml 的 .player-team），
+  //    不会冒出裸数字 id —— 旧注释说的是更早的实现。空着仍然不行，因为那就等于
+  //    「射手榜只告诉你是谁进的球，不告诉你是哪支队」，信息缺一块。
+  //    根因：espnZh 只按 id 查 ESPN_ZH，而解放者杯 / 亚冠那批俱乐部只在按
+  //    **名字**索引的 CLUB_ZH 里，少一级兜底就会整片空掉。
   const bareTeam = scFlat.filter((p) => p.t && !p.tz)
-  check('射手榜：球队名不为空（不能把数字 team id 当队名显示）',
+  check('射手榜：球队名不为空（缺一级名字兜底就会整片空掉）',
     bareTeam.length === 0,
     bareTeam.length ? `${bareTeam.length} 人，例如 ${bareTeam.slice(0, 3).map((p) => `${p.s}@${p.t}`).join(' / ')}` : `${scFlat.length} 人全部有队名`)
+  // 🔴 队名同样必须含汉字。这条守着两个具体的坑：
+  //    ① 缺中文时**回填英文队名**（"Boca Juniors"）—— 名字兜底链用错表就会这样；
+  //    ② 解放者杯的上游 leaderboard 给的是**阿根廷联赛 id**（5 / 8 / 17），
+  //       正好落在 NBA 的 1~30 里 —— 不加大类过滤就会译成「克利夫兰骑士 /
+  //       底特律活塞 / 布鲁克林篮网」（2026-10-11 线上实测过，见 tools/zh-names.js）。
+  const badTeamZh = scFlat.filter((p) => p.tz && !/[\u3400-\u9fff]/.test(p.tz))
+  check('射手榜：中文队名必须含汉字（防止回填英文 / 被 NBA 词典污染）',
+    badTeamZh.length === 0,
+    badTeamZh.length ? badTeamZh.slice(0, 3).map((p) => p.tz).join(' / ') : `${scFlat.filter((p) => p.tz).length} 条队名全是汉字`)
+  const libBad = scFlat.filter((p) => p.comp === 'lib' && ['5', '8', '17'].indexOf(String(p.t)) > -1
+    && !/^(博卡青年|拉普拉塔大学生|罗萨里奥中央)$/.test(p.tz))
+  check('射手榜：解放者杯的小 id 没被 NBA 队名污染（5/8/17 → 博卡/大学生/罗萨里奥中央）',
+    libBad.length === 0,
+    libBad.length ? libBad.slice(0, 3).map((p) => `${p.t}@${p.tz}`).join(' / ') : '三支阿根廷队都译对了')
   // 🔴 中文名必须含汉字。Wikidata 带 languagefallback 时缺中文标签会**回填英文**，
   //    直接采信就会往字典里写进 'Danijel Šturm' 这种"中文名"（生成器已改为以 zhwiki 标题为准）
   const badZh = scFlat.filter((p) => p.z && !/[\u3400-\u9fff]/.test(p.z))

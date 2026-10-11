@@ -11,7 +11,9 @@
  *   {
  *     v: 2,
  *     generatedAt, range,
- *     teams:   { "359": ["阿森纳","Arsenal","ARS","EF0107"] },   // id → [中文名, 英文名, 简称, 颜色(无#)]
+ *     teams:   { "epl:359": ["阿森纳","Arsenal","ARS","EF0107"] },  // `赛事:id` → [中文名, 英文名, 简称, 颜色(无#)]
+ *                                                                  // ⚠️ 见 teamKey()：数字 id 必须带赛事前缀，
+ *                                                                  //    否则 NBA 与足球的小 id 会撞车（错的中文）
  *     matches: { ucl: [ {...短键...} ], epl: [ ... ] }            // 按赛事分组，省掉每条一个 "c"
  *   }
  *
@@ -61,14 +63,36 @@ const hex = (c) => String(c || '').replace(/^#/, '')
 
 /**
  * 球队字典的键。
- * 真实的 ESPN 队 id 是纯数字，直接用；
- * 其余（英雄联盟的简码 T1/BLG、待定、淘汰赛占位对阵）**没有真实 id**，
- * 只有名字 —— 而同一支 T1 在 LCK 和 MSI 的兜底颜色不同（各自取赛事主色），
- * 所以这些队必须把颜色并进键里，否则去重会把某个赛事的配色吃掉。
+ *
+ * 🔴 **数字 id 必须按「赛事」分命名空间**（2026-10-11 修）。
+ *    ESPN 的 team id 只在**同一个运动大类内**唯一，跨大类会撞车 ——
+ *    NBA 占 `1~30`，而足球也有小 id（实测解放者杯的 Estudiantes de La Plata 就是 `8`）。
+ *    以前直接用裸数字当键 → 两支不同的队共用同一条字典项，先写入的那支的
+ *    name / abbr / color 会把另一支覆盖掉，于是页面上出现**错的中文**。
+ * ⚠️ 同一支队在多个赛事里复用同一个 id 是**上游的正常设计**（巴萨在西甲和欧冠都是 83），
+ *    所以这里用 comp 而不是大类做命名空间：宁可多存几条内容相同的字典项（实测 +2KB 左右），
+ *    也不给「不同赛事里 id 恰好相同却不是同一支队」留任何混起来的可能。
+ * 非数字 id（英雄联盟简码 T1/BLG、待定、淘汰赛占位对阵）**没有真实 id**，
+ *    只有名字 —— 而同一支 T1 在 LCK 和 MSI 的兜底颜色不同（各自取赛事主色），
+ *    所以这些队必须把颜色并进键里，否则去重会把某个赛事的配色吃掉。
  */
-function teamKey(t) {
+function teamKey(t, comp) {
   const id = String(t.id == null ? '' : t.id)
-  return /^[0-9]+$/.test(id) ? id : `${id}|${hex(t.color)}`
+  if (/^[0-9]+$/.test(id)) return comp ? `${comp}:${id}` : id
+  return `${id}|${hex(t.color)}`
+}
+
+/**
+ * 从字典键里还原球队 id。三种键都要认：
+ *   · `${comp}:${数字id}`  当前格式
+ *   · `${数字id}`          V2 以前的老快照（读旧文件时仍要能解开）
+ *   · `${简码}|${颜色}`     非数字 id（电竞 / 待定）
+ */
+function keyToId(key) {
+  const s = String(key)
+  const m = s.match(/^[^:|]+:([0-9]+)$/)
+  if (m) return m[1]
+  return s.indexOf('|') > -1 ? s.split('|')[0] : s
 }
 
 /* --------------------------------- 编码 --------------------------------- */
@@ -77,9 +101,9 @@ function encodeSnapshot(list, extra) {
   const teams = {}
   const byComp = {}
 
-  const encTeam = (t) => {
+  const encTeam = (t, comp) => {
     if (!t) return null
-    const key = teamKey(t)
+    const key = teamKey(t, comp)
     if (!Object.prototype.hasOwnProperty.call(teams, key)) {
       teams[key] = [t.zh || '', t.name || '', t.abbr || '', hex(t.color)]
     }
@@ -107,8 +131,8 @@ function encodeSnapshot(list, extra) {
     const prefix = `${m.comp}-`
     if (String(m.id).indexOf(prefix) === 0) rec.e = String(m.id).slice(prefix.length)
     else rec.i = m.id
-    rec.h = encTeam(m.home)
-    rec.a = encTeam(m.away)
+    rec.h = encTeam(m.home, m.comp)
+    rec.a = encTeam(m.away, m.comp)
     if (m.stage) rec.g = m.stage
     if (m.venue) rec.v = m.venue
     if (m.statusText) rec.x = m.statusText
@@ -135,8 +159,10 @@ function decTeam(ref, teams) {
   const score = slot(1)
   const wins = slot(2)
   const losses = slot(3)
-  const row = teams[key]
-  const id = key.split('|')[0]
+  // ⚠️ `|| teams[id]` 是给 V2 以前的老快照留的（那时键就是裸数字 id）。
+  //    新快照的键是 `赛事:数字id`，直接命中第一项。
+  const id = keyToId(key)
+  const row = teams[key] || teams[id]
   // 字段顺序与 tools/sync.js 的 normTeam 保持一致，方便直接 diff 两边的输出
   if (!row) {
     return { id, name: id, zh: '', abbr: id, color: '#6B7280', score, wins, losses }

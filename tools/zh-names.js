@@ -3,8 +3,17 @@
  *
  * 足球 / NBA 按 ESPN team id 匹配，英雄联盟按官方队伍简码匹配。
  * 取不到中文名时回落到数据源自带的英文名，不猜、不硬凑。
+ *
+ * 🔴 **足球与篮球必须分表存**（2026-10-11 修）：
+ *    ESPN 的数字 team id 只在**同一个运动大类内**唯一，跨大类会撞车 ——
+ *    NBA 占 `1~30`，而足球的小 id 也是有的（实测：解放者杯的 Estudiantes de La Plata
+ *    的 id 正好是 `8`，与 NBA 底特律活塞撞号）。
+ *    以前两批混在一张 `ESPN_ZH` 里、又只按 id 查 → 足球那支队被翻译成「底特律活塞」，
+ *    直接踩「宁可都不写中文，也不要错的中文」这条红线。
+ *    → 现在按 cat 分表（`espnZh(id, cat)`），**调用方必须传大类**。
  */
 
+/** 足球（含国家队 / 各国联赛 / 洲际俱乐部赛事） */
 const ESPN_ZH = {
   // 英超
   359: '阿森纳', 362: '阿斯顿维拉', 331: '布莱顿', 337: '布伦特福德', 349: '伯恩茅斯',
@@ -73,7 +82,20 @@ const ESPN_ZH = {
   8089: '克拉约瓦大学', 8169: '库奥皮奥', 10834: '索菲亚中央陆军', 17856: '林肯红魔',
   19246: '里加', 20025: '伊比利亚1999', 20028: '考纳斯萨尔基里斯', 20301: '米亚尔比',
   20703: '埃斯卡尔德斯国际', 20710: '巴尼亚卢卡战士', 21943: '埃格纳蒂亚', 22281: '帕福斯',
-  // NBA
+  // 亚足联俱乐部赛事：ESPN 的 /statistics 端点不给 team 对象，只能按 id 兜底（2026-10-04）
+  7129: '加拉法',
+  // 20912 = Al-Quwa Al-Jawiya（伊拉克「空军俱乐部」，中文媒体惯称「巴格达空军」）。
+  // ⚠️ 它的 displayName 是全大写 `Al-QUWA AL-JAWIYA`，nameZh 的词典匹配不上，只能按 id 兜底。
+  20912: '巴格达空军',
+}
+
+/**
+ * 篮球（NBA）。
+ *
+ * 🔴 单独一张表，**不要并回 ESPN_ZH** —— 这里的 id 是 `1~30` 这种小数字，
+ *    与足球的 id 空间会撞（详见文件头说明）。
+ */
+const NBA_ZH = {
   1: '亚特兰大老鹰', 2: '波士顿凯尔特人', 17: '布鲁克林篮网', 30: '夏洛特黄蜂', 4: '芝加哥公牛',
   5: '克利夫兰骑士', 6: '达拉斯独行侠', 7: '丹佛掘金', 8: '底特律活塞', 9: '金州勇士',
   10: '休斯顿火箭', 11: '印第安纳步行者', 12: '洛杉矶快船', 13: '洛杉矶湖人', 29: '孟菲斯灰熊',
@@ -81,11 +103,6 @@ const ESPN_ZH = {
   25: '俄克拉荷马雷霆', 19: '奥兰多魔术', 20: '费城76人', 21: '菲尼克斯太阳', 22: '波特兰开拓者',
   23: '萨克拉门托国王', 24: '圣安东尼奥马刺', 28: '多伦多猛龙', 26: '犹他爵士', 27: '华盛顿奇才',
   134478: '伦敦雄狮',
-  // 亚足联俱乐部赛事：ESPN 的 /statistics 端点不给 team 对象，只能按 id 兜底（2026-10-04）
-  7129: '加拉法',
-  // 20912 = Al-Quwa Al-Jawiya（伊拉克「空军俱乐部」，中文媒体惯称「巴格达空军」）。
-  // ⚠️ 它的 displayName 是全大写 `Al-QUWA AL-JAWIYA`，nameZh 的词典匹配不上，只能按 id 兜底。
-  20912: '巴格达空军',
 }
 
 const LOL_ZH = {
@@ -934,9 +951,21 @@ function placeholderZh(name) {
   return ''
 }
 
-/** 足球 / NBA 队名（按 ESPN team id） */
-function espnZh(id) {
-  return ESPN_ZH[String(id)] || ''
+/**
+ * 队名（按 ESPN team id）。
+ *
+ * 🔴 `cat` **必须传**（`'football'` / `'basketball'`，取自赛事的 `cat`）：
+ *    足球和篮球的 id 空间会撞车（NBA 占 1~30），只按 id 查会把足球的
+ *    Estudiantes de La Plata（id=8）翻译成「底特律活塞」。见文件头说明。
+ *
+ * 不给 cat 时的兜底顺序是「先足球、再篮球」—— 对**篮球**是安全的（足球表里没有 1~30），
+ * 对足球却**不安全**，所以新增调用点一律显式传 cat，别依赖这个兜底。
+ */
+function espnZh(id, cat) {
+  const k = String(id)
+  if (cat === 'basketball') return NBA_ZH[k] || ''
+  if (cat === 'football') return ESPN_ZH[k] || ''
+  return ESPN_ZH[k] || NBA_ZH[k] || ''
 }
 
 /**
@@ -977,6 +1006,6 @@ function lolZh(code) {
 }
 
 module.exports = {
-  ESPN_ZH, NAME_ZH, CLUB_ZH, YOUTH_ZH, LOL_ZH, PLAYER_ZH,
+  ESPN_ZH, NBA_ZH, NAME_ZH, CLUB_ZH, YOUTH_ZH, LOL_ZH, PLAYER_ZH,
   espnZh, nameZh, placeholderZh, lolZh, playerZh,
 }

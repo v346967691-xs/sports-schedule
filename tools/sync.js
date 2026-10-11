@@ -229,17 +229,25 @@ function beijingTime(iso) {
   return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
 }
 
-function normTeam(raw, fallbackName, fallbackColor) {
+/**
+ * @param {object} raw            上游 team 对象
+ * @param {string} fallbackName   上游没给名字时的兜底（拳击/田径那类无 team 的赛事）
+ * @param {string} fallbackColor  取不到队的颜色时用赛事主色
+ * @param {string} cat            **必须传**：'football' / 'basketball'。
+ *   足球与篮球的 ESPN team id 会撞车（NBA 占 1~30，解放者杯的 Estudiantes id=8），
+ *   不传大类就会把足球队翻译成 NBA 队名（2026-10-11 修）。
+ */
+function normTeam(raw, fallbackName, fallbackColor, cat) {
   const name = raw.displayName || raw.name || raw.shortDisplayName || fallbackName || '待定'
   const id = String(raw.id || name)
   return {
     id,
     name,
     // 中文名：小程序里优先展示，取不到就用英文名。
-    // 四级兜底：① ESPN 队 id（俱乐部/国家队主表）② 淘汰赛占位对阵（"Group A Winner"
-    // 这类没有 team id）③ 英文名（国青队 U17/U20 与亚冠外国俱乐部没有单独 id 映射）
-    // ④ 留空 → 展示英文名
-    zh: zhNames.espnZh(id) || zhNames.placeholderZh(name) || zhNames.nameZh(name) || '',
+    // 四级兜底：① ESPN 队 id（俱乐部/国家队主表，按大类分表）② 淘汰赛占位对阵
+    // （"Group A Winner" 这类没有 team id）③ 英文名（国青队 U17/U20 与亚冠外国俱乐部
+    // 没有单独 id 映射）④ 留空 → 展示英文名
+    zh: zhNames.espnZh(id, cat) || zhNames.placeholderZh(name) || zhNames.nameZh(name) || '',
     abbr: (raw.abbreviation || raw.shortDisplayName || name).slice(0, 6),
     color: raw.color ? `#${String(raw.color).replace('#', '')}` : fallbackColor || '#6B7280',
   }
@@ -346,8 +354,8 @@ async function fetchEspn(comp) {
           // 多来源赛事（中国国字号）必须把来源联赛带出去 —— match-detail.js 抓
           // summary 时按 slug 定位 ESPN 端点，没有它就拿不到比赛详情
           ...(comp.espns ? { slug: src.id } : {}),
-          home: { ...normTeam(homeRaw.team || {}, homeRaw.athlete?.displayName, comp.accent), score: num(homeRaw.score) },
-          away: { ...normTeam(awayRaw.team || {}, awayRaw.athlete?.displayName, comp.accent), score: num(awayRaw.score) },
+          home: { ...normTeam(homeRaw.team || {}, homeRaw.athlete?.displayName, comp.accent, comp.cat), score: num(homeRaw.score) },
+          away: { ...normTeam(awayRaw.team || {}, awayRaw.athlete?.displayName, comp.accent, comp.cat), score: num(awayRaw.score) },
         })
       }
     }

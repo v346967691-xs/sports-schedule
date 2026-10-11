@@ -271,7 +271,8 @@ function espnRow(entry, cat, index) {
     name,
     // 与 sync.js 的 normTeam 同一套三级兜底：id → 英文名（国青队 U17/U20 与
     // 亚冠外国俱乐部没有 id 映射）→ 留空。否则 U17 世界杯 48 支队全是英文。
-    zh: zhNames.espnZh(id) || zhNames.nameZh(name) || '',
+    // ⚠️ 必须带 `cat`：足球与篮球的 ESPN team id 会撞车（NBA 占 1~30）。
+    zh: zhNames.espnZh(id, cat) || zhNames.nameZh(name) || '',
     abbr: (team.abbreviation || team.shortDisplayName || name).slice(0, 6),
     pos: pick(stats, 'rank', 'playoffSeed') || index + 1,
     played: pick(stats, 'gamesPlayed') || 0,

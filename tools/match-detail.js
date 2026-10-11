@@ -456,27 +456,50 @@ async function mapLimit(items, limit, worker) {
 /* --------------------------- 抽取：单场比赛 --------------------------- */
 
 /**
+ * 赛事大类 —— 只用来**选取队名字典**（足球表 / 篮球表是分开的两张，见 zh-names.js）。
+ * ⚠️ 默认回 'football'：字典里查不到就回落英文名，**不会**产生错的中文，
+ *    所以在拿不准的赛事上宁可当足球（KPL 这类非 ESPN 源也不会走到这里）。
+ */
+function catOfComp(compKey) {
+  return BASKETBALL[compKey] ? 'basketball' : 'football'
+}
+
+/**
  * 队名索引：lastFiveGames 只给了对手的 id，没有名字，直接查会出空字符串。
- * 从本地快照里把所有出现过的队（id → 中文名/英文名）建一张表兜底。
+ * 从本地快照里把所有出现过的队建一张表兜底。
+ *
+ * 🔴 键是 **`大类|id`**，不是裸 id（2026-10-11 修）：ESPN 的数字 team id 只在同一个
+ *    运动大类内唯一，跨大类会撞车（NBA 占 1~30，解放者杯的 Estudiantes de La Plata
+ *    正好是 8）—— 用裸 id 当键会让两队互相覆盖，等于把「错的中文」从赛程页传染到详情页。
+ * ⚠️ 同一大类内跨赛事复用 id 是**正常**的（巴萨在西甲和欧冠都是 83），所以不能用 comp 当键。
  */
 let TEAM_IDX = {}
 function buildTeamIndex(list) {
   const idx = {}
   ;(list || []).forEach((m) => {
+    const cat = catOfComp(m.comp)
     ;['home', 'away'].forEach((side) => {
       const t = m[side]
       if (!t || !t.id) return
-      const id = String(t.id)
-      if (!idx[id]) idx[id] = zhNames.espnZh(id) || t.zh || t.name || ''
+      const key = `${cat}|${String(t.id)}`
+      if (idx[key]) return
+      // 快照里的 zh 已按各自赛事的大类解析好 → 优先信它
+      idx[key] = t.zh || t.name || ''
     })
   })
   TEAM_IDX = idx
 }
 
-function teamZh(id, fallback) {
+/**
+ * @param {string|number} id       ESPN team id
+ * @param {string} fallback        上游给的英文名
+ * @param {string} compKey         赛事 key —— 用来定位「足球表还是篮球表」
+ */
+function teamZh(id, fallback, compKey) {
+  const cat = catOfComp(compKey || '')
   return (
-    zhNames.espnZh(String(id)) ||
-    TEAM_IDX[String(id)] ||
+    TEAM_IDX[`${cat}|${String(id)}`] ||
+    zhNames.espnZh(String(id), cat) ||
     zhNames.nameZh(fallback) ||
     fallback ||
     ''
@@ -500,7 +523,7 @@ function pickEvents(j, homeId) {
     .filter((e) => e.t)
 }
 
-function pickForm(j) {
+function pickForm(j, compKey) {
   const out = {}
   ;(Array.isArray(j.lastFiveGames) ? j.lastFiveGames : []).forEach((g) => {
     const tid = String(g.team && g.team.id)
@@ -511,7 +534,7 @@ function pickForm(j) {
       const sc = String(e.score || '')
       return {
         at: isHome ? '主' : '客',
-        opp: teamZh(opp.id, opp.displayName),
+        opp: teamZh(opp.id, opp.displayName, compKey),
         sc,
         r: String(e.gameResult || ''),
       }
@@ -526,7 +549,7 @@ function isPlayed(e) {
   return !!(e && e.statusType && e.statusType.state === 'post')
 }
 
-function pickH2H(j) {
+function pickH2H(j, compKey) {
   const ss = (Array.isArray(j.seasonseries) ? j.seasonseries : [])[0]
   if (!ss) return null
   return {
@@ -540,8 +563,8 @@ function pickH2H(j) {
       const a = cs.find((c) => c.homeAway === 'away') || cs[1] || {}
       return {
         d: String(e.date || '').slice(0, 10),
-        ho: teamZh(h.team && h.team.id, h.team && h.team.displayName),
-        ao: teamZh(a.team && a.team.id, a.team && a.team.displayName),
+        ho: teamZh(h.team && h.team.id, h.team && h.team.displayName, compKey),
+        ao: teamZh(a.team && a.team.id, a.team && a.team.displayName, compKey),
         hs: String(h.score == null ? '' : h.score),
         as: String(a.score == null ? '' : a.score),
       }
@@ -846,11 +869,11 @@ async function fetchDetail(m) {
   noteRosterPlayers(j, null, m.comp)
   const homeId = m.home && m.home.id
   const awayId = m.away && m.away.id
-  const form = pickForm(j)
-  const h2h = pickH2H(j)
+  const form = pickForm(j, m.comp)
+  const h2h = pickH2H(j, m.comp)
   if (h2h) {
-    const hz = teamZh(homeId, m.home && m.home.name)
-    const az = teamZh(awayId, m.away && m.away.name)
+    const hz = teamZh(homeId, m.home && m.home.name, m.comp)
+    const az = teamZh(awayId, m.away && m.away.name, m.comp)
     let hw = 0
     let aw = 0
     let d = 0

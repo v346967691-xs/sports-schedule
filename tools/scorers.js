@@ -108,11 +108,14 @@ function rowOf(l, players) {
     s: String(a.shortName || a.displayName || ''),
     t: String(t.id || ''),
     // 中文队名与赛程页同源（ESPN team id 空间一致），复用现成字典。
+    // ⚠️ 必须带 `'football'`：足球与篮球的 id 空间会撞车（NBA 占 1~30），
+    //    不传大类就会把足球队翻译成 NBA 队名。
     // ⚠️ 必须带名字兜底：`espnZh` 只按 id 查 ESPN_ZH，而亚冠那批俱乐部
     //    （Al Ain / Esteghlal / Kashima Antlers…）只在按**名字**索引的 CLUB_ZH 里。
     //    少了这一级，界面上就会冒出 "7115" 这种裸数字 id —— 比英文名还糟。
     //    与 sync.js 的 normTeam 同一套四级兜底口径。
-    tz: zhNames.espnZh(t.id) || zhNames.nameZh(t.displayName || t.shortDisplayName || t.name || '') || '',
+    //    本函数只服务 `TARGETS` 里的足球赛事（篮球走 byathlete，不经过这里）。
+    tz: zhNames.espnZh(t.id, 'football') || zhNames.nameZh(t.displayName || t.shortDisplayName || t.name || '') || '',
     z: zhNames.playerZh(id) || '',
     j: a.jersey != null && Number.isFinite(Number(a.jersey)) ? Number(a.jersey) : 0,
     p: statOf(a, 'appearances'),

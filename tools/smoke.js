@@ -3742,6 +3742,25 @@ async function run() {
     && !/match_detail/.test(gateBody))
 
   const ymlSrc = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
+  // 🔴 match_detail 的批量推送闸：值可以调，但两条前提不能动。
+  //    ① **必须显式写进 workflow**。靠代码默认值 = 没人知道线上到底跑的是哪个数：
+  //       此变量从 2026-10-07 引入到 10-11 都**没在 workflow 里设过**，
+  //       实际吃的是 cloud-sync.js 的默认 90，而注释里记的是 180 —— 两边对不上没人发现。
+  //    ② `detailFastLane`（空壳补抓）**不能吃这个闸**。它是「赛后 ≤15 分钟看到详情」
+  //       的唯一保障；一旦快通道也被塞进 `detailDue` 的分支里，180 就真的会变成
+  //       「赛后详情等 3 小时」—— 那时这个值必须改回 90。
+  const detailMinYml = (ymlSrc.match(/SYNC_DETAIL_INTERVAL_MIN:\s*'(\d+)'/) || [])[1]
+  check('工作流：match_detail 节流显式写进 workflow（不靠代码默认值）',
+    detailMinYml === '180',
+    detailMinYml ? `SYNC_DETAIL_INTERVAL_MIN='${detailMinYml}'` : '未设置 → 会吃 cloud-sync.js 的默认 90')
+  const flStart = csSrc.indexOf('async function detailFastLane(')
+  const flEnd = flStart < 0 ? -1 : csSrc.indexOf('\n}', flStart)
+  const flBody = flStart < 0 || flEnd < 0 ? '' : csSrc.slice(flStart, flEnd)
+  check('云同步：空壳补抓快通道不吃 match_detail 节流（否则 180 真会变成「等 3 小时」）',
+    flBody.length > 0
+    && !/DETAIL_MIN_INTERVAL_MIN|detailDue/.test(flBody)
+    && csSrc.indexOf('await detailFastLane(cloud, liveRows)') < csSrc.indexOf("ghOut('pushed', 'true')"),
+    '快通道挂在「主闸跳过」分支上，且函数体内不读此闸')
   check('工作流：实时比分那一步不受节流闸影响（60 秒粒度保持不变）',
     csMod.MIN_INTERVAL_MIN >= 60 && ymlSrc.indexOf('--every=60') !== -1, '--every=60')
   check('工作流：日报不再每 15 分钟重写同样那几行（跟大快照走）',

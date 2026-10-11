@@ -3170,10 +3170,33 @@ async function run() {
     check('实时比分：CBA 走官方接口单独一路（不走 ESPN，但必须有人管）',
       /scanCba/.test(fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8'))
       && /cbaleague\.com/.test(fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')))
-    // ⚠️ 电竞（LoL/KPL）**故意不做**：比分是 BO 局分，一局 30~40 分钟才变一次，
-    //    15 分钟粒度够用，不值得为此多打 8 个赛事的请求。要改这里先把这条断言改掉。
-    check('实时比分：电竞暂不进 live 通道（局分变化慢，15 分钟够用；改主意时先改这条）',
-      ['worlds', 'lpl', 'lck', 'lec', 'msi', 'kpl', 'demacia', 'agames']
+    // 🔴 2026-10-11 改口：KPL **接进 live 通道**。
+    //    用户报障：上游 广州TTG 2:2 上海EDG.M，页面显示 1:1，滞后 62 分钟。
+    //    原判据「BO 局分变化慢，15 分钟粒度够用」的**前提是错的** ——
+    //    主闸实际是 **90 分钟节流**（不是 15 分钟），BO5 一局 20~30 分钟，
+    //    等于整场比赛只更新 1~2 次。KPL 官方接口一次 POST 返回整赛季（1 个请求），
+    //    零额外云端成本，所以值得破例。
+    const lwSrcAll = fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')
+    check('实时比分：KPL 走官方接口单独一路（不走 ESPN，但必须有人管）',
+      /scanKpl/.test(lwSrcAll) && /timi-esports\.qq\.com/.test(lwSrcAll))
+    // 🔴 最容易静默失败的一处：live 行的 id 必须与主表**逐字符一致**。
+    //    不一致时 applyLive() 匹配不到 → 不报任何错 → 用户看到的还是主表那份旧比分，
+    //    排查起来会以为是「同步没跑」。
+    check('实时比分：KPL 的 live 行 id 与主表拼法一致（kpl-${scheduleid}）',
+      /id: `kpl-\$\{ev\.scheduleid\}`/.test(lwSrcAll)
+      && /id: `\$\{comp\.key\}-\$\{ev\.scheduleid\}`/.test(
+        fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
+    check('实时比分：KPL 状态兜底——上游报未开始却有比分时按已结束（否则会显示「未开始 2:2」）',
+      lw.kplEffectiveStatus({ schedule_status: 1, team_a_score: 2, team_b_score: 2 }) === 'finished'
+      && lw.kplEffectiveStatus({ schedule_status: 3, team_a_score: 1, team_b_score: 1 }) === 'live'
+      && lw.kplEffectiveStatus({ schedule_status: 4, team_a_score: 3, team_b_score: 2 }) === 'finished'
+      && lw.kplStatusText({ schedule_status: 3 }) === '进行中'
+      && lw.kplStatusText({ schedule_status: 4 }) === '已结束',
+      '状态语义必须与 sync.js 的 KPL_STATE 同源')
+    // ⚠️ LoL 系（worlds / lpl / lck / lec / msi / demacia / agames）**仍不进**：
+    //    它们要按 slug 逐个打上游，成本比 KPL 高一个量级。要接的话先改这条断言。
+    check('实时比分：LoL 系仍不进 live 通道（按 slug 逐个打上游，成本高一个量级）',
+      ['worlds', 'lpl', 'lck', 'lec', 'msi', 'demacia', 'agames']
         .every((k) => lwKeys.indexOf(k) === -1))
 
     check('实时比分：ESPN 的 dates 用 UTC，取昨天/今天/明天三天（覆盖所有时区）',
@@ -3655,8 +3678,9 @@ async function run() {
     && /decodeSnapshot\(require\('\.\.\/data\/matches\.js'\)\)/.test(csSrc))
   check('云同步：快通道没真抓到场次就不推送（省掉一整轮日桶写入）',
     /!details\.stats\.fetched/.test(csSrc))
-  // KPL 走官方接口，不在 live_scores 里 → 不单独补一次，快通道对它等于不存在
-  check('云同步：快通道单独拉 KPL 官方赛程补状态（live_scores 里没有 KPL）',
+  // KPL 走官方接口；live_scores 里从 10-11 起**也有** KPL 实时比分，但那份只留时间窗内的场次，
+  // 而快通道要的是「已完赛待补详情」，窗口外（拖到深夜的场次）会缺 → 必须独立再拉一次。
+  check('云同步：快通道独立拉 KPL 官方赛程补「已完赛」状态（别改成复用 live_scores）',
     /MD\.fetchKplStatus\(\)/.test(csSrc) && /async function fetchKplStatus/.test(mdSrcLocal)
     && /getScheduleList/.test(mdSrcLocal))
   // 状态语义只准有一份，别在 match-detail 里复制一套

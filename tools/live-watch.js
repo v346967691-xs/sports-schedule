@@ -27,6 +27,9 @@
  *      —— 否则每 60 秒打 31 个赛事 × 3 个日期，上游请求量是主同步的 5 倍。
  *   3) **没有 live 比赛就立刻退出**（`--once` 或循环里连续 N 轮为空），
  *      凌晨没比赛时不白占 Actions 分钟数。
+ *   4) **非 ESPN 源各开一路**：CBA（`scanCba`）与 KPL（`scanKpl`）走官方接口，
+ *      一次请求就拿到全部场次 + 实时比分。KPL 是 2026-10-11 补上的 —— 此前它只走
+ *      主闸（**90 分钟节流**），用户实测「上游 2:2 / 页面 1:1」滞后 62 分钟。
  */
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
@@ -34,7 +37,11 @@ const publicConfig = require('../utils/cloud-config')
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports'
 const COMPETITIONS = require('../data/meta.js').competitions
 // 复用 sync.js 的赛事表（它才有 `sport` 字段；data/meta.js 只有 `cat`）
-const SYNC_COMPS = require('./sync.js').COMPETITIONS
+// 🔴 KPL_STATE / KPL_CANCELED 也一并借用：KPL 的状态语义在 sync.js 里有完整取证注释，
+//    别在这里重新猜一遍（两处一旦不一致，同一场比赛会出现两种状态）。
+const SYNC = require('./sync.js')
+const SYNC_COMPS = SYNC.COMPETITIONS
+const { KPL_STATE, KPL_CANCELED } = SYNC
 
 const DAY = 86400000
 const DISCOVER_EVERY = 5 // 每 5 轮做一次全量发现（防止漏掉刚开赛的联赛）
@@ -48,6 +55,9 @@ function arg(name, def) {
   return hit ? hit.split('=')[1] : def
 }
 const onlyArg = arg('only', '')
+// KPL 不走 ESPN 的 TARGETS 过滤（它不是 ESPN 源），`--only` 得单独判一次，
+// 否则 `--only=kpl` 会连它自己一起滤掉。
+const kplOn = !onlyArg || onlyArg.split(',').indexOf('kpl') > -1
 const minutes = Number(arg('minutes', 11))
 const everySec = Number(arg('every', 60))
 const once = process.argv.includes('--once')
@@ -113,7 +123,8 @@ function zhLiveStatus(sport, state, shortDetail) {
 }
 
 /**
- * 赛事 → {key, sport, league}。只处理 ESPN 来源（LoL / KPL / CBA 走各自的抓取器）。
+ * 赛事 → {key, sport, league}。**只处理 ESPN 来源**；KPL / CBA 不走这里，
+ * 由下面的 `scanKpl` / `scanCba` 单独一路接管（LoL 系仍不进，理由见文件头设计要点）。
  * ⚠️ 中国国字号（`chn`）**没有单一联赛**，横跨 4 个国际赛事（友谊赛/世预赛/亚洲杯/奥运会），
  *    所以一个 key 要展开成多条 league —— 漏了它的话，国足的比赛就没有实时比分。
  */
@@ -233,6 +244,86 @@ async function scanCba() {
   return rows
 }
 
+/* ------------------------------------------------------------------ KPL
+ *
+ * 王者荣耀 KPL 官方接口（`kpl.qq.com` 前端包里挖出来的后端，无需 key，POST + JSON）。
+ * **一次请求返回整赛季全部场次**（含实时局分），所以接它几乎零上游成本。
+ *
+ * 🔴 为什么必须接（2026-10-11 用户报障）：
+ *    KPL 之前只走主闸 `schedule_cache`，而主闸有 **90 分钟节流** ——
+ *    实测「上游 广州TTG 2:2 上海EDG.M、我们显示 1:1」时，云端那份数据已滞后 62 分钟，
+ *    最长能到 90 分钟。BO5 一局约 20~30 分钟，等于**整场比赛只更新 1~2 次**，
+ *    用户直接感知为「实时比分是坏的」。
+ *    （当初不接的理由是「局分变化慢，15 分钟粒度够用」—— 那个前提是错的：
+ *      主闸实际是 90 分钟节流，不是 15 分钟。）
+ *
+ * ⚠️ id 必须与 `sync.js` 完全一致（`kpl-${scheduleid}`）。差一个字符客户端就打不上补丁，
+ *    而且**不会报任何错** —— `applyLive()` 是按 id 匹配，匹配不上就静默跳过。
+ *    `tools/smoke.js` 有守卫盯着这两处的 id 拼法。
+ */
+const KPL_API = 'https://kplshop-op.timi-esports.qq.com/kplow'
+
+/** 上游状态 → 我们的三态。含「打完了还报未开始」的兜底（口径同 sync.js） */
+function kplEffectiveStatus(ev) {
+  const st = KPL_STATE[Number(ev.schedule_status)] || 'upcoming'
+  const played = Number(ev.team_a_score || 0) + Number(ev.team_b_score || 0)
+  return st === 'upcoming' && played > 0 ? 'finished' : st
+}
+
+/** 状态文案：与主表（sync.js）保持一致，别让同一场比赛在两个页面有两种说法 */
+function kplStatusText(ev) {
+  const st = kplEffectiveStatus(ev)
+  return st === 'finished' ? '已结束' : st === 'live' ? '进行中' : ''
+}
+
+async function scanKpl() {
+  let json
+  try {
+    const res = await fetch(`${KPL_API}/getScheduleList`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36',
+        Referer: 'https://kpl.qq.com/',
+        Origin: 'https://kpl.qq.com',
+      },
+      body: JSON.stringify({ seasonid: '' }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    json = await res.json()
+  } catch (err) {
+    // 静默降级：KPL 挂了绝不能连累 ESPN 那条主通道
+    console.error('[live-watch] KPL 抓取失败，本轮跳过：', (err && err.message) || err)
+    return []
+  }
+
+  const list = (json && json.data && json.data.list) || []
+  const now = Date.now()
+  const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+  const rows = []
+  for (const ev of list) {
+    if (Number(ev.schedule_status) === KPL_CANCELED) continue
+    const ts = Number(ev.start_timestamp)
+    if (!ts) continue
+    const start = ts * 1000
+    const st = kplEffectiveStatus(ev)
+    if (st === 'upcoming') continue
+    // 🔴 时间窗不能用「开赛 ≤2 小时」这种窄口径：BO5 打满能超过 3 小时，
+    //    窄窗口会把**正在进行的比赛漏掉**（实测 17:00 开赛、19:30 仍在打）。
+    //    所以：进行中的一律收；已结束的只留 5 小时内的，免得塞进几周前的老比赛。
+    if (st === 'finished' && start < now - 5 * 3600000) continue
+    if (start > now + 3 * 3600000) continue
+    rows.push({
+      id: `kpl-${ev.scheduleid}`,
+      st,
+      stt: kplStatusText(ev),
+      hs: num(ev.team_a_score) || 0,
+      as: num(ev.team_b_score) || 0,
+    })
+  }
+  return rows
+}
+
 async function push(cloud, rows) {
   const nowIso = new Date().toISOString()
   const row = {
@@ -288,6 +379,16 @@ async function main() {
         liveComps.push('cba')
       }
       cbaActive = cbaRows.length > 0
+    }
+    // KPL 同样走官方接口单独一路。与 CBA 的区别：**每轮都扫，不做 active 收敛** ——
+    // 它的接口一次 POST 就返回整赛季全部场次（仅 1 个请求），比 CBA 还便宜；
+    // 而收敛的代价是「比赛刚开打」最多晚 5 分钟（下一轮全量发现）才被扫到。
+    if (kplOn) {
+      const kplRows = await scanKpl()
+      if (kplRows.length) {
+        rows.push(...kplRows)
+        liveComps.push('kpl')
+      }
     }
     const live = rows.filter((r) => r.st === 'live').length
     console.log(
@@ -346,4 +447,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { zhLiveStatus, scan, espnDates, TARGETS }
+module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, espnDates, TARGETS }

@@ -272,7 +272,9 @@ async function readLiveRows(cloud) {
  *
  * ⚠️ 必须喂最新状态：否则 match-detail 用的还是 97 分钟前的 `data/matches.js`，
  *    刚完赛的比赛在里头是 live/upcoming → needsFetch 走错分支 → 白跑一趟。
- * ⚠️ `live_scores` 只有 ESPN 赛事（KPL 不在里面）。KPL 走主闸那班，本通道覆盖不到。
+ * ⚠️ `live_scores` 从 2026-10-11 起**也含 KPL**（live-watch 的 `scanKpl` 写的实时比分）。
+ *    但本通道仍**独立拉一次** KPL 官方赛程：这里要的是「已完赛」判定，而 live_scores
+ *    只留时间窗内的场次（进行中 + 5 小时内完赛），窗口外会缺。
  */
 async function detailFastLane(cloud, rows) {
   let tmp = null
@@ -284,8 +286,10 @@ async function detailFastLane(cloud, rows) {
       if (!r || !r.id || r.st !== 'finished') return
       live[r.id] = { status: 'finished', hs: r.hs, as: r.as }
     })
-    // ⚠️ KPL 不在 live_scores 里（那张表只有 ESPN 赛事），单独问一次官方赛程补上。
-    //    否则快通道对 KPL 等于不存在，它的赛后详情还是只能等主闸那 97 分钟。
+    // ⚠️ KPL 仍要单独问一次官方赛程（**别改成复用 live_scores**）：
+    //    live_scores 那份是给「实时比分」用的、只留时间窗内的场次，
+    //    这里要的是「哪些 KPL 场次已完赛待补详情」，窗口外（拖到深夜的场次）会缺。
+    //    不补这一次，KPL 的赛后详情只能等主闸那 97 分钟。
     const kpl = await MD.fetchKplStatus()
     const kplN = Object.keys(kpl).length
     if (kplN) log(`详情快通道：KPL 官方赛程 ${kplN} 场已结束`)

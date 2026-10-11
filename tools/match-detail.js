@@ -171,7 +171,9 @@ const BASKET_STAT_LABELS = [
  *
  * → 三类壳数据都要补抓（空值 / 局数不足 / 未结束时抓的空壳），统一控制代价：
  *   · 只在开赛后 `RETRY_WINDOW_MS` 内重试（超出就认了，再往后桶也要过期了）
- *   · 每 `RETRY_GAP_MS` 才试一次（不跟着 15 分钟一班白打上游）
+ *   · 非壳的已结束比赛**不重抓**（事件不会变）；壳按 `FAST_GAP_MS`(15 分钟) 重试，
+ *     且**两条路径（主闸放行 / 快通道）一视同仁** —— 别让「哪班先轮到」决定用户等多久。
+ *     详见 `needsFetch` 里连到 2026-10-11 TTG vs EDG 事故的注释。
  *   · 「局数不足」的判据：已存局数 < 双方最终比分之和（3:0 → 该有 3 局）。
  *     比分本身也可能滞后（那轮快照里还是 1:0）→ 比分补齐后的下一轮自然触发。
  *   · 「未结束时抓的空壳」判据：`prev.fin === false`（抓那一刻比赛还没结束）。
@@ -978,23 +980,37 @@ function needsFetch(m, captured) {
     //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
     const inWindow = Number.isFinite(t) && Date.now() - t < RETRY_WINDOW_MS
-    const gapOk = Date.now() - (prev.ts || 0) > (FAST ? FAST_GAP_MS : RETRY_GAP_MS)
-    if (!inWindow || !gapOk) return false
-    if (prev.fin === false) return true
-    // ⚠️ 放在 ① 之后、KPL 分支之前：空壳连 fin 判断都靠不住（残缺响应里 fin 也可能写 true）
-    // ⚠️⚠️ 必须卡在 EMPTY_RETRY_WINDOW_MS 内，否则会和「box / lineups 裁剪」打架：
+    // 「已完赛但 payload 还是壳吗」—— 判据集中算一次，供两处用：
+    //   · 决定这次要不要重抓（下面 return true）
+    //   · 决定重抓的**间隔**（壳按 15 分钟，非壳按 2 小时）
+    // ⚠️ 放在 gap 判定之前，因为壳的间隔要单独放宽（见下面的 🔴）。
+    // ⚠️⚠️ 「已完赛但内容空」必须卡在 EMPTY_RETRY_WINDOW_MS 内，否则会和「box / lineups 裁剪」打架：
     //    超过 LINEUP_KEEP_DAYS 的桶在推送前会被**主动摘掉** lineups 和 box（包体积红线），
     //    摘完的 payload 看起来跟「残缺响应」一模一样（实测 10-05 两场 NBA 就是这种）。
-    //    若不限制，这类桶会在 48h 内每 2h 被重抓一次，抓回来又被裁掉 —— 纯浪费请求量。
+    //    若不限制，这类桶会在 48h 内被反复重抓，抓回来又被裁掉 —— 纯浪费请求量。
     //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
-    if (Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)) return true
+    const emptyShell = Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
+    let shell = prev.fin === false || emptyShell
     if (m.comp === 'kpl') {
-      if (prev.kpl == null) return true
-      // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）
+      // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）。
+      // **有数据 ≠ 数据完整**（见文件头事故二）。
+      // ⚠️ `prev.kpl` 可能是 null（上游结算延迟时抓的空值壳）→ 取 list 前必须先判。
       const need = Number((m.home && m.home.score) || 0) + Number((m.away && m.away.score) || 0)
-      const have = Array.isArray(prev.kpl.list) ? prev.kpl.list.length : 0
-      if (need > 0 && have < need) return true
+      const have = (prev.kpl && Array.isArray(prev.kpl.list)) ? prev.kpl.list.length : 0
+      if (prev.kpl == null || (need > 0 && have < need)) shell = true
     }
+    // 🔴🔴 壳的补抓间隔必须按快通道（15 分钟）算，**不能被常规的 2 小时闸挡住**。
+    //    2026-10-11 TTG vs EDG 实测：18:31 那班抓到 2 局（比赛进行中，live 分支每班都重抓），
+    //    比赛 ~19:52 打完，而 **20:01 那一班恰好吃的是常规闸**（距 18:31 只有 90 分钟 < 120）
+    //    → 明明是壳（`fin:false`、2/5 局）却被挡下 → 用户点进详情只看到前两局，一直干等。
+    //    走快通道的那班（`--fast`，15 分钟闸）本可以补上，但「主闸放行 / 跳过」哪一班先轮到
+    //    是随机的 —— 壳的判据必须在**两条路径上都生效**才算真的修好。
+    //    ⚠️ 不会因此增加请求量：常规路径只在主闸放行那一班跑（约 90 分钟一班），
+    //       所以 15 分钟闸对它等于「每次都放行」，与原来最多 2 小时一次的频率同量级；
+    //       而壳本身就是短暂状态（补抓一次 `fin` 就变 true / 局数就齐了）。
+    const gapOk = Date.now() - (prev.ts || 0) > ((FAST || shell) ? FAST_GAP_MS : RETRY_GAP_MS)
+    if (!inWindow || !gapOk) return false
+    if (shell) return true
     return false
   }
   return Date.now() - (prev.ts || 0) > UPCOMING_REFRESH_MS

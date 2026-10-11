@@ -3734,8 +3734,15 @@ async function run() {
     /const isShell = /.test(csSrc) && /want > 0 && have < want/.test(csSrc)
     && !/d\.fin === true && MD\.hasContent\(d\)/.test(csSrc))
   // 实测：常规 2h 间隔会让快通道「报了壳却一场都不抓」（刚抓过 → gapOk 恒 false）
-  check('详情：快通道把补抓间隔压到 15 分钟（否则刚抓过的场次永远够不到 2 小时门槛）',
-    /FAST \? FAST_GAP_MS : RETRY_GAP_MS/.test(mdSrcLocal) && /'--fast', '--status-json='/.test(csSrc))
+  // 🔴 2026-10-11 加强：**壳的间隔必须按 15 分钟算，且两条路径一视同仁**。
+  //    主闸放行那一班若正好是第一班碰上「抓到一半的比赛刚结束」，原来的 2 小时闸会把它挡下
+  //    —— TTG vs EDG：18:31 抓到 2 局 → 比赛 ~19:52 结束 → 20:01 那班距上次仅 90 分钟、
+  //    被 2 小时闸挡住 → 用户点进详情只看到前两局（`fin:false`、2/5 局明明是壳）。
+  check('详情：壳的补抓间隔压到 15 分钟，且在常规路径上也生效（别让「哪班先轮到」决定用户等多久）',
+    /\(FAST \|\| shell\) \? FAST_GAP_MS : RETRY_GAP_MS/.test(mdSrcLocal)
+    && /let shell = prev\.fin === false \|\| emptyShell/.test(mdSrcLocal)
+    && /if \(shell\) return true/.test(mdSrcLocal)
+    && /'--fast', '--status-json='/.test(csSrc))
 
   /* ---------- 积分榜快通道（2026-10-10，用户报「阿森纳赢了榜里还是 4 胜 1 负」） ----------
      🔴 根因：`standings_cache`(129KB) 挂在主闸**之后**，和 891KB 的 `schedule_cache`

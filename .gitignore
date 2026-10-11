@@ -17,7 +17,10 @@ tools/.player-names-cache-b.json
 # 是球员字典播种器的输入。同样是可随时重建的中间产物。
 tools/.lineup-players.json
 
-# AI 体检报告等一次性产物：只有本地查阅价值，且 .workbuddy/ 已被 packOptions 排除、不进包。
-# 不提交，免得公开仓库里堆一堆过期的体检存档。
-.workbuddy/reports/
+# 工作区记忆 / AI 体检报告等本地产物：`.workbuddy/` 已被 packOptions 排除、不进包，
+# 但**以前只忽略了 reports/，memory/ 被跟踪了 3 个文件**（76253e0 引入）→ 记忆跑进了公开仓库。
+# 2026-10-11 改成整目录忽略，并 `git rm -r --cached .workbuddy/memory`。
+# ⚠️ 项目记忆的**唯一**归属地是工作区根 `D:/work/wbzone/.workbuddy/memory/`；
+#    本目录下的 `memory/automations/` 是自动化任务按自己的 cwd 写的，属正常，别删。
+.workbuddy/
 .detail-status.json

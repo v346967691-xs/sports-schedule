@@ -30,6 +30,8 @@
  *   4) **非 ESPN 源各开一路**：CBA（`scanCba`）与 KPL（`scanKpl`）走官方接口，
  *      一次请求就拿到全部场次 + 实时比分。KPL 是 2026-10-11 补上的 —— 此前它只走
  *      主闸（**90 分钟节流**），用户实测「上游 2:2 / 页面 1:1」滞后 62 分钟。
+ *      LoL 系（`scanLol`）同日补上，但它不像 CBA/KPL 是「一次请求拿全部」——
+ *      LoL 官方只支持按 leagueId 逐个拉，所以是 **7 个请求/轮**（见 scanLol 注释）。
  */
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
@@ -39,9 +41,12 @@ const COMPETITIONS = require('../data/meta.js').competitions
 // 复用 sync.js 的赛事表（它才有 `sport` 字段；data/meta.js 只有 `cat`）
 // 🔴 KPL_STATE / KPL_CANCELED 也一并借用：KPL 的状态语义在 sync.js 里有完整取证注释，
 //    别在这里重新猜一遍（两处一旦不一致，同一场比赛会出现两种状态）。
+// 🔴 LOL / LOL_KEY 同理：LoL 快通道要打与主同步完全相同的上游和 key。
 const SYNC = require('./sync.js')
 const SYNC_COMPS = SYNC.COMPETITIONS
-const { KPL_STATE, KPL_CANCELED } = SYNC
+const { KPL_STATE, KPL_CANCELED, LOL, LOL_KEY } = SYNC
+// LoL 的「进行中也要出局分」判定在 lol-status.js 里（与主同步同源，别各写一份）
+const lolStatus = require('./lol-status.js').lolStatus
 
 const DAY = 86400000
 const DISCOVER_EVERY = 5 // 每 5 轮做一次全量发现（防止漏掉刚开赛的联赛）
@@ -58,6 +63,12 @@ const onlyArg = arg('only', '')
 // KPL 不走 ESPN 的 TARGETS 过滤（它不是 ESPN 源），`--only` 得单独判一次，
 // 否则 `--only=kpl` 会连它自己一起滤掉。
 const kplOn = !onlyArg || onlyArg.split(',').indexOf('kpl') > -1
+// LoL 系同理，而且它有 7 个 key（worlds/demacia/lpl/lck/lec/msi/agames），
+// `--only=lol` / `--only=esports` 与单个 key（`--only=lpl`）都要能选中。
+const LOL_COMPS = SYNC_COMPS.filter((c) => c.source === 'lol')
+const LOL_KEYS = LOL_COMPS.map((c) => c.key)
+const lolOn = !onlyArg || onlyArg === 'lol' || onlyArg === 'esports'
+  || onlyArg.split(',').some((k) => LOL_KEYS.indexOf(k) > -1)
 const minutes = Number(arg('minutes', 11))
 const everySec = Number(arg('every', 60))
 const once = process.argv.includes('--once')
@@ -123,8 +134,8 @@ function zhLiveStatus(sport, state, shortDetail) {
 }
 
 /**
- * 赛事 → {key, sport, league}。**只处理 ESPN 来源**；KPL / CBA 不走这里，
- * 由下面的 `scanKpl` / `scanCba` 单独一路接管（LoL 系仍不进，理由见文件头设计要点）。
+ * 赛事 → {key, sport, league}。**只处理 ESPN 来源**；非 ESPN 源各走自己的那一路：
+ * CBA → `scanCba`、KPL → `scanKpl`、LoL 系 → `scanLol`（见上方各自注释）。
  * ⚠️ 中国国字号（`chn`）**没有单一联赛**，横跨 4 个国际赛事（友谊赛/世预赛/亚洲杯/奥运会），
  *    所以一个 key 要展开成多条 league —— 漏了它的话，国足的比赛就没有实时比分。
  */
@@ -224,12 +235,20 @@ async function scanCba() {
   const arr = Object.values((j && j.data) || {})
   const now = Date.now()
   const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
+  const lo = now - 2 * 3600000
+  const hi = now + 3 * 3600000
+  // 🔴 「窗口内有 CBA 比赛」（**含还没开打的**）—— 决定下一轮要不要继续扫 CBA。
+  //    若只按「已开打」当收敛条件，一场 20 分钟后开打的比赛不会被看见，
+  //    收敛就把 CBA 关掉了 → 开赛那一刻没人扫 → 最多晚 5 分钟才补上。
+  //    ESPN 那条通道用同样的 near 窗口避开了这个坑，这里与它对齐。
+  let near = false
   const rows = []
   arr.forEach((ev) => {
-    if (Number(ev.Status) === 1) return // 未开始
     const start = Date.parse(`${ev.dates}T${ev.time || '00:00'}:00+08:00`)
+    if (Number.isFinite(start) && start >= lo && start <= hi) near = true
+    if (Number(ev.Status) === 1) return // 未开始
     // 只保留时间窗内的（2 小时前 ~ 3 小时后），别把几个月前的老比赛也推上去
-    if (Number.isFinite(start) && (start < now - 2 * 3600000 || start > now + 3 * 3600000)) return
+    if (Number.isFinite(start) && (start < lo || start > hi)) return
     const q = num(ev.Quarter)
     const hs = num(ev.HomeTeamScore)
     const as = num(ev.VisitingTeamScore)
@@ -241,7 +260,7 @@ async function scanCba() {
       as: as || 0,
     })
   })
-  return rows
+  return { rows, near }
 }
 
 /* ------------------------------------------------------------------ KPL
@@ -324,6 +343,63 @@ async function scanKpl() {
   return rows
 }
 
+/* ------------------------------------------------------------------ LoL
+ *
+ * 英雄联盟 LoL Esports API（`esports-api.lolesports.com`，需要 `x-api-key`，
+ * key 与主同步 `sync.js` 共用同一份）。
+ *
+ * 🔴 为什么必须接（2026-10-11，与 KPL 同批）：
+ *    此前 LoL 系只走主闸（**90 分钟节流**）。一场 BO3/BO5 打 1~3 小时，
+ *    等于整场只更新 1~2 次；而且 `lolStatus` 早先**只在系列赛结束时才出局分**，
+ *    进行中恒为 null —— 用户看到的是「0:0 一直挂着」。
+ *
+ * 🔴 为什么不像 CBA/KPL 那样「一次请求拿全部」：
+ *    LoL 官方只支持 `getSchedule?leagueId=` 按单个联赛拉，且 7 个联赛是
+ *    7 个不同的 leagueId，**没有任何接口一次返回全部联赛**（`getLive` 只给
+ *    当前 inProgress 的场次，比赛一结束就消失 → 会让比分「往回跳」到主闸旧值，
+ *    所以不能只靠它）。只能逐联赛拉，**7 个请求/轮**。
+ *    这点成本相对 ESPN 主通道（全量轮 40+ 组合 × 3 天 ≈ 120 请求/轮）可以忽略。
+ *
+ * ⚠️ id 必须与 `sync.js` 完全一致（`${comp.key}-${ev.match.id}`）。
+ *    不一致时 `applyLive()` 匹配不到 → 不报错 → 用户看到的还是主闸那份旧比分。
+ *    `tools/smoke.js` 有守卫盯着这两处的 id 拼法。
+ */
+// 时间窗：进行中的一律收；已结束只留 6 小时内的（BO5 最长 ~5h，再加上游 state 滞后）。
+const LOL_FINISH_KEEP_MS = 6 * 3600000
+
+async function scanLol() {
+  const now = Date.now()
+  // 7 个联赛**并行**拉（串行的话一轮就 20~30 秒，把 60 秒的循环周期挤满）
+  const chunks = await Promise.all(LOL_COMPS.map(async (lg) => {
+    let j
+    try {
+      j = await getJSON(`${LOL}/getSchedule?hl=zh-CN&leagueId=${lg.lol}`, { 'x-api-key': LOL_KEY })
+    } catch (err) {
+      // 静默降级：某个联赛挂了不能连累其它联赛，更不能连累 ESPN 主通道
+      console.error(`[live-watch] LoL(${lg.key}) 抓取失败，跳过：`, (err && err.message) || err)
+      return []
+    }
+    const evs = (j && j.data && j.data.schedule && j.data.schedule.events) || []
+    const out = []
+    for (const ev of evs) {
+      if (ev.type !== 'match' || !ev.match) continue
+      const st = lolStatus(ev)
+      if (st.status === 'upcoming') continue
+      const t = Date.parse(ev.startTime)
+      if (st.status === 'finished' && Number.isFinite(t) && t < now - LOL_FINISH_KEEP_MS) continue
+      out.push({
+        id: `${lg.key}-${ev.match.id}`,
+        st: st.status,
+        stt: st.statusText,
+        hs: st.homeScore,
+        as: st.awayScore,
+      })
+    }
+    return out
+  }))
+  return chunks.flat()
+}
+
 async function push(cloud, rows) {
   const nowIso = new Date().toISOString()
   const row = {
@@ -356,7 +432,7 @@ async function main() {
   let idle = 0
   let comps = TARGETS
   let total = 0
-  let cbaActive = false // CBA 上一轮有没有扫到比赛（有就继续扫，省得每轮都白打）
+  let cbaActive = false // CBA 上一轮有没有「正在打 or 窗口内有」比赛（有就继续扫，省得每轮都白打 270KB）
   // 写入去重的状态（详见下面 while 里的「内容去重 + 心跳保活」）
   let lastSig = null
   let roundsSinceWrite = 0
@@ -369,25 +445,39 @@ async function main() {
     const useAll = round === 1 || round % DISCOVER_EVERY === 1
     const t0 = Date.now()
     const { rows, liveComps } = await scan(useAll ? TARGETS : comps)
-    // CBA 不在 TARGETS 里（它不走 ESPN），单独一路 —— 只要上一轮扫到过就继续扫，
-    // 否则只在全量轮扫（那就变成 5 分钟粒度了，失去意义）
+    // CBA 不在 TARGETS 里（它不走 ESPN），单独一路。收敛条件 = 「上一轮有 row
+    // **或**窗口内有比赛（含未开打）」—— 后者是关键：只看已开打的话，
+    // 开赛那一刻会没人扫（最多晚 5 分钟）。见 scanCba 的 near 注释。
     const cbaOn = cbaActive || useAll
     if (cbaOn) {
-      const cbaRows = await scanCba()
+      const cba = await scanCba()
+      const cbaRows = cba.rows
       if (cbaRows.length) {
         rows.push(...cbaRows)
         liveComps.push('cba')
       }
-      cbaActive = cbaRows.length > 0
+      cbaActive = cbaRows.length > 0 || cba.near
     }
-    // KPL 同样走官方接口单独一路。与 CBA 的区别：**每轮都扫，不做 active 收敛** ——
-    // 它的接口一次 POST 就返回整赛季全部场次（仅 1 个请求），比 CBA 还便宜；
-    // 而收敛的代价是「比赛刚开打」最多晚 5 分钟（下一轮全量发现）才被扫到。
+    // KPL 同样走官方接口单独一路，**每轮都扫、不做收敛** ——
+    // 一次 POST 返回整赛季（仅 1 个请求、22KB），比 CBA 便宜一个量级。
     if (kplOn) {
       const kplRows = await scanKpl()
       if (kplRows.length) {
         rows.push(...kplRows)
         liveComps.push('kpl')
+      }
+    }
+    // LoL 系（7 个联赛）：每轮都扫。它与 CBA 不同 —— CBA 是 active 收敛（扫到过才继续扫），
+    // 而 LoL 一轮 7 个请求、相对 ESPN 全量轮的 120 请求可忽略，
+    // 收敛反而会引入「比赛刚开打晚 5 分钟才被扫到」的代价，不划算。
+    if (lolOn) {
+      const lolRows = await scanLol()
+      if (lolRows.length) {
+        rows.push(...lolRows)
+        lolRows.forEach((r) => {
+          const k = r.id.slice(0, r.id.indexOf('-'))
+          if (liveComps.indexOf(k) === -1) liveComps.push(k)
+        })
       }
     }
     const live = rows.filter((r) => r.st === 'live').length
@@ -447,4 +537,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, espnDates, TARGETS }
+module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, espnDates, TARGETS, LOL_KEYS }

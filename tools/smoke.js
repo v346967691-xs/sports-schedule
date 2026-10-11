@@ -1142,6 +1142,22 @@ async function run() {
   check('LoL 状态：进行中不被误判为已结束',
     liveSt.status === 'live' && liveSt.statusText === '进行中', liveSt.status)
 
+  // 🔴 2026-10-11：上游在系列赛**进行中**就回填 result.gameWins（实测 VCS 决赛
+  //    inProgress 时 0:1），早先只在 finished 时才取 → 进行中的局分恒为 null。
+  const liveScoreSt = lolStatus({
+    state: 'inProgress',
+    match: {
+      strategy: { count: 5 },
+      teams: [
+        { code: 'A', result: { outcome: null, gameWins: 0 } },
+        { code: 'B', result: { outcome: null, gameWins: 1 } },
+      ],
+    },
+  })
+  check('LoL 状态：进行中的系列赛也要出局分（别只在 finished 才取 gameWins）',
+    liveScoreSt.status === 'live' && liveScoreSt.homeScore === 0 && liveScoreSt.awayScore === 1,
+    `${liveScoreSt.status} ${liveScoreSt.homeScore}-${liveScoreSt.awayScore}`)
+
   const doneSt = lolStatus(mkEv('completed', loss, win))
   check('LoL 状态：state=completed 正常取比分',
     doneSt.status === 'finished' && doneSt.homeScore === 0 && doneSt.awayScore === 1,
@@ -3193,11 +3209,31 @@ async function run() {
       && lw.kplStatusText({ schedule_status: 3 }) === '进行中'
       && lw.kplStatusText({ schedule_status: 4 }) === '已结束',
       '状态语义必须与 sync.js 的 KPL_STATE 同源')
-    // ⚠️ LoL 系（worlds / lpl / lck / lec / msi / demacia / agames）**仍不进**：
-    //    它们要按 slug 逐个打上游，成本比 KPL 高一个量级。要接的话先改这条断言。
-    check('实时比分：LoL 系仍不进 live 通道（按 slug 逐个打上游，成本高一个量级）',
-      ['worlds', 'lpl', 'lck', 'lec', 'msi', 'demacia', 'agames']
-        .every((k) => lwKeys.indexOf(k) === -1))
+    // 🔴 2026-10-11 改口：LoL 系**接进 live 通道**（与 KPL 同批）。
+    //    用户诉求 = 「所有赛事都做到当前方案下最敏捷的比分同步」。
+    //    LoL 官方只支持按 leagueId 逐个拉（7 个联赛 = 7 请求/轮），
+    //    且 lolStatus 早先只在系列赛结束才出局分 —— 进行中恒为 0:0/空白。
+    check('实时比分：LoL 系走官方接口单独一路（leagueId 逐联赛，7 个联赛全覆盖）',
+      /scanLol/.test(lwSrcAll) && /esports-api\.lolesports\.com/.test(lwSrcAll)
+      && Array.isArray(lw.LOL_KEYS) && lw.LOL_KEYS.length === 7
+      && ['worlds', 'demacia', 'lpl', 'lck', 'lec', 'msi', 'agames']
+        .every((k) => lw.LOL_KEYS.indexOf(k) > -1),
+      Array.isArray(lw.LOL_KEYS) ? lw.LOL_KEYS.join(',') : 'LOL_KEYS 缺失')
+    check('实时比分：LoL 的 live 行 id 与主表拼法一致（${comp.key}-${ev.match.id}）',
+      /id: `\$\{lg\.key\}-\$\{ev\.match\.id\}`/.test(lwSrcAll)
+      && /id: `\$\{comp\.key\}-\$\{ev\.match\.id\}`/.test(
+        fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
+    check('实时比分：LoL 上游地址与 key 从 sync.js 借用（两处各写一份迟早漂移）',
+      /LOL, LOL_KEY \} = SYNC/.test(lwSrcAll)
+      && /KPL_CANCELED, LOL, LOL_KEY \}/.test(
+        fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
+    // 🔴 CBA 的收敛条件必须含「窗口内有比赛（哪怕还没开打）」：
+    //    只看「已开打」的话，一场 20 分钟后开打的比赛不会被算进候选，收敛就把 CBA 关掉，
+    //    开赛那一刻没人扫 → 最多晚 5 分钟才补上比分。ESPN 那条通道用同样的 near 窗口避开，
+    //    CBA 之前没对齐（10-11 补）。scanCba 从返回数组改成 {rows, near}。
+    check('实时比分：CBA 的收敛条件含「窗口内有比赛（含未开打）」（否则开赛瞬间会漏扫）',
+      /cbaActive = cbaRows\.length > 0 \|\| cba\.near/.test(lwSrcAll)
+      && /return \{ rows, near \}/.test(lwSrcAll))
 
     check('实时比分：ESPN 的 dates 用 UTC，取昨天/今天/明天三天（覆盖所有时区）',
       Array.isArray(lw.espnDates()) && lw.espnDates().length === 3
@@ -3684,9 +3720,12 @@ async function run() {
     /MD\.fetchKplStatus\(\)/.test(csSrc) && /async function fetchKplStatus/.test(mdSrcLocal)
     && /getScheduleList/.test(mdSrcLocal))
   // 状态语义只准有一份，别在 match-detail 里复制一套
+  // ⚠️ 这里断言的是「那几个导出**都在**」，不是导出行的完整字符串 ——
+  //    早先写成字面量全等，后来给 sync.js 加导出（LOL / LOL_KEY）就误红了
+  //    （守则固化成实现的老毛病，第 N 次）。
   check('详情：KPL 状态语义与 sync.js 共用同一份（不是复制的第二实现）',
     /require\('\.\/sync\.js'\)/.test(mdSrcLocal) && /KPL_STATE: STATE/.test(mdSrcLocal)
-    && /module\.exports = \{ COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED \}/.test(syncSrc))
+    && /module\.exports = \{[\s\S]*?\bCOMPETITIONS\b[\s\S]*?\bKPL_STATE\b[\s\S]*?\bKPL_CANCELED\b[\s\S]*?\}/.test(syncSrc))
   // 实测：不卡开赛日的话，KPL 整赛季那批 W1/W2 老场次会被当成壳（桶根本没读）
   check('云同步：快通道只认今天/昨天开赛的场次（更早的桶没读，会被误判成空壳）',
     /const inRange = /.test(csSrc) && /dk === todayKey \|\| dk === ydayKey/.test(csSrc))

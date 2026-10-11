@@ -10,9 +10,17 @@
  * 冒烟测试没法直接单测它。
  */
 
-/** 取某一方的胜场数；没打完或上游没回填时为 null。 */
-function gameWins(team, finished) {
-  if (!finished || !team || !team.result) return null
+/**
+ * 取某一方的胜场数；上游没回填时为 null。
+ *
+ * ⚠️ 第二个参数是「该不该出比分」而**不是**「有没有结束」。
+ *    上游在**系列赛进行中**也会实时回填 `result.gameWins`
+ *    （2026-10-11 实测 VCS 决赛 state=inProgress 时就是 0:1），
+ *    早先拿 `finished` 当门槛 → 进行中的 LoL 比赛局分恒为 null，
+ *    页面上只能是 0:0 或空白（直到主闸把它判成已结束才补上）。
+ */
+function gameWins(team, showScore) {
+  if (!showScore || !team || !team.result) return null
   const w = team.result.gameWins
   return typeof w === 'number' ? w : null
 }
@@ -38,8 +46,12 @@ function lolStatus(ev) {
   //    ⚠️ 只在双方比分都是数字时才判（比分缺失时按原状态走，避免误伤）。
   const bo = (evObj.match && evObj.match.strategy && evObj.match.strategy.count) || 0
   const need = bo > 0 ? Math.ceil(bo / 2) : 0
-  const hs = gameWins(rh, finished)
-  const as = gameWins(ra, finished)
+  // 🔴 「进行中」也要出局分：上游 state=inProgress 时 gameWins 已经实时回填，
+  //    只看 finished 会把整场比赛的局分一直压成 null。
+  //    未开赛（unstarted 且无 outcome）才不出分 —— 那是真的还没比分。
+  const started = finished || evObj.state === 'inProgress'
+  const hs = gameWins(rh, started)
+  const as = gameWins(ra, started)
   let demoted = false
   if (finished && need > 0 && typeof hs === 'number' && typeof as === 'number'
     && Math.max(hs, as) < need) {

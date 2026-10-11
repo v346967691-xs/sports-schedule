@@ -113,7 +113,11 @@ Page({
       if (found) {
         this.setData({
           activeCat: found.cat,
-          activeComp: pendingTeam.comp,
+          // 🔴 刻意**不**把 activeComp 锁到这支球队所属的那个赛事。
+          //    关注/球队页的语义是「看这支球队的比赛」，而同一支队会跨赛事出场
+          //    （巴萨在西甲 liga + 欧冠 ucl，id 都是 83）。锁了 activeComp 之后
+          //    下面的 `comps` 只剩一个赛事，等于把刚修好的跨赛事过滤又挡回去。
+          activeComp: '',
           teamFilter: pendingTeam,
           shownGroups: PAGE_SIZE,
           stageFilter: '',

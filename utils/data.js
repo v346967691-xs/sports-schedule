@@ -227,11 +227,39 @@ function query(opt) {
   })
 }
 
-/** 这场比赛里有没有这支球队（足球 id 是数字串、电竞是英文码，统一按字符串比） */
+/**
+ * 这场比赛里有没有这支球队。
+ *
+ * 🔴 判定口径 = **同一大类 + 同一个球队 id**，不是「同一赛事」（2026-10-11 改）。
+ *    原因：ESPN 的数字 team id 在**同一个大类内唯一**，而同一支队会跨赛事出场 ——
+ *    巴萨在西甲（liga）和欧冠（ucl）都是 id `83`。老口径要求 `m.comp === team.comp`，
+ *    于是「关注巴萨」只能看到它在某一个赛事的比赛，**欧冠场次永远拉不到**。
+ * ⚠️ 必须带大类那一层：不同大类的数字 id 会撞车（NBA 底特律活塞与解放者杯的
+ *    Estudiantes de La Plata 都是 `8`），只比 id 会让 NBA 的比赛窜进足球队的关注列表。
+ * 足球 id 是数字串、电竞是英文码，统一按字符串比。
+ */
 function matchHasTeam(m, team) {
-  if (!team || m.comp !== team.comp) return false
+  if (!team) return false
   const id = String(team.id)
-  return String(m.home.id) === id || String(m.away.id) === id
+  if (String(m.home.id) !== id && String(m.away.id) !== id) return false
+  if (m.comp === team.comp) return true
+  return catOf(m.comp) === catOf(team.comp)
+}
+
+/**
+ * 一支球队在快照里出现在哪些赛事（按全局赛事顺序）。
+ * 用于「关注球队」的卡片：关注是球队维度的，写死一个赛事名会跟下面的赛程对不上。
+ */
+function compsOfTeam(compKey, teamId) {
+  const team = { comp: compKey, id: String(teamId) }
+  const out = []
+  matches().forEach((m) => {
+    if (!matchHasTeam(m, team)) return
+    if (out.indexOf(m.comp) === -1) out.push(m.comp)
+  })
+  const order = {}
+  competitions().forEach((c, i) => { order[c.key] = i })
+  return out.sort((a, b) => (order[a] == null ? 999 : order[a]) - (order[b] == null ? 999 : order[b]))
 }
 
 /** 中文排序，localeCompare 不可用时回落到普通比较 */
@@ -842,6 +870,7 @@ module.exports = {
   findMatch,
   query,
   matchHasTeam,
+  compsOfTeam,
   teamsOf,
   upcoming,
   finished,

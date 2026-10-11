@@ -72,11 +72,17 @@ Page({
    */
   buildTeams() {
     const list = follows.all()
-    const teams = list.map((t) => Object.assign({}, t, {
-      k: follows.key(t.comp, t.id),
-      compName: data.compOf(t.comp).name,
-      accent: data.compOf(t.comp).accent,
-    }))
+    const teams = list.map((t) => {
+      const own = data.compOf(t.comp)
+      // 🔴 关注是「球队维度」的，同一支队可能在多个赛事里都有比赛（巴萨：西甲 + 欧冠）。
+      //    卡片上写死一个赛事名，会跟它下面的赛程（跨赛事）对不上 → 单赛事才写名字。
+      const comps = data.compsOfTeam(t.comp, t.id)
+      return Object.assign({}, t, {
+        k: follows.key(t.comp, t.id),
+        compName: comps.length > 1 ? `${comps.length} 个赛事` : own.name,
+        accent: own.accent,
+      })
+    })
     const filter = follows.asFilter()
     const ctx = { compOf: data.compOf }
     const results = list.length ? data.recentFinished({ teams: filter }, 24).slice(0, 6) : []

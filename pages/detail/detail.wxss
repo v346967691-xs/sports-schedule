@@ -20,6 +20,8 @@
   height: 280rpx;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
+  /* 纯装饰，绝不吃点击（同 app.wxss 的说明） */
+  pointer-events: none;
 }
 
 .hero-tag {

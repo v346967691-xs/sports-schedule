@@ -7,6 +7,10 @@
   overflow: hidden;
 }
 
+/* 🔴 纯装饰，见 app.wxss 的同名规则注释：
+   伪元素绘制在 .follow-btn 之后且同为 absolute → 落在圆里的「+ 关注」会被它吃掉点击
+   （命中目标是 .hero，而 .hero 是按钮的祖先，bindtap 不会触发）。
+   这个按钮从 f045132 引入起就一直是点不动的，2026-10-11 才定位到。 */
 .hero::after {
   content: '';
   position: absolute;
@@ -16,6 +20,7 @@
   height: 300rpx;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
 }
 
 .hero-top {

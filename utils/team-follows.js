@@ -6,11 +6,22 @@
  * 所以本地 storage 永远是主数据源，登录后才和云端 public.team_follows 做一次合并，
  * 云服务不可用时全程静默降级，不影响使用。
  *
+ * 🔴 **关注是「球队维度」的，不是「赛事维度」的**（2026-10-11 改）。
+ *    ESPN 的数字 team id 在同一个大类内唯一，而同一支队会跨赛事出场 ——
+ *    巴萨在西甲和欧冠都是 `83`。老口径把 `comp:id` 当主键，于是：
+ *      · 关注了西甲巴萨，去欧冠版球队页看还是「未关注」；
+ *      · 「我的」页拉不到它的欧冠赛程（`data.matchHasTeam` 也要求 comp 相同）。
+ *    → 现在**同一支队 = 同大类 + 同 id**（`sameTeam`）。存的时候仍然带上 comp
+ *      （卡片要显示赛事名，云端表也有 UNIQUE(owner_id, comp, team_id)），
+ *      但判断/删除一律按球队。
+ *
  * 云端表：owner_id TEXT DEFAULT auth.uid() + owner 级 RLS + UNIQUE(owner_id, comp, team_id)，
  * 前端从不上送 owner_id，由数据库自己写入并做隔离。
  */
 
 const { cloud, isReady, getSession } = require('./cloud')
+// ⚠️ 只为了拿 catOf —— data.js 不 require 本文件，不会成环
+const data = require('./data')
 
 const TABLE = 'team_follows'
 const STORE_KEY = 'team_follows_v1'
@@ -20,6 +31,24 @@ let cache = null
 
 function key(comp, id) {
   return `${comp}:${id}`
+}
+
+/**
+ * 同一支队的判据：同大类 + 同 id。
+ * ⚠️ 必须带大类：不同大类的数字 id 会撞车（NBA 底特律活塞与解放者杯的
+ *    Estudiantes de La Plata 都是 `8`），只比 id 会把两队当成一支。
+ * 与 `utils/data.js: matchHasTeam` 是同一套口径 —— 改一处要改两处。
+ */
+function sameTeam(a, b) {
+  if (!a || !b) return false
+  if (String(a.id || '') !== String(b.id || '')) return false
+  if (!a.comp || !b.comp) return a.comp === b.comp
+  return a.comp === b.comp || data.catOf(a.comp) === data.catOf(b.comp)
+}
+
+/** 球队维度的去重键（`all()` 与云端合并都用它） */
+function teamKey(t) {
+  return `${data.catOf(t.comp)}|${String(t.id)}`
 }
 
 function normalize(team) {
@@ -53,12 +82,16 @@ function writeStore(list) {
   }
 }
 
-/** 当前关注列表（去重） */
+/**
+ * 当前关注列表。
+ * 🔴 按**球队**去重（不是 `comp:id`）：老版本可能给同一支队存了多条
+ *    （西甲 + 欧冠各一条），这里一并折叠掉，页面上不会出现两支「巴萨」。
+ */
 function all() {
   if (!cache) cache = readStore()
   const seen = {}
   return cache.filter((t) => {
-    const k = key(t.comp, t.id)
+    const k = teamKey(t)
     if (seen[k]) return false
     seen[k] = true
     return true
@@ -66,20 +99,17 @@ function all() {
 }
 
 function has(comp, id) {
-  const k = key(comp, id)
-  return all().some((t) => key(t.comp, t.id) === k)
+  return all().some((t) => sameTeam(t, { comp, id }))
 }
 
-/** 关注 / 取关，返回操作后的状态 */
+/** 关注 / 取关，返回操作后的状态。取关会把该队的所有记录（含历史多赛事条目）一起清掉 */
 function toggle(team) {
   const t = normalize(team)
-  const k = key(t.comp, t.id)
   const list = all()
-  const idx = list.findIndex((x) => key(x.comp, x.id) === k)
-  if (idx > -1) {
-    list.splice(idx, 1)
-    writeStore(list)
-    syncRemove(t)
+  const doomed = list.filter((x) => sameTeam(x, t))
+  if (doomed.length) {
+    writeStore(list.filter((x) => !sameTeam(x, t)))
+    doomed.forEach((x) => syncRemove(x))
     return { followed: false, team: t }
   }
   list.push(t)
@@ -89,10 +119,12 @@ function toggle(team) {
 }
 
 function remove(comp, id) {
-  const list = all().filter((x) => !(x.comp === comp && String(x.id) === String(id)))
-  writeStore(list)
-  syncRemove({ comp, id })
-  return list
+  const t = { comp, id: String(id) }
+  const list = all()
+  const doomed = list.filter((x) => sameTeam(x, t))
+  writeStore(list.filter((x) => !sameTeam(x, t)))
+  doomed.forEach((x) => syncRemove(x))
+  return all()
 }
 
 function clear() {
@@ -178,12 +210,14 @@ async function pullFromCloud() {
 
   const list = all()
   const localKeys = {}
-  list.forEach((t) => { localKeys[key(t.comp, t.id)] = true })
+  list.forEach((t) => { localKeys[teamKey(t)] = true })
 
   // 云端有、本地没有 → 补进本地
+  // ⚠️ 按**球队**比对，不是 `comp:id`：云端可能留着上一版存下的多条同队记录
+  //    （西甲巴萨 + 欧冠巴萨），按 comp:id 比会当成两支不同的队、又补进本地一份。
   let added = 0
   rows.forEach((r) => {
-    const k = key(r.comp, r.team_id)
+    const k = teamKey({ comp: r.comp, id: r.team_id })
     if (localKeys[k]) return
     list.push(normalize({
       comp: r.comp,
@@ -199,8 +233,8 @@ async function pullFromCloud() {
 
   // 本地有、云端没有 → 补推到云端
   const cloudKeys = {}
-  rows.forEach((r) => { cloudKeys[key(r.comp, r.team_id)] = true })
-  const missing = list.filter((t) => !cloudKeys[key(t.comp, t.id)])
+  rows.forEach((r) => { cloudKeys[teamKey({ comp: r.comp, id: r.team_id })] = true })
+  const missing = list.filter((t) => !cloudKeys[teamKey(t)])
   if (missing.length) {
     try {
       await cloud.database.from(TABLE).insert(missing.map((t) => ({
@@ -224,6 +258,8 @@ function resetCache() {
 
 module.exports = {
   key,
+  teamKey,
+  sameTeam,
   all,
   has,
   toggle,

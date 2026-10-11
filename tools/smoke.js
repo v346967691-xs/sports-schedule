@@ -961,7 +961,7 @@ async function run() {
   // 队名中文：KPL/CBA 官方就是中文，中超靠 zh-names.js 映射（16 条按 ESPN team id）
   const zhMod = require(path.join(ROOT, 'tools/zh-names.js'))
   const cslIds = [2052, 21355, 131704, 22537, 8240, 131705, 21910, 22198, 7521, 15515, 977, 22199, 8239, 21506, 22536, 18203]
-  const noCslZh = cslIds.filter((id) => !/[一-龥]/.test(zhMod.espnZh(String(id)) || ''))
+  const noCslZh = cslIds.filter((id) => !/[一-龥]/.test(zhMod.espnZh(String(id), 'football') || ''))
   check('中文名：中超 16 队映射齐全', noCslZh.length === 0, `缺 ${noCslZh.join(',')}`)
 
   /* ── 2026-10-03 新增三个赛事：亚冠精英（中超球队参赛）+ 两个 U17 世界杯 ── */
@@ -3783,6 +3783,139 @@ async function run() {
     /isOutage\(error\)/.test(ccSrc) && ccSrc.indexOf('跳过新鲜度校验') !== -1)
   check('云故障：同步脚本探测到隔离就早退（省下每班 2 分钟抓取 + 不再刷失败邮件）',
     /verdict\.outage/.test(csSrc) && csSrc.indexOf('本班不重试、不算失败') !== -1)
+
+  /* ───────────────── 2026-10-11 · 球队身份：数字 id 跨赛事复用 ─────────────────
+   *
+   * 用户报的现象：同一支队（巴萨）在西甲/欧冠被拆成两个详情页；关注页只能选西甲那只；
+   * 关注了西甲巴萨却拉不到它的欧冠赛程；欧冠版详情页的关注按钮点了没反应。
+   * 根因是同一条 —— **ESPN 的数字 team id 只在同一个大类内唯一，跨大类会撞车
+   * （NBA 占 1~30，解放者杯的 Estudiantes de La Plata 正好是 8）**，
+   * 而项目里有三处把它当全局唯一键用。这一组断言把修复后的口径钉死。
+   */
+
+  // ① 中文名分表（ESPN_ZH 足球 / NBA_ZH 篮球）—— 这是「错的中文」的直接来源
+  check('队名中文：足球与篮球分表，id=8 在足球侧不再解析成 NBA 队名',
+    zhMod.espnZh('8', 'football') === '' && zhMod.espnZh('8', 'basketball') === '底特律活塞',
+    `football=${JSON.stringify(zhMod.espnZh('8', 'football'))} basketball=${JSON.stringify(zhMod.espnZh('8', 'basketball'))}`)
+  check('队名中文：同一 id 在两张表里的含义必须不同（否则分表没意义）',
+    zhMod.espnZh('83', 'football') === '巴塞罗那' && zhMod.espnZh('83', 'basketball') === '')
+  const zhClash = Object.keys(zhMod.NBA_ZH).filter((k) => zhMod.ESPN_ZH[k])
+  check('队名中文：足球表与篮球表没有 id 交集（防止有人把 NBA 塞回 ESPN_ZH）',
+    zhClash.length === 0, zhClash.length ? `撞号 id：${zhClash.join(',')}` : '0 个撞号')
+
+  // ② 快照字典键按赛事分命名空间 —— 同 id 的两支不同的队必须各存一条
+  const snapMod = require(path.join(ROOT, 'utils/snapshot.js'))
+  const fixList = [
+    { id: 'lib-1', comp: 'lib', start: '2026-10-16T00:30Z', status: 'upcoming',
+      home: { id: '8', name: 'Estudiantes de La Plata', zh: '', abbr: 'EST', color: '#C60000' },
+      away: { id: '874', name: 'Corinthians', zh: '科林蒂安', abbr: 'COR', color: '#000000' } },
+    { id: 'nba-2', comp: 'nba', start: '2026-10-17T00:30Z', status: 'upcoming',
+      home: { id: '8', name: 'Detroit Pistons', zh: '底特律活塞', abbr: 'DET', color: '#C8102E' },
+      away: { id: '21', name: 'Phoenix Suns', zh: '菲尼克斯太阳', abbr: 'PHX', color: '#1D1160' } },
+  ]
+  const fixEnc = JSON.parse(JSON.stringify(
+    snapMod.encodeSnapshot(fixList, { generatedAt: 'x', range: { from: 'a', to: 'b' } })
+  ))
+  check('快照：球队字典键带赛事前缀（否则 NBA 与足球的小 id 会共用一条字典项）',
+    !!fixEnc.teams['lib:8'] && !!fixEnc.teams['nba:8'],
+    Object.keys(fixEnc.teams).join(' , '))
+  const fixDec = snapMod.decodeSnapshot(fixEnc)
+  const dLib = fixDec.find((m) => m.comp === 'lib').home
+  const dNba = fixDec.find((m) => m.comp === 'nba').home
+  check('快照：同 id 的两支不同的队解回来后不串消息（name/abbr/color 各自正确）',
+    dLib.id === '8' && dNba.id === '8'
+    && dLib.name === 'Estudiantes de La Plata' && dLib.abbr === 'EST' && dLib.color === '#C60000'
+    && dNba.name === 'Detroit Pistons' && dNba.abbr === 'DET' && dNba.color === '#C8102E',
+    `lib=${dLib.name}/${dLib.abbr}/${dLib.color} nba=${dNba.name}/${dNba.abbr}/${dNba.color}`)
+  // 老快照（键就是裸数字 id）必须还能解 —— 已发布的客户端读自己包里的旧文件
+  const legacyDec = snapMod.decodeSnapshot({
+    v: 2,
+    teams: { 359: ['阿森纳', 'Arsenal', 'ARS', 'EF0107'], 'T1|e2011b': ['', 'T1', 'T1', 'e2011b'] },
+    matches: { epl: [{ s: 1, t: 'u', e: '1', h: [359], a: ['T1|e2011b'] }] },
+  })
+  check('快照：V2 以前的老键（裸数字 / 简码|颜色）仍能解开',
+    legacyDec[0].home.id === '359' && legacyDec[0].home.zh === '阿森纳'
+    && legacyDec[0].away.id === 'T1' && legacyDec[0].away.abbr === 'T1')
+
+  // ③ 真实快照里不能出现「足球赛事挂着 NBA 中文名」
+  const nbaZhSet = {}
+  Object.keys(zhMod.NBA_ZH).forEach((k) => { nbaZhSet[zhMod.NBA_ZH[k]] = true })
+  const wrongZhInFootball = []
+  dataMod.matches().forEach((m) => {
+    if (dataMod.catOf(m.comp) !== 'football') return
+    ;[m.home, m.away].forEach((t) => {
+      if (t && t.zh && nbaZhSet[t.zh]) wrongZhInFootball.push(`${m.comp}:${t.id}=${t.zh}`)
+    })
+  })
+  check('快照：足球赛事里没有一支球队挂着 NBA 的中文名（用户的「错的中文」红线）',
+    wrongZhInFootball.length === 0,
+    wrongZhInFootball.length ? wrongZhInFootball.slice(0, 4).join(' ') : `${dataMod.matches().length} 场全部干净`)
+
+  // ④ 关注 / 筛选改成「球队维度」：同大类 + 同 id
+  check('数据层：同 id 跨赛事命中（关注了西甲巴萨，欧冠赛程也要能拉到）',
+    dataMod.matchHasTeam({ comp: 'ucl', home: { id: '83' }, away: { id: '1' } }, { comp: 'liga', id: '83' }) === true
+    && dataMod.matchHasTeam({ comp: 'ucl', home: { id: '86' }, away: { id: '1' } }, { comp: 'liga', id: '83' }) === false)
+  check('数据层：跨大类同 id 不命中（NBA 活塞不能被当成解放者杯的 Estudiantes）',
+    dataMod.matchHasTeam({ comp: 'nba', home: { id: '8' }, away: { id: '1' } }, { comp: 'lib', id: '8' }) === false
+    && dataMod.matchHasTeam({ comp: 'nba', home: { id: '8' }, away: { id: '1' } }, { comp: 'cba', id: '8' }) === true,
+    '后者同属篮球大类 → 仍算同一支队（id 空间按大类共用）')
+  check('数据层：compsOfTeam 能列出这支队跨了哪些赛事（卡片不再写死一个赛事名）',
+    dataMod.compsOfTeam('liga', '83').length >= 1,
+    dataMod.compsOfTeam('liga', '83').join(',') || '(该队当前不在快照里)')
+
+  tfMod.resetCache()
+  const xTeam = { comp: 'liga', id: '83', zh: '巴塞罗那', display: '巴塞罗那' }
+  tfMod.toggle(xTeam)
+  check('关注存储：关注西甲巴萨后，欧冠版的球队页也显示「已关注」', tfMod.has('ucl', '83') === true)
+  check('关注存储：不会因此把别的队也认成已关注', tfMod.has('ucl', '86') === false)
+  // 老版本可能给同一支队存了「西甲 + 欧冠」两条（那时按 comp:id 当主键）→
+  // 取关必须一次清干净。storage 是打桩的，这里临时换成一个真内存字典来注入脏数据。
+  const memStore = {}
+  const origGet = global.wx.getStorageSync
+  const origSet = global.wx.setStorageSync
+  global.wx.getStorageSync = (k) => (k in memStore ? memStore[k] : null)
+  global.wx.setStorageSync = (k, v) => { memStore[k] = v }
+  try {
+    memStore.team_follows_v1 = [
+      { comp: 'liga', id: '83', zh: '巴塞罗那', display: '巴塞罗那' },
+      { comp: 'ucl', id: '83', zh: '巴塞罗那', display: '巴塞罗那' },
+    ]
+    tfMod.resetCache()
+    const cleaned = tfMod.toggle({ comp: 'liga', id: '83', zh: '巴塞罗那', display: '巴塞罗那' })
+    check('关注存储：取关会清掉该队的所有记录（含老版本留下的多赛事脏数据）',
+      cleaned.followed === false && tfMod.all().length === 0 && (memStore.team_follows_v1 || []).length === 0,
+      `followed=${cleaned.followed}，storage 里还剩 ${(memStore.team_follows_v1 || []).length} 条`)
+  } finally {
+    global.wx.getStorageSync = origGet
+    global.wx.setStorageSync = origSet
+    tfMod.resetCache()
+  }
+  check('关注存储：同一支队在列表里只出现一次（按球队去重，不是 comp:id）',
+    (function () {
+      tfMod.resetCache()
+      tfMod.toggle({ comp: 'liga', id: '83', zh: '巴塞罗那', display: '巴塞罗那' })
+      const n = tfMod.all().filter((t) => String(t.id) === '83').length
+      tfMod.clear()
+      return n === 1
+    })())
+  tfMod.resetCache()
+
+  // ⑤ 页面层：不再把赛程页锁死在该球队所属的那个赛事
+  check('赛程页：从「关注球队 / 球队详情」进来时不锁 activeComp（锁了就只看得到单赛事）',
+    /pendingTeam[\s\S]{0,600}?activeComp: ''/.test(schSrc),
+    '见 pages/schedule/schedule.js 的 pendingTeam 分支')
+
+  // ⑥ 装饰伪元素不能吃点击 —— 球队页的关注按钮曾被它盖住（自 f045132 起就没生效过）
+  const heroPseudoFiles = ['app.wxss', 'pages/team/team.wxss', 'pages/detail/detail.wxss', 'pages/player/player.wxss']
+  const noPe = heroPseudoFiles.filter((f) => {
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf8')
+    const i = src.indexOf('.hero::after')
+    if (i < 0) return true
+    const block = src.slice(i, src.indexOf('}', i))
+    return block.indexOf('pointer-events: none') === -1
+  })
+  check('样式：四处 .hero::after 装饰圆都加了 pointer-events:none（否则会吃掉圆里按钮的点击）',
+    noPe.length === 0, noPe.length ? `缺：${noPe.join(', ')}` : `${heroPseudoFiles.length} 处齐全`)
 
   /* ---------- 输出 ---------- */
   let failed = 0

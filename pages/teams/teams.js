@@ -76,8 +76,15 @@ Page({
 
   build() {
     const followedList = follows.all()
+    // ⚠️ 按**球队**标记，不是 `comp:id`：关注是球队维度的，同一支队会跨赛事出场
+    //    （巴萨：西甲 + 欧冠），用 comp:id 比会在欧冠那几栏里显示成「未关注」。
     const followedSet = {}
-    followedList.forEach((t) => { followedSet[follows.key(t.comp, t.id)] = true })
+    followedList.forEach((t) => { followedSet[follows.teamKey(t)] = true })
+    // 每支队可能横跨多个赛事 → 某个赛事里「已关注 N」要按「这支队在该赛事有没有比赛」来分
+    const followedByComp = {}
+    followedList.forEach((t) => {
+      data.compsOfTeam(t.comp, t.id).forEach((k) => { followedByComp[k] = (followedByComp[k] || 0) + 1 })
+    })
 
     // 赛会制赛事（U17 世界杯）在窗口外没有比赛 → 抽不出球队，那个分类就不显示，
     // 等比赛进入抓取窗口会自动冒出来，不用发版
@@ -86,7 +93,7 @@ Page({
       .map((k) => ({
         key: k,
         name: data.compOf(k).name,
-        followed: followedList.filter((t) => t.comp === k).length,
+        followed: followedByComp[k] || 0,
       }))
 
     const kw = String(this.data.keyword || '').trim().toLowerCase()
@@ -100,7 +107,7 @@ Page({
         || t.abbr.toLowerCase().indexOf(kw) > -1)
       .map((t) => Object.assign({}, t, {
         k: follows.key(t.comp, t.id),
-        followed: !!followedSet[follows.key(t.comp, t.id)],
+        followed: !!followedSet[follows.teamKey(t)],
         rankText: this.rankText(t.comp, t.id),
       }))
 

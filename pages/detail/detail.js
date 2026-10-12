@@ -419,6 +419,15 @@ Page({
     if (lol && lol.rounds[idx]) this.setData({ 'detail.lol.active': idx })
   },
 
+  onLolHeroError(e) {
+    const { round, team, player } = e.currentTarget.dataset
+    const r = Number(round), t = Number(team), p = Number(player)
+    if (![r, t, p].every(i => Number.isInteger(i) && i >= 0)) return
+    const lol = this.data.detail && this.data.detail.lol
+    const row = lol && lol.rounds[r] && lol.rounds[r].teams[t] && lol.rounds[r].teams[t].players[p]
+    if (row && row.icon) this.setData({ [`detail.lol.rounds[${r}].teams[${t}].players[${p}].icon`]: '' })
+  },
+
   /** 切换 KPL 单局 tab（数据一次全在 payload 里，切换是纯前端，零请求） */
   onKplRound(e) {
     const idx = Number(e.currentTarget.dataset.idx)

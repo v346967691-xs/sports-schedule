@@ -319,8 +319,7 @@ function teamsOf(compKey) {
 /** 未来赛程：从今天起，按时间升序 */
 function upcoming(opt) {
   const today = require('./format').todayStr()
-  // 进行中的比赛（live）也归入「即将开赛」一栏：赛程页只有「即将开赛 / 已结束」两个标签，
-  // 若把 live 排除在外，正在进行的比赛会在两个标签里都消失，造成「比赛凭空不见」。
+  // 默认供首页/球队页合并展示待战和进行中；赛程页独立 tab 显式传 status。
   const status = (opt && opt.status) ? [opt.status] : ['upcoming', 'live']
   return query(Object.assign({}, opt, { from: today, status }))
 }

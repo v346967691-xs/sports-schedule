@@ -30,6 +30,7 @@
 
     <view class="mode-switch">
       <view class="mode {{mode === 'upcoming' ? 'active' : ''}}" data-mode="upcoming" bindtap="onModeTap">即将开赛</view>
+      <view class="mode {{mode === 'live' ? 'active' : ''}}" data-mode="live" bindtap="onModeTap">进行中</view>
       <view class="mode {{mode === 'finished' ? 'active' : ''}}" data-mode="finished" bindtap="onModeTap">已结束</view>
     </view>
 
@@ -71,10 +72,6 @@
       <view class="team-banner-text">只看 <text class="team-banner-name">{{teamFilter.display}}</text> 的比赛</view>
     </view>
     <view class="team-banner-clear" bindtap="onClearTeam">取消</view>
-  </view>
-
-  <view class="fallback-tip" wx:if="{{fallback}}">
-    该赛事暂无已公布的未来赛程，下面是最近的对战记录
   </view>
 
   <!--
@@ -191,12 +188,14 @@
 
   <view class="empty" wx:if="{{!rows.length && !loadError}}">
     <view class="empty-title">
-      {{mode === 'upcoming' ? '暂无已公布的未来赛程' : '暂无已结束的比赛'}}
+      {{mode === 'upcoming' ? '暂无已公布的未来赛程' : mode === 'live' ? '暂无进行中的比赛' : '暂无已结束的比赛'}}
     </view>
     <view class="empty-desc">
       {{mode === 'upcoming'
         ? '该项赛事正处于赛季间歇期，官方尚未放出新的日程。可以先切换到「已结束」查看最近战绩。'
-        : '换一个赛事或切换回「即将开赛」看看。'}}
+        : mode === 'live'
+          ? '当前没有正在进行的比赛，可以切换到「即将开赛」或「已结束」。'
+          : '换一个赛事或切换回「即将开赛」看看。'}}
     </view>
   </view>
 

@@ -69,7 +69,6 @@ Page({
     shownGroups: PAGE_SIZE,
     totalGroups: 0,
     totalMatches: 0,
-    fallback: false,
     updatedAt: '',
     stale: false,
     staleLabel: '',
@@ -215,13 +214,11 @@ Page({
     const comps = activeComp ? [activeComp] : []
     let list = mode === 'finished'
       ? data.finished({ cat: activeCat, comps, team: teamFilter })
-      : data.upcoming({ cat: activeCat, comps, team: teamFilter })
-
-    // 赛季间歇期：没有未来赛程时自动展示最近对战，而不是丢给用户一个空列表
-    const fallback = mode === 'upcoming' && list.length === 0
-    if (fallback) list = data.finished({ cat: activeCat, comps, team: teamFilter }).slice(0, 40)
+      : mode === 'live'
+        ? data.query({ cat: activeCat, comps, team: teamFilter, status: 'live' })
+        : data.upcoming({ cat: activeCat, comps, team: teamFilter, status: 'upcoming' })
     // 前瞻只在「看未来赛程」时有意义：已完赛的比赛结果就摆在比分上，再挂近况是噪声
-    this._showForm = mode === 'upcoming' && !fallback
+    this._showForm = mode === 'upcoming'
 
     // 阶段筛选。选项按**未筛选**的列表算，否则选完某阶段后选项本身就没了，切不回来。
     // 筛掉的阶段在 totalMatches / totalGroups 里也不出现，所以「共 N 场」跟眼睛看到的一致。
@@ -238,8 +235,7 @@ Page({
      *    占掉首屏一大块，而用户点「四分之一决赛」时才是真的想看整张树。
      * 🔴 数据用**没被轮次筛过**的整份赛事赛程：树天生要跨轮次（八强 → 半决赛 → 决赛），
      *    拿筛过的 list 去建永远只能出一列，直接返回 null。
-     * ⚠️ 用 data.query 而不是 data.upcoming/finished：对阵图跟「即将开赛 / 已结束」这个
-     *    标签无关，两种模式下都该看到同一张树。
+     * 对阵树跨轮次展示，不受列表的三种比赛状态筛选影响。
      */
     const koTree = activeComp && bracket.koIndexOf(stage) >= 0
       ? bracket.buildBracket(data.query({ comps: [activeComp], team: teamFilter }), compName)
@@ -253,7 +249,6 @@ Page({
       stageChips,
       stageFilter: stage,
       bracket: koTree,
-      fallback,
       updatedAt: this.updatedLabel(),
       stale: data.staleInfo().stale,
       staleLabel: this.staleLabel(),
@@ -392,6 +387,7 @@ Page({
 
   onModeTap(e) {
     const mode = e.currentTarget.dataset.mode
+    if (['upcoming', 'live', 'finished'].indexOf(mode) === -1) return
     if (mode === this.data.mode) return
     // 模式换了，阶段选项的池子也换了（已结束模式里没有未开赛的阶段）→ 一并清掉
     this.setData({ mode, shownGroups: PAGE_SIZE, stageFilter: '' })

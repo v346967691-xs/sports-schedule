@@ -1,6 +1,8 @@
 const ROLES = { top: '上路', jungle: '打野', mid: '中路', bottom: '下路', support: '辅助' }
 const ORDER = ['top', 'jungle', 'mid', 'bottom', 'support']
 const value = n => n == null ? '—' : String(n)
+const championIcon = id => typeof id === 'string' && /^[A-Za-z0-9]+$/.test(id)
+  ? `https://game.gtimg.cn/images/lol/act/img/champion/${id}.png` : ''
 function buildLol(detail, homeLabel, awayLabel) {
   if (!detail || !detail.lol || !Array.isArray(detail.lol.rounds) || !detail.lol.rounds.length) return null
   const side = (t, label) => ({
@@ -9,6 +11,7 @@ function buildLol(detail, homeLabel, awayLabel) {
     dragons: value(t && t.dragons), barons: value(t && t.barons),
     players: t ? (t.players || []).slice().sort((a, b) => ORDER.indexOf(a.role) - ORDER.indexOf(b.role)).map(p => ({
       id: p.id, name: p.name || '—', champion: p.champion || '—', role: ROLES[p.role] || p.role || '—',
+      icon: championIcon(p.champion),
       kda: `${value(p.k)} / ${value(p.d)} / ${value(p.a)}`, cs: value(p.cs), gold: value(p.gold),
     })) : [],
   })

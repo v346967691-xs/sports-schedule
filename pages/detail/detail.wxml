@@ -226,7 +226,12 @@
           <view class="lol-totals">击杀 {{t.kills}} · 经济 {{t.gold}} · 推塔 {{t.towers}} · 小龙 {{t.dragons}} · 大龙 {{t.barons}}</view>
           <view class="lol-player lol-head"><view class="lol-name">选手 / 英雄</view><view class="lol-kda">K / D / A</view><view class="lol-cs">补刀</view><view class="lol-gold">经济</view></view>
           <view class="lol-player" wx:for="{{t.players}}" wx:for-item="p" wx:for-index="pi" wx:key="id">
-            <view class="lol-name"><view>{{p.name}}</view><view class="lol-champion">{{p.role}} · {{p.champion}}</view></view>
+            <view class="lol-name lol-identity">
+              <image wx:if="{{p.icon}}" class="lol-hero" src="{{p.icon}}" mode="aspectFill" lazy-load="{{true}}"
+                data-round="{{ri}}" data-team="{{ti}}" data-player="{{pi}}" binderror="onLolHeroError" />
+              <view wx:else class="lol-hero lol-hero-placeholder">—</view>
+              <view class="lol-copy"><view>{{p.name}}</view><view class="lol-champion">{{p.role}} · {{p.champion}}</view></view>
+            </view>
             <view class="lol-kda">{{p.kda}}</view><view class="lol-cs">{{p.cs}}</view><view class="lol-gold">{{p.gold}}</view>
           </view>
         </view>

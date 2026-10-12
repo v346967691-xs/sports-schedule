@@ -186,16 +186,6 @@
   box-shadow: 0 2rpx 8rpx rgba(16, 24, 40, 0.08);
 }
 
-.fallback-tip {
-  margin: 20rpx 24rpx 0;
-  padding: 18rpx 24rpx;
-  border-radius: 14rpx;
-  background: #fff6e5;
-  color: #93450a;
-  font-size: 23rpx;
-  line-height: 1.6;
-}
-
 /* 数据陈旧警告：定时任务停了（如电脑关机）时提示用户比分可能不是最新的 */
 .stale-tip {
   margin: 20rpx 24rpx 0;

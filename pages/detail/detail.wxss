@@ -946,6 +946,10 @@
 .lol-player { display: flex; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--line, #edf0f3); font-size: 22rpx; }
 .lol-head { color: var(--muted); font-size: 20rpx; }
 .lol-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lol-identity { display: flex; align-items: center; }
+.lol-hero { width: 52rpx; height: 52rpx; margin-right: 10rpx; border-radius: 8rpx; flex: none; background: var(--line, #edf0f3); }
+.lol-hero-placeholder { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.lol-copy { flex: 1; min-width: 0; }
 .lol-champion { color: var(--muted); font-size: 20rpx; margin-top: 5rpx; }
 .lol-kda { width: 145rpx; text-align: center; flex: none; }
 .lol-cs { width: 65rpx; text-align: center; flex: none; }

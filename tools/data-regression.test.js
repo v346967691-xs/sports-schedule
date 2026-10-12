@@ -196,3 +196,73 @@ test('detail waits for the final result but stops after completion or timeout', 
   page.finalDetailReady=true;page.syncLivePoll();assert.equal(timer,null)
   page.finalDetailReady=false;page.detailPollUntil=Date.now()-1;page.syncLivePoll();assert.equal(timer,null)
 })
+
+test('schedule tabs separate all 31 competitions and keep overnight live games', () => {
+  const comps = require('./sync').COMPETITIONS
+  const fmt = require('../utils/format')
+  const today = fmt.todayStr()
+  const real = createRequire(path.join(__dirname, '../utils/data.js'))
+  const fixtures = comps.flatMap(c => ['upcoming', 'live', 'finished'].map(status => ({
+    id: `${c.key}-${status}`, comp: c.key, status,
+    start: new Date(Date.now() + (status === 'upcoming' ? 3600000 : -10800000)).toISOString(),
+    date: status === 'live' ? fmt.shiftDay(today, -1) : today, time:'12:00', stage:'',
+    home: {id:`${c.key}-home`,name:'Home',score:status==='upcoming'?null:1},
+    away: {id:`${c.key}-away`,name:'Away',score:status==='upcoming'?null:0},
+  })))
+  const data = load('../utils/data.js', {require:n=>n==='../data/matches.js'?fixtures
+    :n==='../data/meta.js'?{generatedAt:new Date().toISOString(),competitions:comps,
+      categories:['football','basketball','esports'].map(key=>({key,competitions:comps.filter(c=>c.cat===key).map(c=>c.key)}))}
+    :n==='./cloud'?{isReady:()=>false}:real(n)}).module.exports
+  const pageRequire = createRequire(path.join(__dirname,'../pages/schedule/schedule.js'))
+  let definition
+  load('../pages/schedule/schedule.js',{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
+    :n==='../../utils/view'||n==='../../utils/format'?pageRequire(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}: {}})
+  const page={...definition,data:{...definition.data},buildShareImage:()=>{},
+    setData(p,cb){Object.assign(this.data,p);if(cb)cb()}}
+  for(const c of comps) for(const mode of ['upcoming','live','finished']) {
+    Object.assign(page.data,{activeCat:c.cat,activeComp:c.key,mode})
+    page.doReload()
+    assert.equal(page.data.totalMatches,1,`${c.key}/${mode}`)
+    assert.ok(page.data.rows.filter(r=>r.type==='match').every(r=>r.match.status===mode),`${c.key}/${mode}`)
+  }
+})
+
+test('a competition without upcoming games does not show finished games in the upcoming tab', () => {
+  let definition
+  const filename=path.join(__dirname,'../pages/schedule/schedule.js')
+  const real=createRequire(filename)
+  const game={id:'lpl-done',comp:'lpl',status:'finished',date:'2026-10-11',start:new Date().toISOString(),home:{name:'H'},away:{name:'A'}}
+  const data={matches:()=>[game],upcoming:()=>[],finished:()=>[game],query:()=>[],compOf:()=>({name:'LPL'}),
+    staleInfo:()=>({stale:false}),source:()=> 'bundle',generatedAt:()=>'',standingsOf:()=>null}
+  load('../pages/schedule/schedule.js',{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
+    :n==='../../utils/view'||n==='../../utils/format'?real(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}:{}})
+  const page={...definition,data:{...definition.data,activeCat:'esports',activeComp:'lpl'},buildShareImage:()=>{},
+    setData(p,cb){Object.assign(this.data,p);if(cb)cb()}}
+  page.doReload()
+  assert.equal(page.data.totalMatches,0)
+})
+
+test('LOL champion portraits use the selected champion ID and retain a text fallback', () => {
+  const {buildLol}=require('../utils/lol-view')
+  const p={id:1,name:'Player',champion:'MonkeyKing',role:'top',k:0,d:1,a:2,cs:100,gold:5000}
+  const view=buildLol({lol:{rounds:[{id:'g',n:1,complete:true,h:{players:[p]},a:null}]}},'H','A')
+  assert.equal(view.rounds[0].teams[0].players[0].icon,'https://game.gtimg.cn/images/lol/act/img/champion/MonkeyKing.png')
+  p.champion='../../invalid'
+  const fallback=buildLol({lol:{rounds:[{id:'g',n:1,h:{players:[p]},a:null}]}},'H','A')
+  assert.equal(fallback.rounds[0].teams[0].players[0].icon,'')
+  assert.equal(fallback.rounds[0].teams[0].players[0].champion,'../../invalid')
+})
+
+test('an unavailable LOL portrait clears only that player image, keeping their name and stats', () => {
+  let definition, patch
+  load('../pages/detail/detail.js',{Page:p=>{definition=p},require:()=>({})})
+  const player={name:'JDG Player',champion:'Ashe',icon:'https://example/icon.png',kda:'1 / 2 / 3'}
+  const page={...definition,data:{detail:{lol:{rounds:[{teams:[{players:[player]}]}]}}},setData:p=>{patch=p}}
+  page.onLolHeroError({currentTarget:{dataset:{round:0,team:0,player:0}}})
+  assert.equal(patch['detail.lol.rounds[0].teams[0].players[0].icon'],'')
+  assert.equal(player.champion,'Ashe')
+  assert.equal(player.kda,'1 / 2 / 3')
+  patch=null
+  page.onLolHeroError({currentTarget:{dataset:{round:-1,team:0,player:0}}})
+  assert.equal(patch,null)
+})

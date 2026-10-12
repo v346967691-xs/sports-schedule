@@ -160,7 +160,10 @@ async function run() {
   schOpts.onLoad.call(ctxSch, { comp: 'lpl' })
   let s = ctxSch.data
   check('赛程页：从 index 传来的 comp 生效', s.activeComp === 'lpl' && s.activeCat === 'esports', `${s.activeCat}/${s.activeComp}`)
-  check('赛程页：未来赛程已逐场展开', matchRowCount(s.rows) > 0, `行数 ${s.rows.length} / ${s.totalMatches} 场`)
+  check('赛程页：即将开赛只展示未开始比赛，间歇期保留空态',
+    matchRows(s.rows).every(r => r.match.status === 'upcoming')
+    && s.totalMatches === allData.upcoming({ comps: ['lpl'], status: 'upcoming' }).length,
+    `行数 ${s.rows.length} / ${s.totalMatches} 场`)
 
   schOpts.onLoad.call(ctxSch, {})
   s = ctxSch.data
@@ -196,16 +199,14 @@ async function run() {
     chnMatches.length ? `${chnMatches[0].match.home.zhName} vs ${chnMatches[0].match.away.zhName}` : '')
   schOpts.onCompTap.call(ctxSch, { currentTarget: { dataset: { key: 'chn' } } })
 
-  // 电竞没有未来赛程时应自动兜底到最近对战，保证始终能看到对战双方
+  // 三个状态 tab 独立，未开始页没有比赛时不混入赛果。
   schOpts.onCatTap.call(ctxSch, { currentTarget: { dataset: { key: 'esports' } } })
   schOpts.onModeTap.call(ctxSch, { currentTarget: { dataset: { mode: 'upcoming' } } })
   s = ctxSch.data
   const esMatches = matchRows(s.rows)
-  // ⚠️ 德玛西亚杯这类短期杯赛会让电竞重新出现未来赛程，兜底就不再触发 ——
-  // 所以这条用例改成：有未来赛程时不兜底且列表非空，没有未来赛程时必须兜底
-  check('赛程页：电竞有未来赛程时正常展示（未触发兜底）', esMatches.length > 0,
-    `fallback=${s.fallback} 场=${esMatches.length}`)
-  check('赛程页：兜底列表里能看到对战双方', esMatches.every((r) => r.match.home.zhName && r.match.away.zhName),
+  check('赛程页：电竞未开始列表不会混入进行中或已结束比赛', esMatches.every(r => r.match.status === 'upcoming'),
+    `场=${esMatches.length}`)
+  check('赛程页：电竞列表能看到对战双方', esMatches.every((r) => r.match.home.zhName && r.match.away.zhName),
     esMatches.length ? `${esMatches[0].match.home.zhName} vs ${esMatches[0].match.away.zhName}` : '')
 
   schOpts.onCompTap.call(ctxSch, { currentTarget: { dataset: { key: 'lck' } } })
@@ -665,7 +666,7 @@ async function run() {
     /data\.teamForm\(/.test(schJs) && !/_homeForm\s*=\s*.*matchDetail/.test(schJs))
   // 只在「看未来赛程」时给，已完赛的比分本身就说明了结果
   check('前瞻：只在 upcoming 模式挂近况（已完赛不挂，比分已在右边）',
-    /_showForm\s*=\s*mode\s*===\s*'upcoming'\s*&&\s*!fallback/.test(schJs))
+    /_showForm\s*=\s*mode\s*===\s*'upcoming'/.test(schJs))
   check('前瞻：主客两行都渲染了近况色块',
     (schWxml.match(/class="mc-form"/g) || []).length === 2
     && schWxml.indexOf('_homeForm') > -1 && schWxml.indexOf('_awayForm') > -1)

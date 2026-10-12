@@ -81,6 +81,7 @@ const LIVE_THROTTLE_MS = 45 * 1000 // 实时表很小（~2KB），可以比大�
 let liveMap = {} // id -> { st, stt, hs, as, ls }
 let liveInflight = null
 let lastLiveAt = 0
+let liveGeneratedAt = ''
 
 /** 把实时补丁盖到内存里的比赛对象上（原地改，页面重新 query 就能看到） */
 function applyLive() {
@@ -90,6 +91,9 @@ function applyLive() {
   matches().forEach((m) => {
     const p = liveMap[m.id]
     if (!p) return
+    const at = Date.parse(p.at || liveGeneratedAt)
+    const base = Date.parse(meta.generatedAt || '')
+    if (!Number.isFinite(at) || at < base || Date.now() - at > 15 * 60000 || at > Date.now() + 60000) return
     if (p.st) m.status = p.st
     if (p.stt != null) m.statusText = p.stt
     if (p.hs != null && m.home) m.home.score = p.hs
@@ -103,6 +107,14 @@ function applyLive() {
 /** 当前有没有进行中的比赛（页面据此决定要不要起轮询定时器） */
 function hasLive() {
   return matches().some((m) => m.status === 'live')
+}
+
+/** 前台轻量定时器发现临近开赛；窗口外不发比分请求。 */
+function needsLivePoll(match) {
+  const near = m => m.status === 'live' || (m.status === 'upcoming'
+    && Date.parse(m.start) - Date.now() <= 30 * 60000
+    && Date.parse(m.start) - Date.now() >= -6 * 3600000)
+  return match ? near(match) : matches().some(near)
 }
 
 /**
@@ -133,6 +145,7 @@ async function refreshLive(force) {
         if (r && r.id) map[r.id] = r
       })
       liveMap = map
+      liveGeneratedAt = data.generated_at || data.data.generatedAt || ''
       return { updated: true, patched: applyLive(), at: data.generated_at }
     } catch (err) {
       console.warn('[赛程助手] 实时比分读取失败，沿用上一次数据', err)
@@ -907,6 +920,7 @@ module.exports = {
   // 实时比分
   refreshLive,
   hasLive,
+  needsLivePoll,
   applyLive,
   source,
   generatedAt,

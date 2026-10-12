@@ -7,7 +7,8 @@
     "vendor": "node tools/vendor-sdk.js",
     "sync": "node tools/vendor-sdk.js && node tools/sync.js",
     "sync-cloud": "node tools/cloud-sync.js",
-    "smoke": "node tools/smoke.js"
+    "smoke": "node tools/smoke.js",
+    "test:data": "node --test tools/data-regression.test.js"
   },
   "dependencies": {
     "@tencent-ai/workbuddy-cloud-sdk": "dev"

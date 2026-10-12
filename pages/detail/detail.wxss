@@ -936,3 +936,17 @@
   font-size: 20rpx;
   color: var(--faint, #b0b3b8);
 }
+
+.lol-note { font-size: 22rpx; color: var(--muted); margin: 16rpx 0; }
+.lol-note.partial { color: #a36b12; }
+.lol-team { margin-top: 24rpx; }
+.lol-team-name { font-size: 28rpx; font-weight: 600; }
+.lol-side { font-size: 22rpx; color: var(--muted); margin-left: 10rpx; font-weight: 400; }
+.lol-totals { font-size: 21rpx; color: var(--muted); margin: 12rpx 0; line-height: 1.6; }
+.lol-player { display: flex; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--line, #edf0f3); font-size: 22rpx; }
+.lol-head { color: var(--muted); font-size: 20rpx; }
+.lol-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lol-champion { color: var(--muted); font-size: 20rpx; margin-top: 5rpx; }
+.lol-kda { width: 145rpx; text-align: center; flex: none; }
+.lol-cs { width: 65rpx; text-align: center; flex: none; }
+.lol-gold { width: 85rpx; text-align: right; flex: none; }

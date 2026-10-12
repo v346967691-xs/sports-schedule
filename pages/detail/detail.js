@@ -1,6 +1,7 @@
 const share = require('../../utils/share')
 const poster = require('../../utils/poster')
 const data = require('../../utils/data')
+const lolView = require('../../utils/lol-view')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
@@ -183,6 +184,7 @@ function decorateDetail(d, match) {
   const box = buildBox(d, sideName)
   const quarters = buildQuarters(match, sideName)
   const kpl = kplView.buildKpl(d, sideName('home'), sideName('away'))
+  const lol = lolView.buildLol(d, sideName('home'), sideName('away'))
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -202,6 +204,8 @@ function decorateDetail(d, match) {
     hasQuarters: !!quarters,
     kpl,
     hasKpl: !!kpl,
+    lol,
+    hasLol: !!lol,
     formRows,
     hasForm: formRows.length > 0,
     h2h,
@@ -266,9 +270,16 @@ Page({
    * 详情只覆盖「进行中 + 近 48 小时已结束」的比赛，老比赛本来就没有，这不是错误。
    */
   async loadDetail(match) {
+    if (Date.now() - (this.detailReadAt || 0) < 3 * 60000) return
+    this.detailReadAt = Date.now()
     const raw = await data.matchDetail(match)
     if (!raw || !this.data.match || this.data.match.id !== match.id) return
     this.setData({ detail: decorateDetail(raw, match), detailAll: false })
+    const kplReady = match.comp !== 'kpl' || !!(raw.kpl && (raw.kpl.list || []).length > 0
+      && raw.kpl.list.length >= Number(match.home.score || 0) + Number(match.away.score || 0))
+    const lolReady = data.compOf(match.comp).cat !== 'esports' || match.comp === 'kpl' || !!(raw.lol && raw.lol.complete)
+    this.finalDetailReady = raw.fin === true && kplReady && lolReady
+    this.syncLivePoll()
   },
 
   onToggleSubs() {
@@ -280,6 +291,10 @@ Page({
 
   /** 用一场比赛对象刷新整页（onLoad 与云端回补共用同一套逻辑） */
   applyMatch(raw) {
+    const changedToFinished = this.data.match && this.data.match.status !== 'finished' && raw.status === 'finished'
+    if (changedToFinished) this.detailReadAt = 0
+    if (raw.status === 'finished' && raw.comp !== 'cba' && !this.detailPollUntil
+      && Date.now() - Date.parse(raw.start) < 48 * 3600000) this.detailPollUntil = Date.now() + 20 * 60000
     const app = appInstance()
     const match = view.decorate.call({ compOf: data.compOf }, raw)
     const comp = data.compOf(match.comp)
@@ -305,6 +320,7 @@ Page({
     }, () => {
       this.buildShareImage()
       this.loadDetail(match)
+      this.syncLivePoll()
     })
   },
 
@@ -332,6 +348,7 @@ Page({
   },
 
   onShow() {
+    this.liveVisible = true
     const app = appInstance()
     // 从后台切回来时同步一次：进行中的比分可能已经变了
     if (this.matchId) {
@@ -355,8 +372,8 @@ Page({
     this.syncLivePoll()
   },
 
-  onHide() { this.stopLivePoll() },
-  onUnload() { this.stopLivePoll() },
+  onHide() { this.liveVisible = false; this.stopLivePoll() },
+  onUnload() { this.liveVisible = false; this.stopLivePoll() },
 
   /**
    * 详情页的比分轮询：**只有这场比赛正在进行中才起**定时器。
@@ -364,7 +381,8 @@ Page({
    */
   syncLivePoll() {
     const m = this.data.match
-    if (!m || m.status !== 'live') { this.stopLivePoll(); return }
+    if (!this.liveVisible || !m || (m.status === 'finished'
+      && (this.finalDetailReady || Date.now() >= (this.detailPollUntil || 0)))) { this.stopLivePoll(); return }
     if (this.liveTimer) return
     this.startLivePoll()
   },
@@ -372,12 +390,19 @@ Page({
   startLivePoll() {
     if (this.liveTimer) return
     this.liveTimer = setInterval(() => {
+      const current = this.data.match
+      if (current && current.status === 'finished') {
+        this.loadDetail(current)
+        this.syncLivePoll()
+        return
+      }
+      if (!current || !data.needsLivePoll(current)) return
       data.refreshLive(true).then((r) => {
         if (!r || !r.patched) return
         const m2 = data.findMatch(this.matchId)
         if (!m2) return
         this.applyMatch(m2)
-        if (m2.status !== 'live') this.stopLivePoll()
+        this.syncLivePoll()
       })
     }, LIVE_POLL_MS)
   },
@@ -386,6 +411,12 @@ Page({
     if (!this.liveTimer) return
     clearInterval(this.liveTimer)
     this.liveTimer = null
+  },
+
+  onLolRound(e) {
+    const idx = Number(e.currentTarget.dataset.idx)
+    const lol = this.data.detail && this.data.detail.lol
+    if (lol && lol.rounds[idx]) this.setData({ 'detail.lol.active': idx })
   },
 
   /** 切换 KPL 单局 tab（数据一次全在 payload 里，切换是纯前端，零请求） */

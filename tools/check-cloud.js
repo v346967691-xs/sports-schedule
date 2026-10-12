@@ -23,6 +23,19 @@ async function main() {
     endpoint: publicConfig.endpoint,
     publishableKey: publicConfig.publishableKey,
   })
+  if (process.argv.includes('--live')) {
+    const { data, error } = await cloud.database.from('live_scores').select('data, generated_at').eq('id', 'latest').maybeSingle()
+    const { TARGETS, LOL_KEYS } = require('./live-watch')
+    const expected = TARGETS.map(c => `espn:${c.key}:${c.league}`).concat(['cba', 'kpl'], LOL_KEYS.map(k => `lol:${k}`))
+    const sources = data && data.data && data.data.sources || {}
+    const issues = expected.filter(k => !sources[k] || !sources[k].ok || Date.now() - Date.parse(sources[k].checkedAt) > 10 * 60000)
+    const age = data ? (Date.now() - Date.parse(data.generated_at)) / 60000 : Infinity
+    if (error || !Number.isFinite(age) || age > 10 || issues.length) {
+      console.error('[check-cloud] 比分快通道异常：', error || `心跳 ${age.toFixed(1)} 分钟；来源 ${issues.join(', ')}`)
+      process.exitCode = 2
+    } else console.log(`[check-cloud] 比分快通道正常：${expected.length} 个来源，心跳 ${age.toFixed(1)} 分钟`)
+    return
+  }
 
   const { data, error } = await cloud.database
     .from('schedule_cache')

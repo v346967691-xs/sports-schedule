@@ -8,6 +8,10 @@
   "packOptions": {
     "ignore": [
       {
+        "type": "file",
+        "value": "data/match-details.js"
+      },
+      {
         "type": "folder",
         "value": "data/brief"
       },

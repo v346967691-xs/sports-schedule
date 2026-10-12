@@ -60,6 +60,7 @@ Page({
   },
 
   onShow() {
+    this.liveVisible = true
     // 立即用当前数据渲染（本地包或已换上的云端数据），再尝试拉云端、拿到了就重建
     this.build()
     this.loadBrief()
@@ -67,8 +68,8 @@ Page({
     this.syncLivePoll()
   },
 
-  onHide() { this.stopLivePoll() },
-  onUnload() { this.stopLivePoll() },
+  onHide() { this.liveVisible = false; this.stopLivePoll() },
+  onUnload() { this.liveVisible = false; this.stopLivePoll() },
 
   /**
    * 实时比分轮询：首页是看比分的主入口，进行中的比赛必须自己动。
@@ -76,18 +77,18 @@ Page({
    */
   syncLivePoll() {
     data.refreshLive().then((r) => {
+      if (!this.liveVisible) return
       if (r.patched) this.build()
-      if (data.hasLive()) this.startLivePoll()
-      else this.stopLivePoll()
+      this.startLivePoll()
     })
   },
 
   startLivePoll() {
     if (this.liveTimer) return
     this.liveTimer = setInterval(() => {
+      if (!data.needsLivePoll()) return
       data.refreshLive(true).then((r) => {
         if (r.patched) this.build()
-        if (!data.hasLive()) this.stopLivePoll()
       })
     }, LIVE_POLL_MS)
   },

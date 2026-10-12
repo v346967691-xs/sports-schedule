@@ -94,6 +94,7 @@ Page({
   },
 
   onShow() {
+    this.liveVisible = true
     const app = appInstance()
     const pending = app.globalData.pendingComp
     if (pending) {
@@ -132,8 +133,8 @@ Page({
     this.syncLivePoll()
   },
 
-  onHide() { this.stopLivePoll() },
-  onUnload() { this.stopLivePoll() },
+  onHide() { this.liveVisible = false; this.stopLivePoll() },
+  onUnload() { this.liveVisible = false; this.stopLivePoll() },
 
   /* ------------------------------------------------------------ 实时比分轮询
    *
@@ -145,19 +146,19 @@ Page({
    */
   syncLivePoll() {
     data.refreshLive().then((r) => {
+      if (!this.liveVisible) return
       if (r.patched) this.reload()
-      if (data.hasLive()) this.startLivePoll()
-      else this.stopLivePoll()
+      this.startLivePoll()
     })
   },
 
   startLivePoll() {
     if (this.liveTimer) return
     this.liveTimer = setInterval(() => {
+      if (!data.needsLivePoll()) return
       // force：轮询是用户主动盯着看的场景，不该被 45 秒节流挡住
       data.refreshLive(true).then((r) => {
         if (r.patched) this.reload()
-        if (!data.hasLive()) this.stopLivePoll()
       })
     }, LIVE_POLL_MS)
   },

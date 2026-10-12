@@ -55,6 +55,9 @@ jobs:
       - name: 安装云 SDK
         run: npm install
 
+      - name: 验证数据链路回归
+        run: npm run test:data
+
       - name: 刷新并推送赛程快照到云端
         id: sync
         # 🔴 内部自带节流闸（默认 90 分钟一次）：被触发不等于会写，见文件头注释。
@@ -123,9 +126,8 @@ jobs:
       #    90 分钟才写一次的是那份大快照，2KB 的实时比分仍然 60 秒一次 —— 用户感知到的
       #    实时性没有任何退化，省下的却是落库量的大头。
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
-      # ⚠️ continue-on-error：实时比分是增强，它的成败不该污染主链路的红绿信号。
+      # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
       - name: 盯进行中的比赛（实时比分）
-        continue-on-error: true
         run: node tools/live-watch.js --minutes=11 --every=60
 
 # 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），

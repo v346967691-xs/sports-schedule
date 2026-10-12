@@ -676,10 +676,10 @@ function cbaStatusRaw(ev, hasScore) {
   return num_(ev.Quarter) != null ? 'live' : hasScore ? 'finished' : 'upcoming'
 }
 
-function cbaStatus(ev, hasScore, startedAtMs) {
+function cbaStatus(ev, hasScore, startedAtMs, now = Date.now()) {
   const s = cbaStatusRaw(ev, hasScore)
   // 时间保险：开赛超过 5 小时仍判成 live 的，一律落地为 finished
-  if (s === 'live' && startedAtMs != null && Date.now() - startedAtMs > 5 * 3600000) return 'finished'
+  if (s === 'live' && startedAtMs != null && now - startedAtMs > 5 * 3600000) return 'finished'
   return s
 }
 
@@ -952,4 +952,4 @@ if (require.main === module) {
 //    别让两边各写一份语义（第二处实现的老毛病）。
 // ⚠️ LOL / LOL_KEY 也导出：live-watch.js 的 LoL 快通道要打同一个上游，
 //    两处各写一份 key 迟早会漂移（当年 ESPN 域名就踩过）。
-module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY }
+module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus }

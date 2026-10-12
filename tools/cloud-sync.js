@@ -128,6 +128,24 @@ const MIN_INTERVAL_MIN = Number(process.env.SYNC_MIN_INTERVAL_MIN || 90)
 const { isOutage } = require('./cloud-outage')
 // 快通道要用它的 dayKey / hasContent。⚠️ 本文件有 require.main 守卫，require 不会触发抓取
 const MD = require('./match-detail.js')
+const { isLol } = require('./lol-detail')
+const fs = require('fs')
+
+function readDetails() {
+  const file = path.join(__dirname, '..', '.workbuddy', 'match-details-cloud.json')
+  if (fs.existsSync(file)) {
+    const out = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const age = Date.now() - Date.parse(out.generatedAt)
+    if (Number.isFinite(age) && age >= 0 && age < 30 * 60000) return out
+  }
+  // 包内快照不含 LOL，不能拿它覆盖完整云桶；抓取未产出就跳过写入。
+  return null
+}
+
+function clearDetailsOutput() {
+  const file = path.join(__dirname, '..', '.workbuddy', 'match-details-cloud.json')
+  if (fs.existsSync(file)) fs.unlinkSync(file)
+}
 
 /**
  * `match_detail` 的节流（分钟）。它按「天」分桶，一次推送要写 13 行，
@@ -226,13 +244,14 @@ async function detailAgeMin(cloud) {
   try {
     const res = await cloud.database.from('match_detail').select('updated_at')
     const rows = (res && res.data) || []
-    let newest = 0
+    // 局部快通道不能替代整批刷新：以最旧的有效日桶决定批量是否到期。
+    let oldest = Infinity
     rows.forEach((r) => {
       const t = Date.parse((r && r.updated_at) || '')
-      if (Number.isFinite(t) && t > newest) newest = t
+      if (Number.isFinite(t) && t < oldest) oldest = t
     })
-    if (!newest) return null
-    return Math.round((Date.now() - newest) / 60000)
+    if (!Number.isFinite(oldest)) return null
+    return Math.round((Date.now() - oldest) / 60000)
   } catch (err) {
     // 读不到就当必须推 —— fail-open，比节流误跳过更安全
     return null
@@ -335,6 +354,9 @@ async function detailFastLane(cloud, rows) {
     const isShell = (d, id, o) => {
       if (!d) return true
       if (!MD.hasContent(d)) return true
+      if (isLol(String(id).split('-')[0]) && (!d.lol || !d.lol.complete)) return true
+      // 足球/NBA 的赛前近况、阵容不代表终场事件和统计已经完整。
+      if (String(id).indexOf('kpl-') !== 0 && d.fin === false) return true
       if (String(id).indexOf('kpl-') === 0) {
         const want = Number(o && o.hs || 0) + Number(o && o.as || 0)
         const have = d.kpl && Array.isArray(d.kpl.list) ? d.kpl.list.length : 0
@@ -361,6 +383,7 @@ async function detailFastLane(cloud, rows) {
     require('fs').writeFileSync(tmp, JSON.stringify(need))
     try {
       // ⚠️ --fast 一起传：常规 2 小时补抓间隔会让快通道「报了壳却一场都不抓」
+      clearDetailsOutput()
       execFileSync(process.execPath, [path.join(__dirname, 'match-detail.js'), '--fast', '--status-json=' + tmp], { stdio: 'inherit' })
     } catch (err) {
       log(`详情快通道：补抓未产出（${(err && err.status) || (err && err.message) || ''}）`)
@@ -369,7 +392,7 @@ async function detailFastLane(cloud, rows) {
     try {
       delete require.cache[require.resolve('../data/match-details.js')]
     } catch (err) { /* 没缓存就直接 require */ }
-    const details = require('../data/match-details.js')
+    const details = readDetails()
     // ⚠️ 没真抓到场次就不推（gap 节流挡住了）→ 省掉一整轮 13 桶写入
     if (!details || !details.stats || !details.stats.fetched) return
     const push = (details.buckets || []).filter((b) => ids.indexOf(b.id) > -1 && b.payload && Object.keys(b.payload).length)
@@ -603,14 +626,15 @@ async function main() {
   const detailArgs = [path.join(__dirname, 'match-detail.js')]
   if (FORCE) detailArgs.push('--force')
   try {
+    clearDetailsOutput()
     execFileSync(process.execPath, detailArgs, { stdio: 'inherit' })
   } catch (err) {
     execNote = (err && err.message) || String(err)
   }
   try {
     delete require.cache[require.resolve('../data/match-details.js')]
-    details = require('../data/match-details.js')
-    if (execNote) log(`详情增量抓取无新增（${execNote}），改用现有 data/match-details.js 推送`)
+    details = readDetails()
+    if (execNote) log(`详情子进程退出（${execNote}），仅使用本轮有效云端产物`)
   } catch (err) {
     details = null
     console.warn('[cloud-sync] ⚠ 详情数据文件不可用，本次跳过推送：', (err && err.message) || err)

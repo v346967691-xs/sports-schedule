@@ -211,6 +211,30 @@
     <view class="foot-note tight">英雄与选手信息来自 KPL 官方赛报；左右两侧按对抗路 / 中路 / 发育路 / 打野 / 游走对位。</view>
   </view>
 
+  <view class="section card" wx:if="{{detail.hasLol}}">
+    <view class="sec-title">LOL 单局数据</view>
+    <scroll-view class="kp-tabs" scroll-x enhanced="{{true}}" show-scrollbar="{{false}}">
+      <view class="kp-tab {{detail.lol.active === idx ? 'on' : ''}}"
+        wx:for="{{detail.lol.rounds}}" wx:for-item="r" wx:for-index="idx" wx:key="id"
+        data-idx="{{idx}}" bindtap="onLolRound">第 {{r.n}} 局</view>
+    </scroll-view>
+    <block wx:for="{{detail.lol.rounds}}" wx:for-item="r" wx:for-index="ri" wx:key="id">
+      <view wx:if="{{detail.lol.active === ri}}">
+        <view class="lol-note {{r.complete ? '' : 'partial'}}">{{r.note}}</view>
+        <view class="lol-team" wx:for="{{r.teams}}" wx:for-item="t" wx:for-index="ti" wx:key="label">
+          <view class="lol-team-name">{{t.label}} <text class="lol-side">{{t.side}}</text></view>
+          <view class="lol-totals">击杀 {{t.kills}} · 经济 {{t.gold}} · 推塔 {{t.towers}} · 小龙 {{t.dragons}} · 大龙 {{t.barons}}</view>
+          <view class="lol-player lol-head"><view class="lol-name">选手 / 英雄</view><view class="lol-kda">K / D / A</view><view class="lol-cs">补刀</view><view class="lol-gold">经济</view></view>
+          <view class="lol-player" wx:for="{{t.players}}" wx:for-item="p" wx:for-index="pi" wx:key="id">
+            <view class="lol-name"><view>{{p.name}}</view><view class="lol-champion">{{p.role}} · {{p.champion}}</view></view>
+            <view class="lol-kda">{{p.kda}}</view><view class="lol-cs">{{p.cs}}</view><view class="lol-gold">{{p.gold}}</view>
+          </view>
+        </view>
+      </view>
+    </block>
+    <view class="foot-note tight">统计来自 LOL 官方赛事数据。未补齐的单局显示最后可用记录；击杀比分不代表该局胜负。</view>
+  </view>
+
   <!-- ④ 双方近况 -->
   <view class="section card" wx:if="{{detail.hasForm}}">
     <view class="sec-title">双方近况</view>

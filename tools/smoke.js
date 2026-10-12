@@ -2134,7 +2134,7 @@ async function run() {
   check('详情：抓/不抓详情的赛事判定正确',
     md.detailCapable('uecl') === true && md.detailCapable('chn') === true
     && md.detailCapable('friendly') === true && md.detailCapable('cnl') === true
-    && md.detailCapable('worlds') === false)
+    && md.detailCapable('worlds') === true && md.detailCapable('cba') === false)
   // 精简模式：只留事件 + 统计。全量加会把包体积顶到 99.9%（+328KB），精简是 156KB。
   const mdSrc2 = fs.readFileSync(path.join(ROOT, 'tools/match-detail.js'), 'utf8')
   check('详情：国际友谊赛 / 中北美走精简模式（只存事件+统计，跳过首发/交锋/近况）',
@@ -2157,12 +2157,9 @@ async function run() {
   check('详情：所有 ESPN 赛事都能抓详情（漏配 SLUG 会静默没数据，别等用户来报）',
     mdMissing.length === 0,
     mdMissing.length ? '漏了：' + mdMissing.join(',') : `${mdEspn.length} 个 ESPN 赛事全覆盖`)
-  // ⚠️ 反过来也守住已知缺口：LoL 系 + CBA **不是 ESPN 源**，没有 summary 端点可打，
-  //    缺详情是上游硬缺口而非配置遗漏。哪天真补上了，先改这条断言。
-  const mdNoSrc = ['worlds', 'lpl', 'lck', 'lec', 'msi', 'demacia', 'agames', 'cba']
-  check('详情：LoL 系 + CBA 缺详情是上游硬缺口（非 ESPN 源，无 summary 端点；补上就改这条）',
-    mdNoSrc.every((k) => md.detailCapable(k) === false)
-    && md.detailCapable('kpl') === true)
+  const mdLol = ['worlds', 'lpl', 'lck', 'lec', 'msi', 'demacia', 'agames']
+  check('详情：LoL 七项通过独立 feed 提供详情，CBA 尚未实现',
+    mdLol.every(k => md.detailCapable(k)) && !md.detailCapable('cba') && md.detailCapable('kpl'))
   check('详情：交锋只保留已打过的比赛（未开赛的 0-0 会被误当战绩）',
     md.isPlayed({ statusType: { state: 'post' } }) === true
     && md.isPlayed({ statusType: { state: 'pre' } }) === false
@@ -3224,8 +3221,8 @@ async function run() {
       && /id: `\$\{comp\.key\}-\$\{ev\.match\.id\}`/.test(
         fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
     check('实时比分：LoL 上游地址与 key 从 sync.js 借用（两处各写一份迟早漂移）',
-      /LOL, LOL_KEY \} = SYNC/.test(lwSrcAll)
-      && /KPL_CANCELED, LOL, LOL_KEY \}/.test(
+      /LOL, LOL_KEY\b[^}]*\} = SYNC/.test(lwSrcAll)
+      && /KPL_CANCELED, LOL, LOL_KEY\b/.test(
         fs.readFileSync(path.join(ROOT, 'tools/sync.js'), 'utf8')))
     // 🔴 CBA 的收敛条件必须含「窗口内有比赛（哪怕还没开打）」：
     //    只看「已开打」的话，一场 20 分钟后开打的比赛不会被算进候选，收敛就把 CBA 关掉，
@@ -3249,22 +3246,19 @@ async function run() {
     ;['pages/index/index.js', 'pages/schedule/schedule.js', 'pages/detail/detail.js'].forEach((rel) => {
       const src = fs.readFileSync(path.join(ROOT, rel), 'utf8')
       check(`实时比分：${rel.split('/')[1]} 页在 onHide 与 onUnload 都清掉轮询定时器`,
-        /onHide\(\)\s*\{\s*this\.stopLivePoll\(\)/.test(src)
-        && /onUnload\(\)\s*\{\s*this\.stopLivePoll\(\)/.test(src))
+        /onHide\(\)\s*\{[^}]*this\.stopLivePoll\(\)/.test(src)
+        && /onUnload\(\)\s*\{[^}]*this\.stopLivePoll\(\)/.test(src))
       // ⚠️ 首页/赛程页看的是**列表**（有任意一场 live 就轮询），详情页只看**这一场**
       //    （`m.status !== 'live'`）—— 所以两处的判定写法不同，别写成一样的断言。
       const page = rel.split('/')[1]
-      const guarded = page === 'detail'
-        ? /m\.status !== 'live'/.test(src)
-        : /data\.hasLive\(\)/.test(src)
-      check(`实时比分：${page} 页只在有进行中比赛时才起定时器`,
-        /startLivePoll/.test(src) && guarded,
-        page === 'detail' ? '详情页按「这一场」判定' : '列表页按 hasLive() 判定')
+      check(`实时比分：${page} 页窗口外的前台定时器不请求比分，临近开赛会主动发现`,
+        /startLivePoll/.test(src) && /data\.needsLivePoll\(/.test(src) && /liveVisible/.test(src))
     })
 
     const wf = fs.readFileSync(path.join(ROOT, '.github/workflows/sync-schedule.yml'), 'utf8')
     check('实时比分：盯场挂在已有 15 分钟任务末尾（不新增外部定时任务）',
-      /tools\/live-watch\.js/.test(wf) && /continue-on-error:\s*true/.test(wf))
+      /tools\/live-watch\.js/.test(wf)
+      && !/name: 盯进行中的比赛[^]*?continue-on-error:[^]*?run: node tools\/live-watch/.test(wf))
     check('实时比分：timeout 给到 20 分钟（主同步 2 分钟 + 盯场 11 分钟）',
       /timeout-minutes:\s*20/.test(wf))
   }
@@ -3730,9 +3724,9 @@ async function run() {
   check('云同步：快通道只认今天/昨天开赛的场次（更早的桶没读，会被误判成空壳）',
     /const inRange = /.test(csSrc) && /dk === todayKey \|\| dk === ydayKey/.test(csSrc))
   // 实测：W6D2 已抓全 4 局、只是 fin 还是 false —— 只看 fin 会白补抓一次
-  check('云同步：判空壳不能只看 fin（内容齐全但 fin=false 不算壳；KPL 局数不足才算）',
+  check('云同步：足球/NBA 的 fin=false 必须补最终版本；KPL 同时核验局数',
     /const isShell = /.test(csSrc) && /want > 0 && have < want/.test(csSrc)
-    && !/d\.fin === true && MD\.hasContent\(d\)/.test(csSrc))
+    && /d\.fin === false/.test(csSrc))
   // 实测：常规 2h 间隔会让快通道「报了壳却一场都不抓」（刚抓过 → gapOk 恒 false）
   // 🔴 2026-10-11 加强：**壳的间隔必须按 15 分钟算，且两条路径一视同仁**。
   //    主闸放行那一班若正好是第一班碰上「抓到一半的比赛刚结束」，原来的 2 小时闸会把它挡下
@@ -3868,7 +3862,7 @@ async function run() {
   // 🔴 但「不写」不能变成「永不写」—— 客户端要能区分「比分没变」和「同步挂了」。
   const lwSrc = fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')
   check('实时比分：内容没变就不重复写云端（省掉占大头的无效写入）',
-    /sig === lastSig/.test(lwSrc) && /JSON\.stringify\(rows\)/.test(lwSrc))
+    /sig === lastSig/.test(lwSrc) && /JSON\.stringify\(\[rows,/.test(lwSrc))
   const hbRounds = Number((lwSrc.match(/const HEARTBEAT_ROUNDS = (\d+)/) || [])[1])
   check('实时比分：心跳上限存在且不超过 10 轮（别让客户端分不清「没变」和「挂了」）',
     Number.isFinite(hbRounds) && hbRounds >= 1 && hbRounds <= 10, `${hbRounds} 轮 ≈ ${hbRounds} 分钟`)

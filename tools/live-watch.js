@@ -44,7 +44,7 @@ const COMPETITIONS = require('../data/meta.js').competitions
 // 🔴 LOL / LOL_KEY 同理：LoL 快通道要打与主同步完全相同的上游和 key。
 const SYNC = require('./sync.js')
 const SYNC_COMPS = SYNC.COMPETITIONS
-const { KPL_STATE, KPL_CANCELED, LOL, LOL_KEY } = SYNC
+const { KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus } = SYNC
 // LoL 的「进行中也要出局分」判定在 lol-status.js 里（与主同步同源，别各写一份）
 const lolStatus = require('./lol-status.js').lolStatus
 
@@ -54,6 +54,15 @@ const IDLE_EXIT_ROUNDS = 3 // 连续 N 轮没有 live 比赛就退出（省 Acti
 // 内容一直没变时，至少每隔 N 轮还是要写一次（=60s×5≈5 分钟一次心跳）。
 // 目的：客户端要能区分「比分确实没变」和「同步挂了」这两种情况。
 const HEARTBEAT_ROUNDS = 5
+const sourceHealth = {}
+function sourceResult(key, error) {
+  const previous = sourceHealth[key] || {}
+  sourceHealth[key] = {
+    ok: !error, checkedAt: new Date().toISOString(),
+    ...(error ? { lastSuccess: previous.ok ? previous.checkedAt : previous.lastSuccess || null,
+      error: String(error.message || error).slice(0, 160) } : {}),
+  }
+}
 
 function arg(name, def) {
   const hit = process.argv.slice(2).find((a) => a.startsWith(`--${name}=`))
@@ -87,21 +96,22 @@ function espnDates() {
   return out
 }
 
-async function getJSON(url) {
+async function getJSON(url, headers = {}) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    let timer
     try {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 12000)
-      const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0' } })
+      timer = setTimeout(() => controller.abort(), 12000)
+      const res = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0', ...headers } })
       clearTimeout(timer)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json()
     } catch (err) {
-      if (attempt === 1) return null
+      if (attempt === 1) throw err
       await new Promise((r) => setTimeout(r, 400))
-    }
+    } finally { clearTimeout(timer) }
   }
-  return null
+  throw new Error('请求未完成')
 }
 
 /**
@@ -170,10 +180,20 @@ async function scan(comps) {
     return Number.isFinite(t) && t > now - 2 * 3600000 && t < now + 3 * 3600000
   }
 
-  for (const c of comps) {
+  let cursor = 0
+  const worker = async () => { while (cursor < comps.length) {
+    const c = comps[cursor++]
     let hit = 0
+    let problem = null
     for (const d of dates) {
-      const j = await getJSON(`${ESPN}/${c.sport}/${c.league}/scoreboard?dates=${d}`)
+      let j
+      try {
+        j = await getJSON(`${ESPN}/${c.sport}/${c.league}/scoreboard?dates=${d}`)
+      } catch (err) {
+        problem = err
+        console.error(`[live-watch] ESPN(${c.key}/${d}) 失败：${err.message}`)
+        continue
+      }
       const evs = (j && j.events) || []
       for (const ev of evs) {
         const st = ev.status && ev.status.type && ev.status.type.state
@@ -181,6 +201,7 @@ async function scan(comps) {
         // 只保留时间窗内的赛事做候选（不论它现在是未开始/进行中/已结束）
         if (comp && near(comp.date || ev.date)) found[c.key] = 1
         if (st !== 'in' && st !== 'post') continue
+        if (st === 'in') found[c.key] = 1
         if (!comp) continue
         const cs = comp.competitors || []
         const h = cs.find((x) => x.homeAway === 'home') || cs[0]
@@ -207,7 +228,9 @@ async function scan(comps) {
       }
     }
     if (hit) found[c.key] = found[c.key] || 0
-  }
+    sourceResult(`espn:${c.key}:${c.league}`, problem)
+  } }
+  await Promise.all(Array.from({ length: Math.min(6, comps.length) }, worker))
   return { rows, liveComps: Object.keys(found).filter((k) => found[k] === 1) }
 }
 
@@ -224,7 +247,7 @@ const CBA = 'https://portal-server.cbaleague.com'
 
 function cbaStatusText(ev) {
   const q = Number(ev.Quarter)
-  if (!Number.isFinite(q) || q <= 0) return '已结束'
+  if (!Number.isFinite(q) || q <= 0) return '进行中'
   const mm = ev.Minutes == null ? '' : String(ev.Minutes).padStart(2, '0')
   const ss = ev.Seconds == null ? '' : String(ev.Seconds).padStart(2, '0')
   return mm && ss ? `第${q}节 ${mm}:${ss}` : `第${q}节`
@@ -232,6 +255,8 @@ function cbaStatusText(ev) {
 
 async function scanCba() {
   const j = await getJSON(`${CBA}/home/home_schedules`)
+  if (!j || !j.data) throw new Error('CBA 响应缺少赛程')
+  sourceResult('cba')
   const arr = Object.values((j && j.data) || {})
   const now = Date.now()
   const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
@@ -246,16 +271,18 @@ async function scanCba() {
   arr.forEach((ev) => {
     const start = Date.parse(`${ev.dates}T${ev.time || '00:00'}:00+08:00`)
     if (Number.isFinite(start) && start >= lo && start <= hi) near = true
-    if (Number(ev.Status) === 1) return // 未开始
-    // 只保留时间窗内的（2 小时前 ~ 3 小时后），别把几个月前的老比赛也推上去
-    if (Number.isFinite(start) && (start < lo || start > hi)) return
-    const q = num(ev.Quarter)
+    if (!Number.isFinite(start) || start > hi) return
     const hs = num(ev.HomeTeamScore)
     const as = num(ev.VisitingTeamScore)
+    const st = cbaStatus(ev, hs != null || as != null, start, now)
+    if (st === 'upcoming') return
+    // 进行中的比赛不受两小时窗口限制，末节/加时也必须持续跟踪。
+    if (st === 'finished' && start < now - 12 * 3600000) return
+    if (st === 'live') near = true
     rows.push({
       id: `cba-${ev.ScheduleID}`,
-      st: q != null ? 'live' : 'finished',
-      stt: cbaStatusText(ev),
+      st,
+      stt: st === 'finished' ? '已结束' : cbaStatusText(ev),
       hs: hs || 0,
       as: as || 0,
     })
@@ -299,6 +326,7 @@ async function scanKpl() {
   let json
   try {
     const res = await fetch(`${KPL_API}/getScheduleList`, {
+      signal: AbortSignal.timeout(12000),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -310,9 +338,12 @@ async function scanKpl() {
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     json = await res.json()
+    if (!Array.isArray(json && json.data && json.data.list)) throw new Error('KPL 响应缺少赛程')
+    sourceResult('kpl')
   } catch (err) {
     // 静默降级：KPL 挂了绝不能连累 ESPN 那条主通道
     console.error('[live-watch] KPL 抓取失败，本轮跳过：', (err && err.message) || err)
+    sourceResult('kpl', err)
     return []
   }
 
@@ -365,24 +396,42 @@ async function scanKpl() {
  *    `tools/smoke.js` 有守卫盯着这两处的 id 拼法。
  */
 // 时间窗：进行中的一律收；已结束只留 6 小时内的（BO5 最长 ~5h，再加上游 state 滞后）。
-const LOL_FINISH_KEEP_MS = 6 * 3600000
+const LOL_FINISH_KEEP_MS = 12 * 3600000
 
 async function scanLol() {
   const now = Date.now()
   // 7 个联赛**并行**拉（串行的话一轮就 20~30 秒，把 60 秒的循环周期挤满）
   const chunks = await Promise.all(LOL_COMPS.map(async (lg) => {
     let j
+    const evs = []
     try {
       j = await getJSON(`${LOL}/getSchedule?hl=zh-CN&leagueId=${lg.lol}`, { 'x-api-key': LOL_KEY })
+      if (!Array.isArray(j && j.data && j.data.schedule && j.data.schedule.events)) throw new Error('LoL 响应缺少赛程')
+      evs.push(...j.data.schedule.events)
+      let token = j.data.schedule.pages && j.data.schedule.pages.newer
+      const seen = new Set()
+      while (token && !seen.has(token) && seen.size < 12) {
+        seen.add(token)
+        j = await getJSON(`${LOL}/getSchedule?hl=zh-CN&leagueId=${lg.lol}&pageToken=${encodeURIComponent(token)}`, { 'x-api-key': LOL_KEY })
+        const page = j && j.data && j.data.schedule
+        if (!page || !Array.isArray(page.events)) throw new Error('LoL 翻页响应缺少赛程')
+        evs.push(...page.events)
+        token = page.pages && page.pages.newer
+        if (page.events.some(ev => Date.parse(ev.startTime) > now + 3 * 3600000)) break
+      }
+      sourceResult(`lol:${lg.key}`)
     } catch (err) {
       // 静默降级：某个联赛挂了不能连累其它联赛，更不能连累 ESPN 主通道
       console.error(`[live-watch] LoL(${lg.key}) 抓取失败，跳过：`, (err && err.message) || err)
+      sourceResult(`lol:${lg.key}`, err)
       return []
     }
-    const evs = (j && j.data && j.data.schedule && j.data.schedule.events) || []
     const out = []
+    const seenIds = new Set()
     for (const ev of evs) {
       if (ev.type !== 'match' || !ev.match) continue
+      if (seenIds.has(ev.match.id)) continue
+      seenIds.add(ev.match.id)
       const st = lolStatus(ev)
       if (st.status === 'upcoming') continue
       const t = Date.parse(ev.startTime)
@@ -404,7 +453,7 @@ async function push(cloud, rows) {
   const nowIso = new Date().toISOString()
   const row = {
     id: 'latest',
-    data: { v: 1, rows, generatedAt: nowIso },
+    data: { v: 1, rows, sources: sourceHealth, generatedAt: nowIso },
     generated_at: nowIso,
     created_at: nowIso,
   }
@@ -437,6 +486,7 @@ async function main() {
   let lastSig = null
   let roundsSinceWrite = 0
   let idleWritesSkipped = 0
+  let writeFailed = false
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -450,7 +500,12 @@ async function main() {
     // 开赛那一刻会没人扫（最多晚 5 分钟）。见 scanCba 的 near 注释。
     const cbaOn = cbaActive || useAll
     if (cbaOn) {
-      const cba = await scanCba()
+      let cba
+      try { cba = await scanCba() } catch (err) {
+        console.error('[live-watch] CBA 失败：', err.message)
+        sourceResult('cba', err)
+        cba = { rows: [], near: cbaActive }
+      }
       const cbaRows = cba.rows
       if (cbaRows.length) {
         rows.push(...cbaRows)
@@ -484,26 +539,29 @@ async function main() {
     console.log(
       `[live-watch] 第 ${round} 轮 ${useAll ? '全量' : `收敛(${comps.length})`}：${rows.length} 场（进行中 ${live}），耗时 ${Date.now() - t0}ms`
     )
-    if (rows.length) {
+    rows.sort((a, b) => a.id.localeCompare(b.id))
+    if (rows.length || Object.keys(sourceHealth).length) {
       // 🔴 内容去重 + 心跳保活（2026-10-05 云端额度事故后加）
       //    原本每一轮都无条件 upsert 一次，但**绝大多数轮次比分根本没变** ——
       //    那些写入既没有信息量，又实打实消耗云端资源点（若按请求数计费，这条路
       //    原本独占全部写入请求的 73%）。
       //    规则：内容变了立刻写（60 秒粒度、新鲜度零损失）；一直没变则每
       //    HEARTBEAT_ROUNDS 轮补一次，让客户端知道这条管道还活着，而不是同步挂了。
-      const sig = JSON.stringify(rows)
+      const sig = JSON.stringify([rows, Object.keys(sourceHealth).sort().map(k => [k, sourceHealth[k].ok])])
       if (sig === lastSig && roundsSinceWrite < HEARTBEAT_ROUNDS) {
         idleWritesSkipped += 1
       } else {
-        await push(cloud, rows)
-        lastSig = sig
-        roundsSinceWrite = 0
+        if (await push(cloud, rows)) {
+          writeFailed = false
+          lastSig = sig
+          roundsSinceWrite = 0
+        } else writeFailed = true
       }
     }
     roundsSinceWrite += 1
     total += rows.length
 
-    if (live) {
+    if (live || liveComps.length || cbaActive) {
       idle = 0
       comps = TARGETS.filter((c) => liveComps.indexOf(c.key) > -1)
       if (!comps.length) comps = TARGETS
@@ -522,12 +580,14 @@ async function main() {
       console.log(`[live-watch] 到达 ${minutes} 分钟上限，退出（本轮共推 ${total} 场）`)
       break
     }
-    await new Promise((r) => setTimeout(r, everySec * 1000))
+    // 周期从本轮开始计时；抓取耗时不再叠加到 60 秒等待上。
+    await new Promise((r) => setTimeout(r, Math.max(0, everySec * 1000 - (Date.now() - t0))))
   }
   console.log(
     `[live-watch] 完成：${round} 轮，共 ${total} 场`
     + (idleWritesSkipped ? `，内容未变跳过 ${idleWritesSkipped} 次云端写入` : '')
   )
+  if (writeFailed || Object.values(sourceHealth).some(s => !s.ok)) process.exitCode = 2
 }
 
 if (require.main === module) {

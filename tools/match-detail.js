@@ -34,6 +34,7 @@ const https = require('https')
 const zhNames = require('./zh-names')
 const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
+const { isLol, fetchLolDetail } = require('./lol-detail')
 // 位置分组规则的唯一来源（`basketPos` 就在里面，工具侧与页面侧共用一份）
 const rosterView = require('../utils/roster.js')
 
@@ -725,7 +726,7 @@ function resolveSlug(m) {
  *    光把 `SLUG` 里的键删掉，云端老数据不会消失（详情桶是打进包的，占体积）。
  */
 function detailCapable(comp) {
-  return !!SLUG[comp] || comp === 'chn' || comp === 'kpl'
+  return !!SLUG[comp] || comp === 'chn' || comp === 'kpl' || isLol(comp)
 }
 
 /**
@@ -748,6 +749,7 @@ function hasContent(d) {
   if (d.box) return true
   if (d.lineups) return true
   if (d.kpl && Array.isArray(d.kpl.list) && d.kpl.list.length) return true
+  if (d.lol && Array.isArray(d.lol.rounds) && d.lol.rounds.length) return true
   if (d.h2h && Array.isArray(d.h2h.list) && d.h2h.list.length) return true
   const f = d.form || {}
   if ((Array.isArray(f.home) && f.home.length) || (Array.isArray(f.away) && f.away.length)) return true
@@ -901,7 +903,9 @@ async function fetchDetail(m) {
   const out = {
     id: m.id,
     comp: m.comp,
-    fin: m.status === 'finished',
+    fin: m.status === 'finished' && !!(j && j.header && j.header.competitions
+      && j.header.competitions[0] && j.header.competitions[0].status
+      && j.header.competitions[0].status.type && j.header.competitions[0].status.type.completed),
     v: SCHEMA, // 抽取逻辑版本，变了就重抓一次
     ts: Date.now(), // 抓取时刻：未开赛的场次据此判断要不要刷新
     events: pickEvents(j, homeId),
@@ -991,6 +995,7 @@ function needsFetch(m, captured) {
     //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
     const emptyShell = Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
     let shell = prev.fin === false || emptyShell
+    if (isLol(m.comp) && (!prev.lol || !prev.lol.complete)) shell = true
     if (m.comp === 'kpl') {
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）。
       // **有数据 ≠ 数据完整**（见文件头事故二）。
@@ -1046,9 +1051,10 @@ async function main() {
   const targets = list.filter((m) => {
     // ⚠️ 必须走 resolveSlug（含比赛自带的 slug），只查 SLUG 表会把中国国字号漏掉
     //    KPL 走另一条链路（官方 getScheduleDetail），不在 SLUG 表里
-    if (!resolveSlug(m) && m.comp !== 'kpl') return false
+    if (!resolveSlug(m) && m.comp !== 'kpl' && !isLol(m.comp)) return false
     const t = new Date(m.start).getTime()
     if (Number.isNaN(t)) return false
+    if (isLol(m.comp)) return m.status === 'finished' && now - t < KEEP_DAYS * 24 * 3600 * 1000
     if (m.comp === 'kpl') {
       // 单局信息只在开打之后才存在，未开赛抓不到任何东西
       return m.status === 'finished' || m.status === 'live' || m.status === 'inprogress'
@@ -1073,7 +1079,8 @@ async function main() {
   const failed = []
   await mapLimit(todo, 4, async (m) => {
     try {
-      const d = m.comp === 'kpl' ? await fetchKplDetail(m) : await fetchDetail(m)
+      const d = isLol(m.comp) ? await fetchLolDetail(m)
+        : m.comp === 'kpl' ? await fetchKplDetail(m) : await fetchDetail(m)
       if (!d) return
       const key = `d-${dayKey(m.start)}`
       if (!buckets[key]) buckets[key] = { day: dayKey(m.start), payload: {} }
@@ -1130,14 +1137,21 @@ async function main() {
     },
   }
   const file = path.join(__dirname, '..', 'data', 'match-details.js')
+  // LOL 统计只在云端；既有详情仍保留包内兜底，避免扩充稀缺的小程序包。
+  const bundled = { ...out, buckets: touched.map(b => ({ ...b,
+    payload: Object.fromEntries(Object.entries(b.payload).filter(([, d]) => !isLol(d.comp))),
+  })) }
   fs.writeFileSync(
     file,
-    `// 自动生成，请勿手改：由 tools/match-detail.js 写入\nmodule.exports = ${JSON.stringify(out)}\n`,
+    `// 自动生成，请勿手改：由 tools/match-detail.js 写入\nmodule.exports = ${JSON.stringify(bundled)}\n`,
     'utf8'
   )
   const size = Math.round(fs.statSync(file).size / 1024)
   console.log(`[match-detail] 抓取成功 ${ok} 场，失败 ${failed.length} 场，${touched.length} 个日桶 / 阵容 ${lineups} 场 / ${size}KB`)
   savePlayerPool()
+  const cloudFile = path.join(__dirname, '..', '.workbuddy', 'match-details-cloud.json')
+  fs.mkdirSync(path.dirname(cloudFile), { recursive: true })
+  fs.writeFileSync(cloudFile, JSON.stringify(out))
   if (failed.length) console.warn('[match-detail] 失败场次：', failed.slice(0, 6).join(' | '))
   if (!ok) {
     console.warn('[match-detail] ⚠ 本轮没有抓到任何详情，不覆盖已有数据')

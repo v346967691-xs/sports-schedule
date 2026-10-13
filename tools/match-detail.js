@@ -127,7 +127,7 @@ const SLIM_DETAIL = { friendly: true, cnl: true }
  *    已结束的比赛只抓一次、之后永不刷新，光改代码老数据不会变。
  *    needsFetch 见到版本号不同会强制重抓一次，老数据自动淘汰。
  */
-const SCHEMA = 6 // 6 = 新增 KPL 单局详情（pickKplDetail：逐局胜方 + 十名选手 + 英雄中文名）
+const SCHEMA = 6 // 新 MVP 使用独立 mvp.v=1，避免为增量功能重抓全部历史详情。
 
 const FINISHED_MS = 48 * 3600 * 1000 // 已结束：只补最近 48 小时
 const UPCOMING_MS = 7 * 24 * 3600 * 1000 // 赛前预览：未来 7 天内开赛的也抓
@@ -642,6 +642,7 @@ function pickLineups(j, homeId) {
         const name = zhNames.playerZh(a.id) || String(a.shortName || a.displayName || '')
         if (!name) return null
         const row = { n: name }
+        if (a.id) row.i = String(a.id)
         if (p.jersey) row.j = String(p.jersey)
         const pos = posGroup(p.position && (p.position.name || p.position.displayName))
         if (pos) row.p = pos
@@ -688,11 +689,12 @@ function pickBasketballPlayers(j, homeId) {
         if (!a || a.didNotPlay) return null
         const st = (a.stats || []).map((v) => String(v == null ? '' : v))
         if (st.length !== BASKET_STAT_LABELS.length) return null
-        if (!st[0] || st[0] === '0') return null // MIN = 0，没上场
+        if (!positiveMinutes(st[0])) return null // 包括 0:00，不能把 DNP 算作参赛
         const ath = a.athlete || {}
         const name = zhNames.playerZh(ath.id) || String(ath.shortName || ath.displayName || '')
         if (!name) return null
         const row = { n: name, s: st.join('|') }
+        if (ath.id) row.i = String(ath.id)
         if (ath.jersey) row.j = String(ath.jersey)
         const pos = rosterView.basketPos(ath.position)
         if (pos) row.p = pos
@@ -707,6 +709,200 @@ function pickBasketballPlayers(j, homeId) {
   const A = one(away)
   if (!H || !A || (!H.length && !A.length)) return null
   return { l: BASKET_STAT_LABELS, home: H, away: A }
+}
+
+/* ---------------------- 实际参赛球员的 MVP 候选 ---------------------- */
+
+function positiveMinutes(value) {
+  const text = String(value == null ? '' : value).trim()
+  if (/^\d+:\d{2}$/.test(text)) {
+    const [minutes, seconds] = text.split(':').map(Number)
+    return seconds < 60 && minutes * 60 + seconds > 0
+  }
+  return /^\d+(\.\d+)?$/.test(text) && Number(text) > 0
+}
+
+function espnFinal(j, m) {
+  const header = j && j.header
+  const status = header && header.competitions && header.competitions[0]
+    && header.competitions[0].status && header.competitions[0].status.type
+  return !!(m && m.status === 'finished' && header
+    && String(header.id) === String(m.id).split('-').pop()
+    && status && status.completed === true && status.state === 'post'
+    && !/cancel|postpon|abandon|suspend/i.test(String(status.name || '')))
+}
+
+function numericId(value) {
+  const id = String(value == null ? '' : value).trim()
+  return /^[1-9]\d*$/.test(id) ? id : ''
+}
+
+// 候选名单不可用球队数组下标猜主客；无真实队伍 ID 时不开放投票。
+function mvpSide(teamId, m) {
+  const id = String(teamId == null ? '' : teamId)
+  const h = String(m && m.home && m.home.id || '')
+  const a = String(m && m.away && m.away.id || '')
+  if (!id || !h || !a || h === a) return ''
+  return id === h ? 'home' : id === a ? 'away' : ''
+}
+
+function mvpResult(kind, candidates, note) {
+  if (!candidates.length || !candidates.some(c => c.side === 'home')
+    || !candidates.some(c => c.side === 'away')) return null
+  const ids = new Set()
+  for (const candidate of candidates) {
+    if (ids.has(candidate.id)) return null
+    ids.add(candidate.id)
+  }
+  return { v: 1, kind, complete: true, candidates, note }
+}
+
+function pickBasketballMvp(j, m) {
+  if (!espnFinal(j, m)) return null
+  const candidates = []
+  const labels = { PTS: '得分', REB: '篮板', AST: '助攻',
+    STL: '抢断', BLK: '盖帽', FG: '投篮', '3PT': '三分', FT: '罚球', MIN: '分钟' }
+  const roles = { BG: '后卫', BF: '前锋', BC: '中锋' }
+  const teams = j.boxscore && j.boxscore.players || []
+  for (const team of teams) {
+    const side = mvpSide(team.team && team.team.id, m)
+    if (!side) return null
+    const segment = (team.statistics || [])[0] || {}
+    const columns = segment.labels || []
+    if (!Object.keys(labels).every(label => columns.indexOf(label) !== -1)) return null
+    for (const player of segment.athletes || []) {
+      if (!player || player.didNotPlay) continue
+      const values = player.stats || []
+      if (!positiveMinutes(values[columns.indexOf('MIN')])) continue
+      const athlete = player.athlete || {}
+      const id = numericId(athlete.id)
+      const name = zhNames.playerZh(id) || String(athlete.shortName || athlete.displayName || '').trim()
+      if (!id || !name) return null
+      const roleKey = rosterView.basketPos(athlete.position) || 'unknown'
+      const stats = Object.entries(labels).map(([column, label]) => {
+        const value = values[columns.indexOf(column)]
+        return value == null || String(value).trim() === '' ? null : { label, value: String(value) }
+      }).filter(Boolean)
+      candidates.push({ id: `espn:${id}`, name, side, role: roles[roleKey] || '球员', roleKey, stats })
+    }
+  }
+  return mvpResult('basketball', candidates, '仅列本场实际出场球员，数据来自 ESPN。')
+}
+
+function pickFootballMvp(j, m) {
+  if (!espnFinal(j, m)) return null
+  const candidates = []
+  const roles = { G: '门将', D: '后卫', M: '中场', F: '前锋', SUB: '替补' }
+  const statLabels = { totalGoals: '进球', goalAssists: '助攻', totalShots: '射门',
+    shotsOnTarget: '射正', saves: '扑救', yellowCards: '黄牌', redCards: '红牌' }
+  const teams = Array.isArray(j.rosters) ? j.rosters : []
+  for (const team of teams) {
+    const side = mvpSide(team.team && team.team.id, m)
+    if (!side) return null
+    const roster = team.roster || []
+    if (!roster.some(p => p.starter === true || p.starter === 1)) return null
+    for (const player of roster) {
+      if (!player || player.didNotPlay) continue
+      const starter = player.starter === true || player.starter === 1
+      const subbedIn = player.subbedIn === true || player.subbedIn === 1
+      // appearances/subIns 可能是累计字段；只接受明确的本场首发/换上标记。
+      if (!starter && !subbedIn) continue
+      const athlete = player.athlete || {}
+      const id = numericId(athlete.id)
+      const name = zhNames.playerZh(id) || String(athlete.shortName || athlete.displayName || '').trim()
+      if (!id || !name) return null
+      const roleKey = posGroup(player.position && (player.position.name || player.position.displayName))
+        || (starter ? 'unknown' : 'SUB')
+      const stats = []
+      for (const stat of player.stats || []) {
+        const label = statLabels[stat.name]
+        if (!label || (stat.name === 'saves' && roleKey !== 'G')) continue
+        const value = stat.displayValue == null ? stat.value : stat.displayValue
+        if (value == null || String(value).trim() === '' || !Number.isFinite(Number(value))) continue
+        stats.push({ label, value: String(value) })
+      }
+      candidates.push({ id: `espn:${id}`, name, side, role: roles[roleKey] || '球员', roleKey, stats })
+    }
+  }
+  return mvpResult('football', candidates, '仅列本场首发及已确认换上球员；仅显示上游提供的统计。')
+}
+
+function kplFinal(schedule, m) {
+  return !!(schedule && m && m.status === 'finished' && Number(schedule.schedule_status) === 4
+    && String(schedule.scheduleid) === String(m.id).replace(/^kpl-/, '')
+    && String(schedule.seasonid) === String(m.seasonid)
+    && mvpSide(schedule.team_a_id, m) === 'home' && mvpSide(schedule.team_b_id, m) === 'away')
+}
+
+function pickKplMvp(j, m, schedule) {
+  if (!kplFinal(schedule, m)) return null
+  if (j && j.result != null && Number(j.result) !== 0) return null
+  const data = j && j.data || {}
+  const homeScore = Number(schedule.team_a_score)
+  const awayScore = Number(schedule.team_b_score)
+  if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0
+    || homeScore === awayScore || homeScore + awayScore < 1) return null
+  const rounds = new Map()
+  for (const round of data.round_details || []) {
+    const number = Number(round.round)
+    if (!Number.isInteger(number) || number < 1) return null
+    // 重复响应不能把出场/胜局加两遍；内容冲突则整份不用于投票。
+    const old = rounds.get(number)
+    if (old && JSON.stringify(old) !== JSON.stringify(round)) return null
+    rounds.set(number, round)
+  }
+  if (rounds.size !== homeScore + awayScore) return null
+  const people = new Map()
+  for (const player of data.players || []) {
+    const id = numericId(player.playerid)
+    if (id && people.has(id) && JSON.stringify(people.get(id)) !== JSON.stringify(player)) return null
+    if (id) people.set(id, player)
+  }
+  const candidates = new Map()
+  let homeWins = 0
+  let awayWins = 0
+  for (let number = 1; number <= rounds.size; number++) {
+    const round = rounds.get(number)
+    if (!round) return null
+    const winSide = mvpSide(round.win_team, m)
+    if (!winSide) return null
+    if (winSide === 'home') homeWins++
+    else awayWins++
+    const picked = new Set()
+    const count = { home: 0, away: 0 }
+    for (const pick of round.players || []) {
+      const id = numericId(pick.playerid)
+      const player = people.get(id)
+      const side = player && mvpSide(player.team_id, m)
+      const name = String(player && (player.player_name_short || player.player_name) || '').trim()
+      const heroId = numericId(pick.hero_id)
+      if (!id || !side || !name || !heroId || picked.has(id)) return null
+      picked.add(id)
+      count[side]++
+      const position = Number(pick.position)
+      const roleKey = rosterView.KPL_POS[position] ? String(position) : 'unknown'
+      let candidate = candidates.get(id)
+      if (!candidate) {
+        candidate = { id: `kpl:${id}`, name, side, roleKey,
+          role: rosterView.KPL_POS[position] || '选手', stats: [], champions: [], games: 0, wins: 0 }
+        candidates.set(id, candidate)
+      }
+      if (candidate.roleKey !== roleKey) { candidate.roleKey = 'mixed'; candidate.role = '多位置' }
+      candidate.games++
+      if (side === winSide) candidate.wins++
+      if (pick.hero_name && !candidate.champions.some(hero => hero.id === heroId)) {
+        candidate.champions.push({ id: heroId, name: String(pick.hero_name) })
+      }
+    }
+    if (count.home !== 5 || count.away !== 5) return null
+  }
+  if (homeWins !== homeScore || awayWins !== awayScore) return null
+  const rows = Array.from(candidates.values()).map(candidate => {
+    candidate.stats = [{ label: '出场', value: String(candidate.games) }, { label: '胜局', value: String(candidate.wins) }]
+    delete candidate.wins
+    return candidate
+  })
+  return mvpResult('kpl', rows, '按实际逐局选人汇总出场、胜局及英雄；官方未提供 KDA 和经济数据。')
 }
 
 /**
@@ -745,6 +941,7 @@ function detailCapable(comp) {
  */
 function hasContent(d) {
   if (!d) return false
+  if (d.mvp && d.mvp.v === 1 && d.mvp.complete === true && Array.isArray(d.mvp.candidates) && d.mvp.candidates.length > 1) return true
   if (Array.isArray(d.events) && d.events.length) return true
   if (Array.isArray(d.stats) && d.stats.length) return true
   if (d.box) return true
@@ -776,7 +973,7 @@ function pickKplDetail(j, m) {
   if (!rounds.length) return null
   const homeId = (m.home && m.home.id) || ''
   const awayId = (m.away && m.away.id) || ''
-  const sideOf = (teamId) => (teamId === homeId ? 'h' : teamId === awayId ? 'a' : '')
+  const sideOf = (teamId) => (String(teamId) === String(homeId) ? 'h' : String(teamId) === String(awayId) ? 'a' : '')
 
   const heroes = {}
   const people = {}
@@ -823,11 +1020,20 @@ function pickKplDetail(j, m) {
  *    （从 sync.js 导出来的，不是复制的）。
  * ⚠️ 失败返回空对象：KPL 官方接口无 SLA，快通道不能因为它挂掉。
  */
+const kplScheduleRequests = new Map()
+function loadKplSchedule(seasonid) {
+  const key = String(seasonid || '')
+  if (!kplScheduleRequests.has(key)) {
+    kplScheduleRequests.set(key, postJSON(`${KPL}/getScheduleList`, { seasonid: key })
+      .then(j => j && j.data && Array.isArray(j.data.list) ? j.data.list : []))
+  }
+  return kplScheduleRequests.get(key)
+}
+
 async function fetchKplStatus() {
   try {
     const { KPL_STATE: STATE, KPL_CANCELED: CANCELED } = require('./sync.js')
-    const j = await postJSON(`${KPL}/getScheduleList`, { seasonid: '' })
-    const list = (j && j.data && j.data.list) || []
+    const list = await loadKplSchedule('')
     const out = {}
     list.forEach((ev) => {
       if (!ev || !ev.scheduleid || ev.schedule_status === CANCELED) return
@@ -852,13 +1058,18 @@ async function fetchKplDetail(m) {
   // —— 宁可跳过也不存错数据（用户红线：宁可不要，也不要错的）
   if (!scheduleid || !seasonid) return null
   const j = await postJSON(`${KPL}/getScheduleDetail`, { scheduleid, seasonid })
+  // detail 没有状态字段。列表严格 4=完赛，不能从已有局分/本地状态猜已结束。
+  let schedule = null
+  try { schedule = (await loadKplSchedule(seasonid)).find(row => String(row.scheduleid) === scheduleid) }
+  catch (err) { console.warn('[match-detail] KPL 完赛状态验证失败：', err && err.message) }
   return {
     id: m.id,
     comp: m.comp,
-    fin: m.status === 'finished',
+    fin: kplFinal(schedule, m),
     v: SCHEMA,
     ts: Date.now(),
     kpl: pickKplDetail(j, m),
+    mvp: pickKplMvp(j, m, schedule),
   }
 }
 
@@ -904,9 +1115,7 @@ async function fetchDetail(m) {
   const out = {
     id: m.id,
     comp: m.comp,
-    fin: m.status === 'finished' && !!(j && j.header && j.header.competitions
-      && j.header.competitions[0] && j.header.competitions[0].status
-      && j.header.competitions[0].status.type && j.header.competitions[0].status.type.completed),
+    fin: espnFinal(j, m),
     v: SCHEMA, // 抽取逻辑版本，变了就重抓一次
     ts: Date.now(), // 抓取时刻：未开赛的场次据此判断要不要刷新
     events: pickEvents(j, homeId),
@@ -916,6 +1125,7 @@ async function fetchDetail(m) {
     lineups: slim ? null : pickLineups(j, homeId),
     // 🔴 只有篮球有（足球的球员维度数据在 `rosters` 里，已由 lineups 覆盖）
     box: BASKETBALL[m.comp] ? pickBasketballPlayers(j, homeId) : null,
+    mvp: BASKETBALL[m.comp] ? pickBasketballMvp(j, m) : pickFootballMvp(j, m),
   }
   // 🔴 事故四（写入侧）：已完赛却一块内容都没有 = 上游给了残缺响应，
   //    当成失败返回 null —— 这样既不会覆盖云端已有的好数据，也不会造出新的永久空壳。
@@ -1000,6 +1210,8 @@ function needsFetch(m, captured) {
     //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
     const emptyShell = Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
     let shell = prev.fin === false || emptyShell
+    // 名单/比赛统计可能晚于比分结算；投票数据在 48h 内独立补抓。
+    if (!isLol(m.comp) && (!prev.mvp || prev.mvp.v !== 1 || prev.mvp.complete !== true)) shell = true
     if (isLol(m.comp) && (!prev.lol || !prev.lol.complete || prev.lol.playerVersion !== 1)) shell = true
     if (m.comp === 'kpl') {
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）。
@@ -1165,7 +1377,11 @@ async function main() {
   const file = path.join(__dirname, '..', 'data', 'match-details.js')
   // LOL 统计只在云端；既有详情仍保留包内兜底，避免扩充稀缺的小程序包。
   const bundled = { ...out, buckets: touched.filter(b => b.day >= cutoff).map(b => ({ id: b.id, day: b.day,
-    payload: Object.fromEntries(Object.entries(b.payload).filter(([, d]) => !isLol(d.comp))),
+    payload: Object.fromEntries(Object.entries(b.payload).filter(([, d]) => !isLol(d.comp)).map(([key, d]) => {
+      // MVP 从云端读取；不将重复球员统计打进稀缺的小程序包。
+      const { mvp, ...fallback } = d
+      return [key, fallback]
+    })),
   })) }
   fs.writeFileSync(
     file,
@@ -1194,4 +1410,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, fetchKplStatus, posGroup, resolveSlug, detailCapable, hasContent, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool }
+module.exports = { SCHEMA, SLUG, LINEUP_KEEP_DAYS, BASKET_STAT_LABELS, PLAYER_POOL_FILE, keepEvent, zhEvent, briefOf, dayKey, pickEvents, pickForm, pickH2H, pickStats, pickLineups, pickBasketballPlayers, pickKplDetail, fetchKplDetail, fetchKplStatus, fetchDetail, posGroup, resolveSlug, detailCapable, hasContent, needsFetch, isPlayed, teamZh, noteRosterPlayers, savePlayerPool, positiveMinutes, espnFinal, kplFinal, pickBasketballMvp, pickFootballMvp, pickKplMvp }

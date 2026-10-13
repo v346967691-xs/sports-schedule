@@ -356,6 +356,8 @@ async function detailFastLane(cloud, rows) {
       if (!d) return true
       if (!MD.hasContent(d)) return true
       if (isLol(String(id).split('-')[0]) && (!d.lol || !d.lol.complete)) return true
+      // 比分/事件已完整但新 MVP 名单尚未结算时，也要走 15 分钟详情补抓。
+      if (!isLol(String(id).split('-')[0]) && (!d.mvp || d.mvp.v !== 1 || d.mvp.complete !== true)) return true
       // 足球/NBA 的赛前近况、阵容不代表终场事件和统计已经完整。
       if (String(id).indexOf('kpl-') !== 0 && d.fin === false) return true
       if (String(id).indexOf('kpl-') === 0) {

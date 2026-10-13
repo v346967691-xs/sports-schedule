@@ -9,7 +9,7 @@
  *   云端只有 Auth/Database/Storage/LLM，**没有云函数**，没法在服务端出图；
  *   比分和期次又是随时变的，预生成必然过期。端上 canvas 画完即传，零存储、零流量。
  *
- * 尺寸：500 × 400（5:4，微信分享卡推荐比例）。
+ * 好友卡尺寸：500 × 400；MVP 长图宽 750，高度随本场数据自适应。
  *
  * ⚠️ onShareAppMessage 是同步返回，canvas 绘制却是异步的 ——
  *    所以必须在数据就绪后**提前**画好存进 data，分享时直接取 tempFilePath。
@@ -409,6 +409,25 @@ function drawLolMvp(ctx, o) {
   brand(ctx, MUTED)
 }
 
+/** 篮球、足球和 KPL 的 MVP 好友卡，字段全部来自本场候选人的统计。 */
+function drawMatchMvp(ctx, o) {
+  base(ctx, o, '#B99433')
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left'
+  ctx.font = font(18); ctx.fillStyle = MUTED
+  ctx.fillText(ellipsis(ctx, o.comp || '', 340), 32, 52)
+  ctx.font = font(18, 700); ctx.fillStyle = '#B99433'; ctx.textAlign = 'right'
+  ctx.fillText('我的MVP', W - 32, 52)
+  ctx.textAlign = 'left'; ctx.fillStyle = INK; ctx.font = font(40, 700)
+  ctx.fillText(ellipsis(ctx, o.name || '', 436), 32, 115)
+  ctx.fillStyle = '#5A6272'; ctx.font = font(20)
+  ctx.fillText(ellipsis(ctx, `${o.team || ''} · ${o.role || '选手'}`, 436), 32, 157)
+  rule(ctx, 194)
+  ctx.fillStyle = INK; ctx.font = font(22, 600)
+  wrap(ctx, (o.stats || []).slice(0, 6).map(s => `${s.label} ${s.value}`).join(' · '), 436, 4)
+    .forEach((line, i) => ctx.fillText(line, 32, 230 + i * 34))
+  brand(ctx, MUTED)
+}
+
 /**
  * 球队卡：队名 + 排名/积分 + 近 5 场胜平负色块 + 下一场
  * opt: { comp, name, sub, form: ['W','D','L'…], nextText, accent }
@@ -516,7 +535,7 @@ function drawSchedule(ctx, o) {
  * 在页面隐藏 canvas 上画好分享图，返回 tempFilePath（失败返回空串）
  * @param {object} page   页面 this（用于 SelectorQuery）
  * @param {string} id     canvas 的 id
- * @param {string} kind   'match' | 'brief' | 'rank' | 'player' | 'team' | 'schedule' | 'lol-mvp' | 'lol-mvp-long'
+ * @param {string} kind   'match' | 'brief' | 'rank' | 'player' | 'team' | 'schedule' | 'lol-mvp' | 'match-mvp' | 'lol-mvp-long' | 'match-mvp-long'
  * @param {object} opt    绘制参数
  */
 let buildQueue = Promise.resolve()
@@ -544,7 +563,7 @@ function buildCanvas(page, id, kind, opt) {
       } catch (e) { /* 拿不到就用 2 */ }
       if (dpr > 3) dpr = 3
 
-      const isMvpLong = kind === 'lol-mvp-long'
+      const isMvpLong = kind === 'lol-mvp-long' || kind === 'match-mvp-long'
       const width = isMvpLong ? mvpLong.WIDTH : W
       const height = isMvpLong ? mvpLong.measure(ctx, opt) : H
       if (isMvpLong) dpr = Math.min(dpr, 2)
@@ -563,6 +582,7 @@ function buildCanvas(page, id, kind, opt) {
         else if (kind === 'rank') drawRank(ctx, full)
         else if (kind === 'player') drawPlayer(ctx, full)
         else if (kind === 'lol-mvp') drawLolMvp(ctx, full)
+        else if (kind === 'match-mvp') drawMatchMvp(ctx, full)
         else if (kind === 'team') drawTeam(ctx, full)
         else if (kind === 'schedule') drawSchedule(ctx, full)
         else drawMatch(ctx, full)
@@ -587,6 +607,7 @@ module.exports = {
   drawRank,
   drawPlayer,
   drawLolMvp,
+  drawMatchMvp,
   drawTeam,
   drawSchedule,
   wrap,

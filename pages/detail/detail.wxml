@@ -252,6 +252,63 @@
     <view class="foot-note tight">统计来自 LOL 官方赛事数据。未补齐的单局显示最后可用记录；击杀比分不代表该局胜负。</view>
   </view>
 
+  <view class="section card" wx:if="{{detail.matchMvp.available}}">
+    <view class="sec-title">{{detail.matchMvp.title}}</view>
+    <view class="mvp-intro">每个账号仅能投 1 票，投出后不可更改。仅展示本场实际出场选手。</view>
+    <view class="mvp-summary" bindtap="retryMatchMvpSummary">
+      <view class="mvp-total-label" wx:if="{{detail.matchMvp.enabled}}">累计投票 <text class="mvp-total-number">{{detail.matchMvp.totalVotes}}</text> 票</view>
+      <view class="mvp-total-label" wx:else>读取投票数据</view>
+      <view class="mvp-leader">{{detail.matchMvp.leaderSummary}}</view>
+    </view>
+    <view class="mvp-team-head">
+      <view class="mvp-role-head"></view>
+      <view class="mvp-team-title">{{detail.matchMvp.homeLabel}}</view>
+      <view class="mvp-team-title">{{detail.matchMvp.awayLabel}}</view>
+    </view>
+    <view class="mvp-matchup-row" wx:for="{{detail.matchMvp.positions}}" wx:for-item="position" wx:key="roleKey">
+      <view class="mvp-role-label">{{position.label}}</view>
+      <view class="mvp-side-list">
+        <view class="mvp-candidate-compact {{item.isMine ? 'mine' : ''}} {{item.isShared ? 'shared' : ''}} {{detail.matchMvp.myVote ? 'locked' : ''}}"
+          wx:for="{{position.home}}" wx:key="key" data-key="{{item.key}}" bindtap="onMatchMvpVote">
+          <view class="mvp-candidate-top">
+            <view class="mvp-candidate-name">{{item.name}}</view>
+            <view class="mvp-vote-badge" wx:if="{{detail.matchMvp.enabled}}"><text class="mvp-vote-number">{{item.votes}}</text> 票</view>
+          </view>
+          <view class="match-mvp-stats"><text wx:for="{{item.stats}}" wx:for-item="stat" wx:key="label">{{stat.label}} {{stat.value}}</text></view>
+          <view class="mvp-champions" wx:if="{{item.championText}}">{{item.championText}}</view>
+          <view class="mvp-action" wx:if="{{item.isMine}}">你已投出 MVP</view>
+          <view class="mvp-action locked-text" wx:elif="{{detail.matchMvp.myVote}}">本场已投</view>
+          <view class="mvp-action" wx:elif="{{item.isShared}}">好友分享的选择</view>
+          <view class="mvp-action" wx:elif="{{matchMvpVoteBusy}}">正在记录…</view>
+          <view class="mvp-action" wx:else>选 TA</view>
+        </view>
+        <view class="mvp-empty" wx:if="{{!position.home.length}}">该位置无出场球员</view>
+      </view>
+      <view class="mvp-side-list away">
+        <view class="mvp-candidate-compact {{item.isMine ? 'mine' : ''}} {{item.isShared ? 'shared' : ''}} {{detail.matchMvp.myVote ? 'locked' : ''}}"
+          wx:for="{{position.away}}" wx:key="key" data-key="{{item.key}}" bindtap="onMatchMvpVote">
+          <view class="mvp-candidate-top">
+            <view class="mvp-candidate-name">{{item.name}}</view>
+            <view class="mvp-vote-badge" wx:if="{{detail.matchMvp.enabled}}"><text class="mvp-vote-number">{{item.votes}}</text> 票</view>
+          </view>
+          <view class="match-mvp-stats"><text wx:for="{{item.stats}}" wx:for-item="stat" wx:key="label">{{stat.label}} {{stat.value}}</text></view>
+          <view class="mvp-champions" wx:if="{{item.championText}}">{{item.championText}}</view>
+          <view class="mvp-action" wx:if="{{item.isMine}}">你已投出 MVP</view>
+          <view class="mvp-action locked-text" wx:elif="{{detail.matchMvp.myVote}}">本场已投</view>
+          <view class="mvp-action" wx:elif="{{item.isShared}}">好友分享的选择</view>
+          <view class="mvp-action" wx:elif="{{matchMvpVoteBusy}}">正在记录…</view>
+          <view class="mvp-action" wx:else>选 TA</view>
+        </view>
+        <view class="mvp-empty" wx:if="{{!position.away.length}}">该位置无出场球员</view>
+      </view>
+    </view>
+    <view class="btn-row mvp-share-actions" wx:if="{{detail.matchMvp.myVote}}">
+      <button class="btn primary mvp-share-btn" open-type="share" data-kind="match-mvp" disabled="{{!matchMvpShareImage}}">分享我的 MVP 选择</button>
+      <button class="btn ghost mvp-share-btn" bindtap="generateMatchMvpPoster" loading="{{matchMvpPosterBusy}}" disabled="{{matchMvpPosterBusy}}">生成长图</button>
+    </view>
+    <view class="foot-note tight">{{detail.matchMvp.note}}</view>
+  </view>
+
   <view class="section card" wx:if="{{detail.lolMvp.available && detail.lolMvp.enabled}}">
     <view class="sec-title">系列赛 MVP 投票</view>
     <view class="mvp-intro">每个账号仅能投 1 票，投出后不可更改。数据为完整系列赛各局累计。</view>

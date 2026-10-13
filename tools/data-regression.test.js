@@ -357,6 +357,21 @@ test('a pre-final football detail is retried despite form/lineup content', () =>
   assert.equal(result, true)
 })
 
+test('the detail fast lane supplements missing MVP candidates even when the final score and timeline are complete', () => {
+  const box = load('cloud-sync.js')
+  const source = fs.readFileSync(path.join(__dirname, 'cloud-sync.js'), 'utf8')
+  const functionText = source.match(/const isShell = \(d, id, o\) => \{[\s\S]*?\n    \}/)[0]
+  box.mvpShellFunction = functionText.replace('const isShell = ', '')
+  const result = vm.runInContext(`(() => {
+    const check = eval('(' + mvpShellFunction + ')');
+    const final = {fin:true, events:[{goal:true}]};
+    return [check(final, 'nba-1', {}), check(final, 'epl-1', {}),
+      check({...final,mvp:{v:1,complete:true}}, 'epl-1', {}),
+      check({...final,lol:{complete:true}}, 'lpl-1', {})];
+  })()`, vm.createContext(box))
+  assert.deepEqual(Array.from(result), [true, true, false, false])
+})
+
 test('partial day-bucket updates do not reset the bulk detail clock', async () => {
   const box = load('cloud-sync.js')
   const rows = [

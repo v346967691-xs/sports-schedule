@@ -2064,7 +2064,7 @@ async function run() {
   // 🔴 KPL 抓到空值必须补抓（10-06 事故）：BO5 打 2.5 小时，抓早了上游 `round_details` 是空的，
   //    而「已结束只抓一次」会让这条空数据永久留着 —— 用户看到的就是「这场没有对局数据」。
   const H = 3600 * 1000
-  const kcap = (kpl, ts) => ({ x: { v: md.SCHEMA, ts, kpl } })
+  const kcap = (kpl, ts) => ({ x: { v: md.SCHEMA, ts, kpl, mvp: { v: 1, complete: true } } })
   const km = (startAgo) => ({ id: 'x', comp: 'kpl', status: 'finished', start: new Date(t0 - startAgo).toISOString() })
   check('详情：KPL 抓到空值时隔一会儿会补抓（上游结算有延迟）',
     md.needsFetch(km(1 * H), kcap(null, t0 - 3 * H)) === true)
@@ -2091,7 +2091,7 @@ async function run() {
   const fcap = (fin, ts, extra) => ({ x: Object.assign({ v: md.SCHEMA, ts, fin }, extra) })
   // ⚠️ 事故四之后「已完赛但一块内容都没有」= 残缺响应，属于**要补抓**的那一类。
   //    所以凡是断言「不重抓」的用例，payload 必须带上内容才代表真实场景。
-  const GOT = { events: [{ t: "10'", txt: '进球' }] }
+  const GOT = { events: [{ t: "10'", txt: '进球' }], mvp: { v: 1, complete: true } }
   check('详情：开赛前抓的空壳（fin=false）打完会补抓（否则进球/红黄牌/技术统计永远为空）',
     md.needsFetch(fm(10 * H), fcap(false, t0 - 3 * H)) === true)
   check('详情：已经抓到完赛数据（fin=true 且有内容）的比赛照常不重抓（不加大请求量）',
@@ -2115,8 +2115,9 @@ async function run() {
   // ⚠️ 这条是防「补抓逻辑」和「box/lineups 裁剪」打架：超期桶的 box 是被**主动摘掉**的，
   //    看起来和残缺响应一模一样。若不卡 24h 窗口，这类桶会被 48h 内每 2h 重抓一次、
   //    抓回来又被裁掉 —— 纯浪费请求量。实测 10-05 那两场 NBA 就是这样，不是数据丢了。
-  check('详情：超过 24 小时的全空壳不再补抓（否则和 lineups/box 裁剪打架，反复重抓）',
-    md.needsFetch(fm(30 * H), { x: EMPTY }) === false
+  check('详情：超过 24 小时若已有 MVP 不因阵容裁剪重抓；缺少 MVP 则在 48h 内补抓',
+    md.needsFetch(fm(30 * H), { x: { ...EMPTY, mvp: { v: 1, complete: true } } }) === false
+    && md.needsFetch(fm(30 * H), { x: EMPTY }) === true
     && md.needsFetch(fm(10 * H), { x: EMPTY }) === true)
   check('详情：hasContent 认得篮球的 box（NBA 的 stats 恒为空，不能拿它当唯一判据）',
     md.hasContent({ box: { l: ['MIN'], home: [{ n: 'A', s: '1' }], away: [{ n: 'B', s: '2' }] } }) === true)

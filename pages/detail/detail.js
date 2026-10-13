@@ -11,6 +11,8 @@ const nav = require('../../utils/nav')
 const { appInstance } = require('../../utils/app-instance')
 const kplView = require('../../utils/kpl-view')
 const lolMvpVote = require('../../utils/lol-mvp')
+const matchMvpVote = require('../../utils/match-mvp')
+const matchMvpView = require('../../utils/match-mvp-view')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
@@ -219,6 +221,7 @@ function decorateDetail(d, match) {
     hasKpl: !!kpl,
     lol,
     hasLol: !!lol,
+    matchMvp: matchMvpView.build(d, match),
     lolMvp: {
       available: match.comp !== 'kpl' && match.status === 'finished'
         && !!(d.lol && d.lol.complete) && lolMvpCandidates.length > 1,
@@ -256,6 +259,9 @@ Page({
     lolMvpShareImage: '',
     mvpVoteBusy: false,
     mvpPosterBusy: false,
+    matchMvpShareImage: '',
+    matchMvpVoteBusy: false,
+    matchMvpPosterBusy: false,
     loading: false,
     loadError: '',
   },
@@ -318,6 +324,7 @@ Page({
     const raw = await data.matchDetail(match)
     if (!raw || !this.data.match || this.data.match.id !== match.id) return
     const detail = decorateDetail(raw, match)
+    if (detail.matchMvp) detail.matchMvp = matchMvpView.build(raw, match, this.sharedMvpKey)
     if (detail.lolMvp) {
       detail.lolMvp.sharedKey = this.sharedMvpKey
       detail.lolMvp.candidates = detail.lolMvp.candidates.map(candidate => Object.assign({}, candidate, {
@@ -326,11 +333,13 @@ Page({
     }
     this.setData({ detail, detailAll: false }, () => {
       if (detail.lolMvp && detail.lolMvp.available) this.refreshLolMvpSummary(match.id)
+      if (detail.matchMvp) this.refreshMatchMvpSummary(match.id)
     })
     const kplReady = match.comp !== 'kpl' || !!(raw.kpl && (raw.kpl.list || []).length > 0
       && raw.kpl.list.length >= Number(match.home.score || 0) + Number(match.away.score || 0))
     const lolReady = data.compOf(match.comp).cat !== 'esports' || match.comp === 'kpl' || !!(raw.lol && raw.lol.complete)
-    this.finalDetailReady = raw.fin === true && kplReady && lolReady
+    const expectsMatchMvp = match.comp === 'nba' || match.comp === 'kpl' || data.compOf(match.comp).cat === 'football'
+    this.finalDetailReady = raw.fin === true && kplReady && lolReady && (!expectsMatchMvp || !!detail.matchMvp)
     this.syncLivePoll()
   },
 
@@ -420,6 +429,7 @@ Page({
       })
     }
     if (!this.data.match) return
+    this.loadDetail(this.data.match)
     this.setData({
       isFav: app.isFav(this.data.match.id),
       authState: app.globalData.authState,
@@ -430,6 +440,7 @@ Page({
     if (this.data.detail && this.data.detail.lolMvp && this.data.detail.lolMvp.available) {
       this.refreshLolMvpSummary(this.data.match.id)
     }
+    if (this.data.detail && this.data.detail.matchMvp) this.refreshMatchMvpSummary(this.data.match.id)
     this.syncLivePoll()
   },
 
@@ -613,6 +624,123 @@ Page({
     const pending = this.mvpPendingShareCandidate
     this.mvpPendingShareCandidate = null
     if (pending && pending.key !== candidate.key) this.buildLolMvpShareImage(pending)
+  },
+
+  async refreshMatchMvpSummary(matchId) {
+    if (this.matchMvpSummaryBusy) { this.matchMvpSummaryPending = matchId; return }
+    const revision = this.matchMvpVoteRevision || 0
+    this.matchMvpSummaryBusy = true
+    const res = await matchMvpVote.summary(matchId)
+    this.matchMvpSummaryBusy = false
+    const pending = this.matchMvpSummaryPending
+    this.matchMvpSummaryPending = ''
+    // 投票前发出的汇总不能覆盖投票成功后的已投状态；补取新汇总。
+    if (revision !== (this.matchMvpVoteRevision || 0)) return this.refreshMatchMvpSummary(pending || matchId)
+    const mvp = this.data.detail && this.data.detail.matchMvp
+    if (!mvp || !this.data.match || this.data.match.id !== matchId) return
+    if (res.error) {
+      if (!mvp.enabled) this.setData({ 'detail.matchMvp.leaderSummary': '票数暂不可用，点击重试' })
+      return
+    }
+    const next = matchMvpView.withSummary(mvp, res.data || [], this.sharedMvpKey)
+    this.setData({ 'detail.matchMvp': next })
+    const candidate = next.candidates.find(p => p.key === next.myVote)
+    if (candidate) {
+      this.matchMvpShareCandidate = candidate
+      this.buildMatchMvpShareImage(candidate)
+    } else {
+      this.matchMvpShareCandidate = null
+      this.setData({ matchMvpShareImage: '' })
+    }
+    if (pending) await this.refreshMatchMvpSummary(pending)
+  },
+
+  retryMatchMvpSummary() {
+    if (this.data.match) this.refreshMatchMvpSummary(this.data.match.id)
+  },
+
+  async onMatchMvpVote(e) {
+    if (this.data.matchMvpVoteBusy) return
+    const mvp = this.data.detail && this.data.detail.matchMvp
+    const match = this.data.match
+    const candidate = mvp && mvp.candidates.find(p => p.key === e.currentTarget.dataset.key)
+    if (!mvp || !candidate || !match) return
+    if (mvp.myVote) { wx.showToast({ title: '本场已投票，不能修改', icon: 'none' }); return }
+    if (!mvp.enabled) { this.retryMatchMvpSummary(); wx.showToast({ title: '正在读取票数，请稍后重试', icon: 'none' }); return }
+    const app = appInstance()
+    if (app.globalData.authState !== 'signed-in') await app.refreshAuth()
+    if (app.globalData.authState !== 'signed-in') {
+      wx.showModal({ title: '登录后参与投票', content: '每个账号每场仅能投 1 票，投出后不可更改。要现在去登录吗？',
+        confirmText: '去登录', cancelText: '稍后',
+        success: res => { if (res.confirm) wx.switchTab({ url: '/pages/mine/mine' }) },
+      })
+      return
+    }
+    this.setData({ matchMvpVoteBusy: true })
+    let result
+    try { result = await matchMvpVote.vote(match.id, match.start, candidate.key) }
+    finally { this.setData({ matchMvpVoteBusy: false }) }
+    if (!this.data.match || this.data.match.id !== match.id) return
+    if (result.error) {
+      if (String(result.error.code).includes('23505')) {
+        this.matchMvpVoteRevision = (this.matchMvpVoteRevision || 0) + 1
+        await this.refreshMatchMvpSummary(match.id)
+        wx.showToast({ title: '本场已投票，不能修改', icon: 'none' })
+      } else wx.showToast({ title: result.error.message || '投票失败，请重试', icon: 'none' })
+      return
+    }
+    this.sharedMvpKey = ''
+    this.matchMvpVoteRevision = (this.matchMvpVoteRevision || 0) + 1
+    this.matchMvpShareCandidate = candidate
+    const next = { ...mvp, myVote: candidate.key, candidates: mvp.candidates.map(p => ({ ...p, isMine: p.key === candidate.key, isShared: false })) }
+    next.positions = matchMvpView.matchups(next.candidates)
+    this.setData({ 'detail.matchMvp': next, matchMvpShareImage: '' })
+    this.buildMatchMvpShareImage(candidate)
+    await this.refreshMatchMvpSummary(match.id)
+    wx.showToast({ title: '已记录你的 MVP 选择', icon: 'success' })
+  },
+
+  async buildMatchMvpShareImage(candidate) {
+    if (!this.data.match || !candidate) return
+    if (this.matchMvpShareBusy) { this.matchMvpPendingShareCandidate = candidate; return }
+    const matchId = this.data.match.id
+    this.matchMvpShareBusy = true
+    try {
+      const comp = this.data.comp || {}
+      const img = await poster.build(this, 'share-canvas', 'match-mvp', {
+        comp: comp.full || comp.name, name: candidate.name, team: candidate.team, role: candidate.role, stats: candidate.stats,
+      })
+      if (img && this.data.match && this.data.match.id === matchId && this.matchMvpShareCandidate
+        && this.matchMvpShareCandidate.key === candidate.key) this.setData({ matchMvpShareImage: img })
+    } finally {
+      this.matchMvpShareBusy = false
+      const pending = this.matchMvpPendingShareCandidate
+      this.matchMvpPendingShareCandidate = null
+      if (pending && pending.key !== candidate.key && this.matchMvpShareCandidate
+        && this.matchMvpShareCandidate.key === pending.key) this.buildMatchMvpShareImage(pending)
+    }
+  },
+
+  async generateMatchMvpPoster() {
+    if (this.data.matchMvpPosterBusy) return
+    const match = this.data.match
+    const mvp = this.data.detail && this.data.detail.matchMvp
+    const candidate = mvp && mvp.candidates.find(p => p.key === mvp.myVote)
+    if (!match || !candidate) { wx.showToast({ title: '请先投出你的 MVP 选择', icon: 'none' }); return }
+    this.setData({ matchMvpPosterBusy: true })
+    try {
+      const comp = this.data.comp || {}
+      const path = await poster.build(this, 'mvp-long-canvas', 'match-mvp-long', {
+        comp: comp.full || comp.name, kind: mvp.kind,
+        home: view.nameOf(match.home), away: view.nameOf(match.away), homeScore: match.home.score, awayScore: match.away.score,
+        dateText: match.date, timeText: match.time, name: candidate.name, team: candidate.team, role: candidate.role,
+        stats: candidate.stats, champions: candidate.champions, note: mvp.note,
+        votes: candidate.votes, totalVotes: mvp.totalVotes,
+      })
+      if (!path) throw new Error('长图生成失败，请重试')
+      if (this.data.match && this.data.match.id === match.id) wx.previewImage({ current: path, urls: [path] })
+    } catch (error) { wx.showToast({ title: error.message || '长图生成失败，请重试', icon: 'none' }) }
+    finally { this.setData({ matchMvpPosterBusy: false }) }
   },
 
   async generateLolMvpPoster() {
@@ -850,6 +978,14 @@ Page({
     if (!m) return share.message()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
+    if (e && e.target && e.target.dataset && e.target.dataset.kind === 'match-mvp' && this.matchMvpShareCandidate) {
+      const candidate = this.matchMvpShareCandidate
+      const stats = candidate.stats.slice(0, 3).map(s => `${s.label} ${s.value}`).join(' · ')
+      return share.message({ title: `我选 ${candidate.name} 为本场 MVP${stats ? ` · ${stats}` : ''}`,
+        path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(candidate.key)}`,
+        imageUrl: this.data.matchMvpShareImage,
+      })
+    }
     const isMvp = e && e.target && e.target.dataset && e.target.dataset.kind === 'lol-mvp'
     const mvp = isMvp && this.mvpShareCandidate
     if (mvp) {
@@ -874,6 +1010,11 @@ Page({
     if (!m) return share.timeline()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
+    if (this.matchMvpShareCandidate) {
+      const candidate = this.matchMvpShareCandidate
+      return share.timeline({ title: `我选 ${candidate.name} 为本场 MVP`,
+        query: `id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(candidate.key)}`, imageUrl: this.data.matchMvpShareImage })
+    }
     const mvp = this.mvpShareCandidate
     if (mvp) {
       return share.timeline({

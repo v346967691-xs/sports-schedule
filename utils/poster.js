@@ -21,6 +21,7 @@ const H = 400
 const PAPER = '#f2ede2'
 const INK = '#1f2430'
 const MUTED = '#8A93A6'
+const mvpLong = require('./lol-mvp-poster')
 
 /**
  * 底图（模板图）路径 —— 留空则用代码画的纯色底。
@@ -515,7 +516,7 @@ function drawSchedule(ctx, o) {
  * 在页面隐藏 canvas 上画好分享图，返回 tempFilePath（失败返回空串）
  * @param {object} page   页面 this（用于 SelectorQuery）
  * @param {string} id     canvas 的 id
- * @param {string} kind   'match' | 'brief' | 'rank' | 'player' | 'team' | 'schedule'
+ * @param {string} kind   'match' | 'brief' | 'rank' | 'player' | 'team' | 'schedule' | 'lol-mvp' | 'lol-mvp-long'
  * @param {object} opt    绘制参数
  */
 let buildQueue = Promise.resolve()
@@ -543,16 +544,22 @@ function buildCanvas(page, id, kind, opt) {
       } catch (e) { /* 拿不到就用 2 */ }
       if (dpr > 3) dpr = 3
 
-      canvas.width = W * dpr
-      canvas.height = H * dpr
+      const isMvpLong = kind === 'lol-mvp-long'
+      const width = isMvpLong ? mvpLong.WIDTH : W
+      const height = isMvpLong ? mvpLong.measure(ctx, opt) : H
+      if (isMvpLong) dpr = Math.min(dpr, 2)
+      canvas.width = width * dpr
+      canvas.height = height * dpr
       ctx.scale(dpr, dpr)
-      ctx.clearRect(0, 0, W, H)
+      ctx.clearRect(0, 0, width, height)
 
       // 🔴 只有 match / brief 配了底图；四张新卡是代码画的，bgSrc 为空 → bg = null
-      const bgSrc = kind === 'brief' ? BG.brief : kind === 'match' ? BG.match : ''
+      const bgSrc = isMvpLong ? '/images/worlds-miniprogram.jpg' : kind === 'brief' ? BG.brief : kind === 'match' ? BG.match : ''
       loadBg(canvas, bgSrc).then((bg) => {
+        if (isMvpLong && !bg) return resolve('')
         const full = Object.assign({}, opt, { bg: bg || null })
-        if (kind === 'brief') drawBrief(ctx, full)
+        if (isMvpLong) mvpLong.draw(ctx, Object.assign({}, opt, { qr: bg }))
+        else if (kind === 'brief') drawBrief(ctx, full)
         else if (kind === 'rank') drawRank(ctx, full)
         else if (kind === 'player') drawPlayer(ctx, full)
         else if (kind === 'lol-mvp') drawLolMvp(ctx, full)
@@ -561,8 +568,8 @@ function buildCanvas(page, id, kind, opt) {
         else drawMatch(ctx, full)
         wx.canvasToTempFilePath({
           canvas,
-          x: 0, y: 0, width: W, height: H,
-          destWidth: W * dpr, destHeight: H * dpr,
+          x: 0, y: 0, width, height,
+          destWidth: width * dpr, destHeight: height * dpr,
           fileType: 'jpg',
           quality: 0.92,
           success: (r) => resolve(r.tempFilePath || ''),

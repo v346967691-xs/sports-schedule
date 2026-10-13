@@ -1017,5 +1017,7 @@
 .mvp-dot { margin: 0 8rpx; color: var(--muted); }
 .mvp-action { margin-top: 7rpx; color: var(--brand); font-size: 18rpx; font-weight: 600; }
 .mvp-action.locked-text { color: var(--muted); }
-.mvp-share-btn { margin-top: 18rpx; }
+.mvp-share-actions { margin-top: 18rpx; }
+.mvp-share-actions .mvp-share-btn { margin: 0; padding: 20rpx 8rpx; font-size: 24rpx; line-height: 40rpx; }
+.mvp-share-actions .mvp-share-btn + .mvp-share-btn { margin-left: 20rpx; }
 .mvp-share-btn::after { border: 0; }

@@ -255,6 +255,7 @@ Page({
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
     lolMvpShareImage: '',
     mvpVoteBusy: false,
+    mvpPosterBusy: false,
     loading: false,
     loadError: '',
   },
@@ -612,6 +613,36 @@ Page({
     const pending = this.mvpPendingShareCandidate
     this.mvpPendingShareCandidate = null
     if (pending && pending.key !== candidate.key) this.buildLolMvpShareImage(pending)
+  },
+
+  async generateLolMvpPoster() {
+    if (this.data.mvpPosterBusy) return
+    const match = this.data.match
+    const mvp = this.data.detail && this.data.detail.lolMvp
+    const candidate = mvp && mvp.candidates.find(item => item.key === mvp.myVote)
+    if (!match || !candidate) {
+      wx.showToast({ title: '请先投出你的 MVP 选择', icon: 'none' })
+      return
+    }
+    const comp = this.data.comp || {}
+    this.setData({ mvpPosterBusy: true })
+    try {
+      const path = await poster.build(this, 'mvp-long-canvas', 'lol-mvp-long', {
+        comp: comp.full || comp.name || 'LOL',
+        home: view.nameOf(match.home), away: view.nameOf(match.away),
+        homeScore: match.home.score, awayScore: match.away.score,
+        dateText: match.date, timeText: match.time,
+        name: candidate.name, team: candidate.team, role: candidate.role,
+        champions: candidate.champions, games: candidate.games,
+        k: candidate.k, d: candidate.d, a: candidate.a, cs: candidate.cs, gold: candidate.gold,
+        votes: candidate.votes, totalVotes: mvp.totalVotes,
+      })
+      if (!path) throw new Error('长图生成失败，请重试')
+      if (!this.data.match || this.data.match.id !== match.id) return
+      wx.previewImage({ current: path, urls: [path] })
+    } catch (error) {
+      wx.showToast({ title: error.message || '长图生成失败，请重试', icon: 'none' })
+    } finally { this.setData({ mvpPosterBusy: false }) }
   },
 
   /** 切换 KPL 单局 tab（数据一次全在 payload 里，切换是纯前端，零请求） */

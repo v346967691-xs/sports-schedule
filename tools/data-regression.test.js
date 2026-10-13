@@ -17,6 +17,98 @@ function load(file, overrides = {}) {
   return box
 }
 
+test('MVP long poster exports all cumulative statistics, wrapped names and the mini-program code', async () => {
+  const long = require('../utils/lol-mvp-poster')
+  const values = [], images = [], exports = [], selected = []
+  const ctx = {
+    font: '', measureText(text) { return { width: [...String(text)].length * Number((this.font.match(/(\d+)px/) || [0, 20])[1]) } },
+    fillRect() {}, fillText: value => values.push(String(value)), drawImage: img => images.push(img),
+    scale() {}, clearRect() {},
+  }
+  const options = {
+    comp: 'LPL', home: 'WE', away: 'FLY', homeScore: 3, awayScore: 2,
+    dateText: '2026-10-14', timeText: '17:00', name: 'PlayerWithALongName', team: 'WE', role: '辅助',
+    k: 0, d: 0, a: 55, cs: 177, gold: 46730, games: 5,
+    champions: [{ name: 'Renata' }, { name: 'Nautilus' }, { name: 'Alistar' }], votes: 7, totalVotes: 20,
+  }
+  const height = long.measure(ctx, options)
+  assert.ok(height > long.WIDTH)
+  assert.equal(long.draw(ctx, { ...options, qr: {} }), height)
+  assert.ok(values.includes('0 / 0 / 55'))
+  assert.ok(values.includes('46730'))
+  assert.ok(values.join('').includes(options.name))
+  assert.ok(values.join('').includes('Renata / Nautilus / Alistar'))
+  assert.ok(values.join('').includes('TA 获得 7 票 · 本场共 20 票'))
+  assert.equal(images.length, 1)
+  const canvas = {
+    getContext: () => ctx,
+    createImage: () => ({ set src(value) { this.path = value; Promise.resolve().then(() => this.onload()) } }),
+  }
+  const poster = load('../utils/poster.js', {
+    wx: {
+      getWindowInfo: () => ({ pixelRatio: 3 }),
+      createSelectorQuery: () => ({ in() { return this }, select(id) { selected.push(id); return this },
+        fields() { return this }, exec(callback) { callback([{ node: canvas }]) } }),
+      canvasToTempFilePath: options => { exports.push(options); options.success({ tempFilePath: 'mvp-long.jpg' }) },
+    },
+  }).module.exports
+  assert.equal(await poster.build({}, 'mvp-long-canvas', 'lol-mvp-long', options), 'mvp-long.jpg')
+  assert.deepEqual(selected, ['#mvp-long-canvas'])
+  assert.equal(exports[0].width, 750)
+  assert.equal(exports[0].height, height)
+  assert.equal(exports[0].destWidth, 1500)
+  assert.equal(exports[0].destHeight, height * 2)
+  assert.equal(images[1].path, '/images/worlds-miniprogram.jpg')
+  await poster.build({}, 'share-canvas', 'lol-mvp', options)
+  assert.equal(exports[1].width, 500)
+  assert.equal(exports[1].height, 400)
+  assert.equal(exports[1].destWidth, 1500)
+  canvas.createImage = () => ({ set src(value) { Promise.resolve().then(() => this.onerror()) } })
+  assert.equal(await poster.build({}, 'mvp-long-canvas', 'lol-mvp-long', options), '')
+  assert.equal(exports.length, 2)
+})
+
+test('MVP long poster requires the recorded vote, prevents duplicate generation and unlocks after failures', async () => {
+  let page, resolveExport
+  const previews = [], calls = [], toasts = []
+  load('../pages/detail/detail.js', {
+    Page: value => { page = value },
+    wx: { previewImage: value => previews.push(value), showToast: value => toasts.push(value) },
+    require: name => {
+      if (name.endsWith('/view')) return require('../utils/view')
+      if (name.endsWith('/poster')) return { build: (...args) => {
+        calls.push(args); return new Promise(resolve => { resolveExport = resolve })
+      } }
+      return {}
+    },
+  })
+  page.data = { ...page.data, match: { id: 'lpl-test', home: { name: 'WE', score: 3 }, away: { name: 'FLY', score: 2 } },
+    detail: { lolMvp: { myVote: '', totalVotes: 9, candidates: [
+      { key: 'other', name: 'Other' }, { key: 'mine', name: 'MyPick', k: 4, d: 22, a: 55, votes: 7 },
+    ] } } }
+  page.setData = values => Object.assign(page.data, values)
+  await page.generateLolMvpPoster()
+  assert.equal(calls.length, 0)
+  assert.match(toasts[0].title, /请先投出/)
+  page.data.detail.lolMvp.myVote = 'mine'
+  const exporting = page.generateLolMvpPoster()
+  await page.generateLolMvpPoster()
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0][1], 'mvp-long-canvas')
+  assert.equal(calls[0][3].name, 'MyPick')
+  assert.equal(calls[0][3].totalVotes, 9)
+  resolveExport('long.jpg')
+  await exporting
+  assert.deepEqual(Array.from(previews[0].urls), ['long.jpg'])
+  assert.equal(page.data.mvpPosterBusy, false)
+  const failed = page.generateLolMvpPoster()
+  resolveExport('')
+  await failed
+  assert.equal(page.data.mvpPosterBusy, false)
+  assert.equal(previews.length, 1)
+  assert.match(toasts.at(-1).title, /生成失败/)
+})
+
 function followedHomeFixture() {
   const clock = { now: Date.parse('2026-10-14T21:00:00Z') }
   class Clock extends Date { static now() { return clock.now } }

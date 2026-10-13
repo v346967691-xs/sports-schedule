@@ -1,5 +1,6 @@
 <!-- 离屏 canvas：只在转发前画分享卡用，移出屏幕而非 display:none（隐藏后取不到节点） -->
 <canvas type="2d" id="share-canvas" class="share-canvas"></canvas>
+<canvas type="2d" id="mvp-long-canvas" class="share-canvas"></canvas>
 
 <view class="empty" wx:if="{{loadError}}">
   <view class="empty-title">打不开这场比赛</view>
@@ -306,8 +307,12 @@
         <view class="mvp-empty" wx:if="{{!position.away.length}}">暂无完整数据</view>
       </view>
     </view>
-    <button class="btn primary mvp-share-btn" wx:if="{{detail.lolMvp.myVote && lolMvpShareImage}}"
-      open-type="share" data-kind="lol-mvp">分享我的 MVP 选择</button>
+    <view class="btn-row mvp-share-actions" wx:if="{{detail.lolMvp.myVote}}">
+      <button class="btn primary mvp-share-btn" open-type="share" data-kind="lol-mvp"
+        disabled="{{!lolMvpShareImage}}">分享我的 MVP 选择</button>
+      <button class="btn ghost mvp-share-btn" bindtap="generateLolMvpPoster"
+        loading="{{mvpPosterBusy}}" disabled="{{mvpPosterBusy}}">生成长图</button>
+    </view>
     <view class="foot-note tight">投票只对已结束且统计完整的系列赛开放；选手数据按稳定选手编号跨局合并。</view>
   </view>
 

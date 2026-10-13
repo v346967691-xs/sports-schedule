@@ -33,7 +33,8 @@ function pickRound(game, feed, homeId, awayId) {
     const players = (md.participantMetadata || []).map(p => {
       const s = stats.get(String(p.participantId))
       return {
-        id: p.participantId, name: p.summonerName || '', champion: p.championId || '', role: p.role || '',
+        id: p.participantId, playerId: p.esportsPlayerId || '',
+        name: p.summonerName || '', champion: p.championId || '', role: p.role || '',
         k: num(s && s.kills), d: num(s && s.deaths), a: num(s && s.assists),
         cs: num(s && s.creepScore), gold: num(s && s.totalGold),
         complete: !!s && required.every(k => num(s[k]) != null) && !!p.summonerName && !!p.championId,
@@ -91,7 +92,8 @@ async function fetchLolDetail(m, get = request, now = Date.now()) {
   return {
     id: m.id, comp: m.comp, v: 6, ts: now, fin: m.status === 'finished',
     lol: {
-      source: 'lolesports', complete: m.status === 'finished' && rounds.length >= wanted && rounds.every(r => r.complete),
+      source: 'lolesports', playerVersion: 1,
+      complete: m.status === 'finished' && rounds.length >= wanted && rounds.every(r => r.complete),
       rounds,
     },
   }

@@ -35,6 +35,7 @@ const zhNames = require('./zh-names')
 const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
 const { isLol, fetchLolDetail } = require('./lol-detail')
+const worldsArchive = require('../utils/worlds-archive')
 // 位置分组规则的唯一来源（`basketPos` 就在里面，工具侧与页面侧共用一份）
 const rosterView = require('../utils/roster.js')
 
@@ -931,15 +932,18 @@ async function fetchDetail(m) {
 async function loadCaptured() {
   const captured = {}
   const buckets = {}
+  let archiveReadOk = false
   try {
     const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
     const cloud = createWorkBuddyCloud({
       endpoint: publicConfig.endpoint,
       publishableKey: publicConfig.publishableKey,
     })
-    const { data } = await cloud.database.from('match_detail').select('id, day, payload')
+    const { data, error } = await cloud.database.from('match_detail').select('id, day, payload')
+    if (error || !Array.isArray(data)) throw new Error((error && error.message) || '详情日桶响应无效')
+    archiveReadOk = true
     ;(data || []).forEach((row) => {
-      buckets[row.id] = { day: row.day, payload: row.payload || {} }
+      buckets[row.id] = { day: row.day, payload: row.payload || {}, original: JSON.stringify(row.payload || {}) }
       Object.keys(row.payload || {}).forEach((k) => {
         if (row.payload[k]) captured[k] = row.payload[k]
       })
@@ -947,7 +951,7 @@ async function loadCaptured() {
   } catch (err) {
     console.warn('[match-detail] ⚠ 读云端已抓名单失败，本次按全量抓：', (err && err.message) || err)
   }
-  return { captured, buckets }
+  return { captured, buckets, archiveReadOk }
 }
 
 /* ------------------------------- 主流程 ------------------------------- */
@@ -983,7 +987,8 @@ function needsFetch(m, captured) {
     //   ④ 所有赛事：已完赛但整份 payload 一块内容都没有（上游残缺响应，事故四）
     //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
-    const inWindow = Number.isFinite(t) && Date.now() - t < RETRY_WINDOW_MS
+    const inWindow = Number.isFinite(t) && (Date.now() - t < RETRY_WINDOW_MS
+      || (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive()))
     // 「已完赛但 payload 还是壳吗」—— 判据集中算一次，供两处用：
     //   · 决定这次要不要重抓（下面 return true）
     //   · 决定重抓的**间隔**（壳按 15 分钟，非壳按 2 小时）
@@ -995,7 +1000,7 @@ function needsFetch(m, captured) {
     //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
     const emptyShell = Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
     let shell = prev.fin === false || emptyShell
-    if (isLol(m.comp) && (!prev.lol || !prev.lol.complete)) shell = true
+    if (isLol(m.comp) && (!prev.lol || !prev.lol.complete || prev.lol.playerVersion !== 1)) shell = true
     if (m.comp === 'kpl') {
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）。
       // **有数据 ≠ 数据完整**（见文件头事故二）。
@@ -1048,13 +1053,34 @@ async function main() {
     }
   }
 
+  const { captured, buckets, archiveReadOk } = await loadCaptured()
+  if (!archiveReadOk && worldsArchive.archiveActive(now)) {
+    // 读失败时重建整个日桶会覆盖尚未读回的 Worlds 数据；保留云端原行等待下一班。
+    console.warn('[match-detail] ⚠ 无法完整读取日桶，跳过本轮详情生成以保护 Worlds2026 归档')
+    return process.exit(3)
+  }
+  // 先保存赛程元数据（包括未开赛）；赛程滑动窗口移出之后仍能恢复分享与专题列表。
+  list.forEach(m => {
+    if (!worldsArchive.isWorlds2026(m) || !worldsArchive.archiveActive(now)) return
+    const key = `d-${dayKey(m.start)}`
+    if (!buckets[key]) buckets[key] = { day: dayKey(m.start), payload: {} }
+    const old = buckets[key].payload[m.id] || { id: m.id, comp: m.comp, v: SCHEMA, ts: 0, fin: false }
+    old.match = worldsArchive.matchMetadata(m)
+    buckets[key].payload[m.id] = old
+    captured[m.id] = old
+  })
+  const seen = new Set(list.map(m => m.id))
+  Object.values(captured).forEach(d => {
+    if (worldsArchive.archivedEntry(d, now) && !seen.has(d.id)) { list.push(d.match); seen.add(d.id) }
+  })
   const targets = list.filter((m) => {
     // ⚠️ 必须走 resolveSlug（含比赛自带的 slug），只查 SLUG 表会把中国国字号漏掉
     //    KPL 走另一条链路（官方 getScheduleDetail），不在 SLUG 表里
     if (!resolveSlug(m) && m.comp !== 'kpl' && !isLol(m.comp)) return false
     const t = new Date(m.start).getTime()
     if (Number.isNaN(t)) return false
-    if (isLol(m.comp)) return m.status === 'finished' && now - t < KEEP_DAYS * 24 * 3600 * 1000
+    if (isLol(m.comp)) return m.status === 'finished' && (now - t < KEEP_DAYS * 24 * 3600 * 1000
+      || (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive(now)))
     if (m.comp === 'kpl') {
       // 单局信息只在开打之后才存在，未开赛抓不到任何东西
       return m.status === 'finished' || m.status === 'live' || m.status === 'inprogress'
@@ -1071,7 +1097,6 @@ async function main() {
   })
 
   buildTeamIndex(list)
-  const { captured, buckets } = await loadCaptured()
   const todo = targets.filter((m) => needsFetch(m, captured))
   console.log(`[match-detail] 目标 ${targets.length} 场，其中待抓 ${todo.length} 场（进行中每班重抓）`)
 
@@ -1082,6 +1107,7 @@ async function main() {
       const d = isLol(m.comp) ? await fetchLolDetail(m)
         : m.comp === 'kpl' ? await fetchKplDetail(m) : await fetchDetail(m)
       if (!d) return
+      if (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive(now)) d.match = worldsArchive.matchMetadata(m)
       const key = `d-${dayKey(m.start)}`
       if (!buckets[key]) buckets[key] = { day: dayKey(m.start), payload: {} }
       buckets[key].payload[m.id] = d
@@ -1107,8 +1133,7 @@ async function main() {
   let boxes = 0
   Object.keys(buckets).forEach((id) => {
     const day = String(id).slice(2)
-    if (day < cutoff) return // 过期桶整行丢掉，不再推送（云端的旧行由 cloud-sync 清理）
-    const payload = buckets[id].payload || {}
+    const payload = worldsArchive.prunePayload(buckets[id].payload, day, now)
     const staleLineups = day < lineupCutoff
     // 清掉已经不再抓详情的赛事（比如后来决定不抓的国际友谊赛），
     // 否则这些行会一直被推到云端、也一直占着包体积
@@ -1121,11 +1146,12 @@ async function main() {
       if (d && d.box) boxes += 1
     })
     if (!Object.keys(payload).length) return
-    touched.push({ id, day, payload })
+    touched.push({ id, day, payload, changed: day >= cutoff || buckets[id].original !== JSON.stringify(payload) })
   })
 
   const out = {
     generatedAt: new Date().toISOString(),
+    archiveReadOk,
     buckets: touched,
     stats: {
       targets: targets.length,
@@ -1138,7 +1164,7 @@ async function main() {
   }
   const file = path.join(__dirname, '..', 'data', 'match-details.js')
   // LOL 统计只在云端；既有详情仍保留包内兜底，避免扩充稀缺的小程序包。
-  const bundled = { ...out, buckets: touched.map(b => ({ ...b,
+  const bundled = { ...out, buckets: touched.filter(b => b.day >= cutoff).map(b => ({ id: b.id, day: b.day,
     payload: Object.fromEntries(Object.entries(b.payload).filter(([, d]) => !isLol(d.comp))),
   })) }
   fs.writeFileSync(

@@ -11,6 +11,11 @@
  */
 
 const snapshot = require('./snapshot')
+const worldsArchive = require('./worlds-archive')
+let archiveMatches = {}
+let archiveDetails = {}
+let archiveReadAt = 0
+let archivePending = null
 
 const META_FALLBACK = { generatedAt: '', range: { from: '', to: '' }, categories: [], competitions: [] }
 
@@ -204,7 +209,41 @@ function catOf(compKey) {
 }
 
 function findMatch(id) {
-  return matches().find((m) => m.id === id) || null
+  return matches().find((m) => m.id === id) || (worldsArchive.archiveActive() ? archiveMatches[id] : null) || null
+}
+
+/** 本届有界日桶归档；失败返回已有缓存，绝不改变普通赛程 query 的窗口。 */
+async function loadWorldsArchive() {
+  if (!worldsArchive.archiveActive()) { archiveMatches = {}; archiveDetails = {}; return [] }
+  const values = () => Object.values(archiveMatches).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))
+  if (!cloudClient.isReady() || Date.now() - archiveReadAt < THROTTLE_MS) return values()
+  if (archivePending) return archivePending
+  archivePending = (async () => {
+    try {
+      const result = await cloudClient.cloud.database.from('match_detail').select('payload')
+        .gte('day', worldsArchive.START_DAY).lte('day', worldsArchive.FINAL_DAY)
+      if (result.error || !Array.isArray(result.data)) return values()
+      const nextMatches = {}
+      const nextDetails = {}
+      result.data.forEach(row => Object.values(row.payload || {}).forEach(d => {
+        if (!worldsArchive.archivedEntry(d)) return
+        nextMatches[d.id] = d.match
+        nextDetails[d.id] = d
+      }))
+      archiveMatches = nextMatches
+      archiveDetails = nextDetails
+      archiveReadAt = Date.now()
+    } catch (err) { console.warn('[赛程助手] Worlds 归档读取失败', err) }
+    return values()
+  })().finally(() => { archivePending = null })
+  return archivePending
+}
+
+async function findArchivedMatch(id) {
+  // 普通赛事分享不拉归档；仅 Worlds id 需要这一条补读路径。
+  if (!/^worlds-\d+$/.test(String(id || ''))) return null
+  await loadWorldsArchive()
+  return findMatch(id)
 }
 
 /**
@@ -751,6 +790,7 @@ function dayStampCN(iso) {
  */
 async function matchDetail(match) {
   if (!match || !match.start || !cloudClient.isReady()) return null
+  if (worldsArchive.archiveActive() && archiveDetails[match.id] && Date.now() - archiveReadAt < THROTTLE_MS) return archiveDetails[match.id]
   try {
     const { data, error } = await cloudClient.cloud.database
       .from('match_detail')
@@ -880,6 +920,8 @@ module.exports = {
   compOf,
   catOf,
   findMatch,
+  loadWorldsArchive,
+  findArchivedMatch,
   query,
   matchHasTeam,
   compsOfTeam,

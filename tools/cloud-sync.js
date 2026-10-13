@@ -33,6 +33,7 @@ const path = require('path')
 const { createWorkBuddyCloud } = require('@tencent-ai/workbuddy-cloud-sdk')
 const publicConfig = require('../utils/cloud-config')
 const { decodeSnapshot } = require('../utils/snapshot')
+const worldsArchive = require('../utils/worlds-archive')
 
 // ⚠️ 位置参数必须先滤掉 `--xxx` 开关：否则 `node cloud-sync.js --force` 会把
 //    '--force' 当成第 1 个位置参数，Number('--force') = NaN，子进程拿到
@@ -772,6 +773,8 @@ async function main() {
     let done = 0
     const nowIso = new Date().toISOString()
     for (const b of details.buckets) {
+      // 历史 Worlds 桶只在首次裁剪或详情补齐时重写，避免每班重写全赛事。
+      if (b.changed === false) continue
       const r = await pushRow(cloud, 'match_detail', {
         id: b.id,
         day: b.day,
@@ -786,8 +789,7 @@ async function main() {
 
     // 清理过期桶（RLS 只允许删 7 天前的，写在这里才删得动）
     try {
-      const cutoff = dayStamp(Date.now() - 7 * 24 * 3600 * 1000)
-      await cloud.database.from('match_detail').delete().lt('day', cutoff)
+      const cutoff = await cleanupDetailBuckets(cloud, details)
       log(`已清理 match_detail 早于 ${cutoff} 的日桶`)
     } catch (err) {
       console.warn('[cloud-sync] ⚠ 清理过期详情桶失败：', (err && err.message) || err)
@@ -795,6 +797,19 @@ async function main() {
   } else {
     console.warn('[cloud-sync] ⚠ 本次没有可用的比赛详情，跳过推送')
   }
+}
+
+/** 沿用既有 DELETE(day<7天) 权限，只排除仍在保留期的 Worlds2026 日桶。 */
+async function cleanupDetailBuckets(cloud, details, now = Date.now()) {
+  if (details.archiveReadOk !== true) throw new Error('本轮未完整读回详情归档，跳过删除以保留历史 Worlds 日桶')
+  const cutoff = dayStamp(now - 7 * 24 * 3600 * 1000)
+  const retained = (details.buckets || []).filter(b => Object.values(b.payload || {}).some(d => worldsArchive.archivedEntry(d, now))).map(b => b.id)
+  let deletion = cloud.database.from('match_detail').delete().lt('day', cutoff)
+  // SDK 支持 PostgREST not/in；保留实际有 Worlds 条目的天桶，其他旧桶正常删除。
+  if (retained.length) deletion = deletion.not('id', 'in', `(${retained.join(',')})`)
+  const result = await deletion
+  if (result && result.error) throw new Error(result.error.message || JSON.stringify(result.error))
+  return cutoff
 }
 
 /** 北京时间（UTC+8）下的 YYYYMMDD */
@@ -806,6 +821,7 @@ function dayStamp(ms) {
 // 🔴 为什么加这道 require.main 守卫：2026-10-05 给节流闸写单测时要 require 本文件，
 //    而它原本在模块顶层直接跑 main() —— 一 require 就真的发起一轮云端同步。
 module.exports = {
+  cleanupDetailBuckets,
   gate, MIN_INTERVAL_MIN, DAYS_BACK, DAYS_FORWARD,
   // 积分榜快通道的纯判定 —— 导出只为 smoke 能打桩测它（见 tools/smoke.js）
   standingsDueIds, SETTLED_MIN,

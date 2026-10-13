@@ -21,6 +21,10 @@
       },
       {
         "type": "folder",
+        "value": "migrations"
+      },
+      {
+        "type": "folder",
         "value": "node_modules"
       },
       {

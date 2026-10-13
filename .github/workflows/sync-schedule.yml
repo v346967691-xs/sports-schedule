@@ -41,7 +41,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # ⚠️ 15 → 20：末尾挂了「实时比分盯场」最长 11 分钟，加上主同步约 2 分钟。
+    # ⚠️ 留出实时比分盯场（最长 14 分钟）、前序同步和最终云端新鲜度校验的余量。
     timeout-minutes: 20
     steps:
       - name: 检出代码
@@ -106,18 +106,40 @@ jobs:
             06|07|21|22) echo "due=1" >> "$GITHUB_OUTPUT" ;;
             *)           echo "due=0" >> "$GITHUB_OUTPUT" ;;
           esac
+          case "$H" in
+            09|10|11|12) echo "worlds_due=1" >> "$GITHUB_OUTPUT" ;;
+            *) echo "worlds_due=0" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: 生成日报并推送到云端
         continue-on-error: true
         if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1'
         run: node tools/brief-push.js
 
+      - name: 生成 S 赛晨报（09 点首发，随赛况同步更新）
+        continue-on-error: true
+        if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1'
+        run: node tools/worlds-brief-push.js
+
+      # 订阅提醒只发送用户已同意的消息。失败留到盯场之后统一报红，保证比分刷新仍执行。
+      - name: 发送全赛事赛前与赛果订阅通知
+        id: notifications
+        continue-on-error: true
+        env:
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
+          WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
+        run: |
+          if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
+          node tools/match-notification-push.js
+
       # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。
       #
       # 🔴 为什么这样做，而不是「再建一个每 2 分钟的高频定时任务」：
       #    ① 本仓库的 GitHub 原生 cron 实测 2.5~5 小时才投递一次（改频率无效），
       #       可靠触发只能靠外部 cron-job.org POST —— 每多加一条就要多配一次外部服务；
-      #    ② 挂在这里则**零外部配置**：一次运行 ≈ 2 分钟（主同步）+ 11 分钟（盯场），
+      #    ② 挂在这里则**零外部配置**：一次运行约 2 分钟（主同步）+ 14 分钟（盯场），
       #       几乎连续覆盖，等效粒度就是 60 秒；
       #    ③ `schedule_cache` 一行原本 891KB，2 分钟刷一次 = 790MB/天 —— 只有把它拆成
       #       只含进行中比赛的小表（~2KB）才刷得起。
@@ -128,7 +150,18 @@ jobs:
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
       # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
       - name: 盯进行中的比赛（实时比分）
-        run: node tools/live-watch.js --minutes=11 --every=60
+        run: node tools/live-watch.js --minutes=14 --every=60
+
+      # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
+      - name: 校验实时比分新鲜度
+        if: always()
+        run: node tools/check-cloud.js --live
+
+      - name: 检查订阅通知执行结果
+        if: always() && steps.notifications.outcome == 'failure'
+        run: |
+          echo '::error::订阅通知未完成，请查看通知步骤日志（比分盯场仍已执行）'
+          exit 1
 
 # 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），
 # 避免它跟着这里每 15 分钟白跑一次检出。

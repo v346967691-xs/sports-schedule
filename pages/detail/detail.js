@@ -5,14 +5,26 @@ const lolView = require('../../utils/lol-view')
 const view = require('../../utils/view')
 const fmt = require('../../utils/format')
 const favorites = require('../../utils/favorites')
+const notificationConfig = require('../../utils/match-notification-config')
+const notifications = require('../../utils/match-notifications')
 const nav = require('../../utils/nav')
 const { appInstance } = require('../../utils/app-instance')
 const kplView = require('../../utils/kpl-view')
+const lolMvpVote = require('../../utils/lol-mvp')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
 /** 实时比分轮询间隔（与赛程页同值，服务端 live_scores 也是 60 秒刷一次） */
 const LIVE_POLL_MS = 60 * 1000
+
+function notificationAvailability(match) {
+  const start = Date.parse(match && match.start || '')
+  const upcoming = !!match && match.status === 'upcoming' && Number.isFinite(start)
+  return {
+    canRequestPre15: upcoming && start > Date.now(),
+    canRequestPre60: upcoming && start > Date.now() + 15 * 60 * 1000,
+  }
+}
 
 /** 首发阵容的位置归组与中文标签。顺序就是首发列表的展示顺序。 */
 const LINEUP_POS = [['G', '门将'], ['D', '后卫'], ['M', '中场'], ['F', '前锋']]
@@ -185,6 +197,7 @@ function decorateDetail(d, match) {
   const quarters = buildQuarters(match, sideName)
   const kpl = kplView.buildKpl(d, sideName('home'), sideName('away'))
   const lol = lolView.buildLol(d, sideName('home'), sideName('away'))
+  const lolMvpCandidates = lolView.buildMvpCandidates(d, sideName('home'), sideName('away'))
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
     // 没有它的话用户会以为详情页坏了 —— 得显式说明赛后会换成什么。
@@ -206,6 +219,19 @@ function decorateDetail(d, match) {
     hasKpl: !!kpl,
     lol,
     hasLol: !!lol,
+    lolMvp: {
+      available: match.comp !== 'kpl' && match.status === 'finished'
+        && !!(d.lol && d.lol.complete) && lolMvpCandidates.length > 1,
+      enabled: false,
+      candidates: lolMvpCandidates,
+      positions: lolView.buildMvpMatchups(lolMvpCandidates),
+      homeLabel: sideName('home'),
+      awayLabel: sideName('away'),
+      sharedKey: '',
+      myVote: '',
+      totalVotes: 0,
+      leaderSummary: '暂无选手得票',
+    },
     formRows,
     hasForm: formRows.length > 0,
     h2h,
@@ -220,11 +246,15 @@ Page({
     rows: [],
     isFav: false,
     favBusy: false,
+    notificationStates: {},
+    notificationBusy: false,
     authState: 'unknown',
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     detail: null,        // 比赛详情（事件时间轴 / 近况 / 交锋 / 技术统计），没有就整块隐藏
     detailAll: false,    // 是否展开换人事件
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
+    lolMvpShareImage: '',
+    mvpVoteBusy: false,
     loading: false,
     loadError: '',
   },
@@ -238,6 +268,11 @@ Page({
   async onLoad(query) {
     const id = query && query.id ? decodeURIComponent(query.id) : ''
     this.matchId = id
+    try {
+      this.sharedMvpKey = query && query.mvp ? decodeURIComponent(String(query.mvp)) : ''
+    } catch (error) {
+      this.sharedMvpKey = ''
+    }
 
     // 1) 本地有的先渲染 —— 不等网络，点开分享立刻能看到内容
     const raw = data.findMatch(id)
@@ -257,6 +292,13 @@ Page({
       const fresh = data.findMatch(id)
       if (fresh) this.applyMatch(fresh)
     }
+    if (!this.data.match || !data.findMatch(id)) {
+      const archived = await Promise.race([
+        data.findArchivedMatch(id),
+        new Promise(resolve => setTimeout(() => resolve(null), 6000)),
+      ])
+      if (archived) this.applyMatch(archived)
+    }
     if (!this.data.match) {
       this.setData({
         loading: false,
@@ -267,14 +309,23 @@ Page({
 
   /**
    * 比赛详情：独立于主流程异步加载，拿不到就整块不显示。
-   * 详情只覆盖「进行中 + 近 48 小时已结束」的比赛，老比赛本来就没有，这不是错误。
+   * 普通赛事保持原保留窗口；Worlds2026 日桶保留到决赛后 30 天。
    */
   async loadDetail(match) {
     if (Date.now() - (this.detailReadAt || 0) < 3 * 60000) return
     this.detailReadAt = Date.now()
     const raw = await data.matchDetail(match)
     if (!raw || !this.data.match || this.data.match.id !== match.id) return
-    this.setData({ detail: decorateDetail(raw, match), detailAll: false })
+    const detail = decorateDetail(raw, match)
+    if (detail.lolMvp) {
+      detail.lolMvp.sharedKey = this.sharedMvpKey
+      detail.lolMvp.candidates = detail.lolMvp.candidates.map(candidate => Object.assign({}, candidate, {
+        isShared: this.sharedMvpKey === candidate.key,
+      }))
+    }
+    this.setData({ detail, detailAll: false }, () => {
+      if (detail.lolMvp && detail.lolMvp.available) this.refreshLolMvpSummary(match.id)
+    })
     const kplReady = match.comp !== 'kpl' || !!(raw.kpl && (raw.kpl.list || []).length > 0
       && raw.kpl.list.length >= Number(match.home.score || 0) + Number(match.away.score || 0))
     const lolReady = data.compOf(match.comp).cat !== 'esports' || match.comp === 'kpl' || !!(raw.lol && raw.lol.complete)
@@ -317,9 +368,12 @@ Page({
       isFav: app.isFav(match.id),
       authState: app.globalData.authState,
       hasStandings: !!data.standingsOf(match.comp),
+      canRequestPre15: notificationAvailability(match).canRequestPre15,
+      canRequestPre60: notificationAvailability(match).canRequestPre60,
     }, () => {
       this.buildShareImage()
       this.loadDetail(match)
+      this.loadNotificationStates(match)
       this.syncLivePoll()
     })
   },
@@ -368,7 +422,13 @@ Page({
     this.setData({
       isFav: app.isFav(this.data.match.id),
       authState: app.globalData.authState,
+      canRequestPre15: notificationAvailability(this.data.match).canRequestPre15,
+      canRequestPre60: notificationAvailability(this.data.match).canRequestPre60,
     })
+    this.loadNotificationStates(this.data.match)
+    if (this.data.detail && this.data.detail.lolMvp && this.data.detail.lolMvp.available) {
+      this.refreshLolMvpSummary(this.data.match.id)
+    }
     this.syncLivePoll()
   },
 
@@ -420,12 +480,138 @@ Page({
   },
 
   onLolHeroError(e) {
-    const { round, team, player } = e.currentTarget.dataset
-    const r = Number(round), t = Number(team), p = Number(player)
-    if (![r, t, p].every(i => Number.isInteger(i) && i >= 0)) return
+    const { round, row, side } = e.currentTarget.dataset
+    const r = Number(round), p = Number(row), s = Number(side)
+    if (![r, p, s].every(i => Number.isInteger(i) && i >= 0)) return
     const lol = this.data.detail && this.data.detail.lol
-    const row = lol && lol.rounds[r] && lol.rounds[r].teams[t] && lol.rounds[r].teams[t].players[p]
-    if (row && row.icon) this.setData({ [`detail.lol.rounds[${r}].teams[${t}].players[${p}].icon`]: '' })
+    const player = lol && lol.rounds[r] && lol.rounds[r].rows[p] && lol.rounds[r].rows[p].players[s]
+    if (player && player.icon) this.setData({ [`detail.lol.rounds[${r}].rows[${p}].players[${s}].icon`]: '' })
+  },
+
+  async refreshLolMvpSummary(matchId) {
+    if (this.mvpSummaryBusy) return
+    this.mvpSummaryBusy = true
+    const res = await lolMvpVote.summary(matchId)
+    this.mvpSummaryBusy = false
+    if (!this.data.match || this.data.match.id !== matchId || !this.data.detail
+      || !this.data.detail.lolMvp || !this.data.detail.lolMvp.available) return
+    if (res.error) {
+      console.warn('[LOL MVP] 投票汇总暂不可用', res.error.message)
+      return
+    }
+    const rows = res.data || []
+    this.setData({ 'detail.lolMvp.enabled': true })
+    const mine = rows.find(row => row.is_mine)
+    const counts = {}
+    rows.forEach(row => { counts[row.player_id] = Number(row.vote_count) || 0 })
+    const candidates = this.data.detail.lolMvp.candidates.map(candidate => Object.assign({}, candidate, {
+      votes: counts[candidate.key] || 0,
+      isMine: !!(mine && mine.player_id === candidate.key),
+      isShared: this.sharedMvpKey === candidate.key,
+    }))
+    const myVote = mine ? mine.player_id : ''
+    const totalVotes = rows.length ? Number(rows[0].total_votes) || 0 : 0
+    const leaderVotes = candidates.reduce((max, candidate) => Math.max(max, candidate.votes), 0)
+    const leaders = leaderVotes ? candidates.filter(candidate => candidate.votes === leaderVotes) : []
+    const leaderNames = leaders.slice(0, 2).map(candidate => candidate.name).join(' / ')
+    const leaderSummary = leaderVotes
+      ? `${leaderNames}${leaders.length > 2 ? ' 等' : ''} · ${leaderVotes} 票${leaders.length > 1 ? '（并列）' : ''}`
+      : '暂无选手得票'
+    this.setData({
+      'detail.lolMvp.candidates': candidates,
+      'detail.lolMvp.positions': lolView.buildMvpMatchups(candidates),
+      'detail.lolMvp.myVote': myVote,
+      'detail.lolMvp.totalVotes': totalVotes,
+      'detail.lolMvp.leaderSummary': leaderSummary,
+    })
+    if (myVote) {
+      const candidate = candidates.find(item => item.key === myVote)
+      if (candidate) {
+        this.mvpShareCandidate = candidate
+        this.buildLolMvpShareImage(candidate)
+      }
+    }
+  },
+
+  async onLolMvpVote(e) {
+    if (this.mvpVoteBusy) return
+    const key = e.currentTarget.dataset.key
+    const mvp = this.data.detail && this.data.detail.lolMvp
+    const candidate = mvp && mvp.candidates.find(item => item.key === key)
+    if (!mvp || !mvp.available || !candidate) return
+    if (mvp.myVote) {
+      wx.showToast({ title: '本场已投票，不能修改', icon: 'none' })
+      return
+    }
+
+    const app = appInstance()
+    if (app.globalData.authState !== 'signed-in') {
+      await app.refreshAuth()
+      this.setData({ authState: app.globalData.authState })
+    }
+    if (app.globalData.authState !== 'signed-in') {
+      const unavailable = app.globalData.authState === 'unavailable'
+      wx.showModal({
+        title: unavailable ? '云服务未就绪' : '登录后参与投票',
+        content: unavailable
+          ? '投票需要云服务支持，请在开发者工具中执行「构建 npm」后重新预览。'
+          : '每个账号在这场系列赛中只能投 1 票，投出后不能修改。要现在去登录吗？',
+        confirmText: unavailable ? '知道了' : '去登录',
+        cancelText: unavailable ? undefined : '稍后',
+        showCancel: !unavailable,
+        success: (res) => { if (!unavailable && res.confirm) wx.switchTab({ url: '/pages/mine/mine' }) },
+      })
+      return
+    }
+
+    this.mvpVoteBusy = true
+    this.setData({ mvpVoteBusy: true })
+    const result = await lolMvpVote.vote(this.data.match.id, this.data.match.start, candidate.key)
+    this.mvpVoteBusy = false
+    this.setData({ mvpVoteBusy: false })
+    if (result.error) {
+      if (String(result.error.code || '').indexOf('23505') >= 0) {
+        await this.refreshLolMvpSummary(this.data.match.id)
+        wx.showToast({ title: '本场已投票，不能修改', icon: 'none' })
+        return
+      }
+      wx.showToast({ title: result.error.code === '42P01' || result.error.code === '42883' || result.error.code === 'PGRST202'
+        ? '投票服务尚未启用' : result.error.message, icon: 'none' })
+      return
+    }
+    this.sharedMvpKey = ''
+    this.mvpShareCandidate = candidate
+    this.setData({ lolMvpShareImage: '', 'detail.lolMvp.myVote': candidate.key })
+    this.buildLolMvpShareImage(candidate)
+    await this.refreshLolMvpSummary(this.data.match.id)
+    wx.showToast({ title: '已记录你的 MVP 选择', icon: 'success' })
+  },
+
+  async buildLolMvpShareImage(candidate) {
+    if (!candidate) return
+    if (this.mvpShareImageBusy) {
+      this.mvpPendingShareCandidate = candidate
+      return
+    }
+    this.mvpShareImageBusy = true
+    const comp = this.data.comp || {}
+    const img = await poster.build(this, 'share-canvas', 'lol-mvp', {
+      comp: comp.full || comp.name || 'LOL',
+      name: candidate.name,
+      team: candidate.team,
+      champions: candidate.champions,
+      games: candidate.games,
+      k: candidate.k, d: candidate.d, a: candidate.a,
+      cs: candidate.cs, gold: candidate.gold,
+      accent: comp.accent || '#B99433',
+    })
+    this.mvpShareImageBusy = false
+    if (img && this.mvpShareCandidate && this.mvpShareCandidate.key === candidate.key) {
+      this.setData({ lolMvpShareImage: img })
+    }
+    const pending = this.mvpPendingShareCandidate
+    this.mvpPendingShareCandidate = null
+    if (pending && pending.key !== candidate.key) this.buildLolMvpShareImage(pending)
   },
 
   /** 切换 KPL 单局 tab（数据一次全在 payload 里，切换是纯前端，零请求） */
@@ -436,55 +622,166 @@ Page({
     this.setData({ 'detail.kpl.active': idx })
   },
 
-  async onFavTap() {
+  async loadNotificationStates(match) {
+    if (!match || !appInstance().isFav(match.id)) {
+      this.setData({ notificationStates: {} })
+      return
+    }
+    const result = await notifications.states(match.id)
+    if (!this.data.match || this.data.match.id !== match.id) return
+    // 🔴 读不到状态时必须**清空**，不能保留上一次的结果：微信不提供「剩余下发次数」
+    //    查询接口，本地这张表是唯一可信来源。留着旧值会把「其实已经拿不到授权
+    //    （额度耗尽/被拒）」的通知继续显示成「已订阅」。
+    if (result.error) {
+      this.setData({ notificationStates: {} })
+      return
+    }
+    const states = {}
+    ;(result.data || []).forEach((row) => { states[row.kind] = row.status })
+    this.setData({ notificationStates: states })
+  },
+
+  onFavTap() {
     const app = appInstance()
     if (this.data.favBusy) return
-    this.setData({ favBusy: true })
-
     if (app.globalData.authState !== 'signed-in') {
-      await app.refreshAuth()
-      this.setData({ authState: app.globalData.authState })
-    }
-    if (app.globalData.authState === 'unavailable') {
-      wx.showModal({
-        title: '云服务未就绪',
-        content: '关注功能需要云服务支持。请在微信开发者工具中执行「构建 npm」后重新预览。',
-        showCancel: false,
-      })
-      this.setData({ favBusy: false })
-      return
-    }
-    if (app.globalData.authState !== 'signed-in') {
+      if (app.globalData.authState === 'unknown') {
+        app.refreshAuth().then(() => {
+          this.setData({ authState: app.globalData.authState })
+          wx.showToast({ title: app.globalData.authState === 'signed-in' ? '登录状态已就绪，请再点一次关注' : '请先登录后关注比赛', icon: 'none' })
+        })
+        return
+      }
+      if (app.globalData.authState === 'unavailable') {
+        wx.showModal({ title: '云服务未就绪', content: '关注功能需要云服务支持，请检查小程序云服务配置。', showCancel: false })
+        return
+      }
       wx.showModal({
         title: '需要登录',
-        content: '登录后才能把比赛收藏到「我的」，换设备也不会丢失。要现在去登录吗？',
+        content: '登录后才能把比赛收藏到「我的」，并设置赛前与赛果通知。',
         confirmText: '去登录',
         cancelText: '稍后',
-        success: (res) => {
-          if (res.confirm) wx.switchTab({ url: '/pages/mine/mine' })
-        },
+        success: (res) => { if (res.confirm) wx.switchTab({ url: '/pages/mine/mine' }) },
       })
-      this.setData({ favBusy: false })
       return
     }
-
     const match = this.data.match
+    if (!match) return
+    this.setData({ favBusy: true })
     if (this.data.isFav) {
-      const res = await favorites.remove(match.id)
-      if (res.error) wx.showToast({ title: res.error.message, icon: 'none' })
-      await app.refreshFavorites()
-      this.setData({ isFav: app.isFav(match.id) })
+      favorites.remove(match.id).then(async (res) => {
+        if (res.error) wx.showToast({ title: res.error.message, icon: 'none' })
+        else {
+          await notifications.cancel(match.id)
+          wx.showToast({ title: '已取消关注和待发送通知', icon: 'success' })
+        }
+        await app.refreshFavorites()
+        this.setData({ isFav: app.isFav(match.id), favBusy: false })
+        this.loadNotificationStates(match)
+      }).catch(() => this.setData({ favBusy: false }))
     } else {
-      const res = await favorites.add(match)
-      if (res.error) {
-        wx.showToast({ title: res.error.message, icon: 'none' })
-      } else {
-        wx.showToast({ title: '已加入关注', icon: 'success' })
+      const requestedKinds = notificationConfig.kindsFor(match)
+      // 🔴 按模板 ID 去重：一次 requestSubscribeMessage 里同一个模板只算**一次**授权，
+      //    而一次 kickoff 授权只够发一条消息（pre60 与 pre15 共用该模板）。
+      const templateIds = Array.from(new Set(requestedKinds.map((kind) => notificationConfig.templateId(kind))))
+      const finishAdd = async (acceptedKinds) => {
+        try {
+          const res = await favorites.add(match)
+          if (res.error) wx.showToast({ title: res.error.message, icon: 'none' })
+          else {
+            let notice = '已加入关注'
+            let noticeIcon = 'success'
+            if (acceptedKinds.length) {
+              const saved = await notifications.subscribe(match.id, acceptedKinds)
+              if (saved.error) {
+                notice = '比赛已关注，通知未保存，请重试'
+                noticeIcon = 'none'
+              } else notice = '已关注并设置通知'
+            }
+            wx.showToast({ title: notice, icon: noticeIcon })
+          }
+        } catch (error) {
+          wx.showToast({ title: error && error.message || '关注失败，请重试', icon: 'none' })
+        } finally {
+          await app.refreshFavorites().catch(() => {})
+          this.setData({ isFav: app.isFav(match.id), favBusy: false })
+          this.loadNotificationStates(match)
+        }
       }
-      await app.refreshFavorites()
-      this.setData({ isFav: app.isFav(match.id) })
+      if (!templateIds.length || typeof wx.requestSubscribeMessage !== 'function') {
+        finishAdd([])
+        return
+      }
+      // This API must run directly in the user's tap handler for WeChat to show consent.
+      wx.requestSubscribeMessage({
+        tmplIds: templateIds,
+        success: (result) => {
+          const accepted = []
+          if (requestedKinds.includes('pre15') && result[notificationConfig.templateId('pre15')] === 'accept') accepted.push('pre15')
+          if (requestedKinds.includes('result') && result[notificationConfig.templateId('result')] === 'accept') accepted.push('result')
+          finishAdd(accepted)
+        },
+        fail: () => finishAdd([]),
+      })
     }
-    this.setData({ favBusy: false })
+  },
+
+  onNotificationTap() {
+    const match = this.data.match
+    if (!match || !this.data.isFav || this.data.notificationBusy) return
+    const states = this.data.notificationStates || {}
+    // 🔴 同一次授权里**一个模板只能换一条下发额度**。pre60 与 pre15 共用 kickoff 模板，
+    //    两者若在同一次申请里一起提交，必然有一个拿不到额度 —— 那就会变成
+    //    「显示已订阅、实际发不出去」。这里按模板收敛，pre15 优先；pre60 走
+    //    单独的「加一轮」入口再授权一次。
+    const seenTemplates = new Set()
+    const kinds = []
+    notificationConfig.kindsFor(match).forEach((kind) => {
+      if (states[kind]) return
+      const templateId = notificationConfig.templateId(kind)
+      if (seenTemplates.has(templateId)) return
+      seenTemplates.add(templateId)
+      kinds.push(kind)
+    })
+    if (!kinds.length) { wx.showToast({ title: '当前可用通知均已设置', icon: 'none' }); return }
+    const templateIds = Array.from(new Set(kinds.map((kind) => notificationConfig.templateId(kind))))
+    if (typeof wx.requestSubscribeMessage !== 'function') { wx.showToast({ title: '当前微信版本暂不支持订阅消息', icon: 'none' }); return }
+    this.setData({ notificationBusy: true })
+    const done = () => this.setData({ notificationBusy: false })
+    wx.requestSubscribeMessage({
+      tmplIds: templateIds,
+      success: async (result) => {
+        const accepted = kinds.filter((kind) => result[notificationConfig.templateId(kind)] === 'accept')
+        if (!accepted.length) { done(); wx.showToast({ title: '尚未授权通知', icon: 'none' }); return }
+        const saved = await notifications.subscribe(match.id, accepted)
+        done()
+        if (saved.error) { wx.showToast({ title: saved.error.message, icon: 'none' }); return }
+        wx.showToast({ title: '通知已设置', icon: 'success' })
+        this.loadNotificationStates(match)
+      },
+      fail: (error) => { done(); wx.showToast({ title: error && error.errMsg || '订阅失败，请重试', icon: 'none' }) },
+    })
+  },
+
+  onExtraPreReminderTap() {
+    const match = this.data.match
+    if (!match || !this.data.isFav || match.status !== 'upcoming' || !notificationAvailability(match).canRequestPre60 || this.data.notificationBusy) return
+    if (this.data.notificationStates && this.data.notificationStates.pre60) { wx.showToast({ title: '开赛前1小时提醒已设置', icon: 'none' }); return }
+    const templateId = notificationConfig.templateId('pre60')
+    if (typeof wx.requestSubscribeMessage !== 'function') { wx.showToast({ title: '当前微信版本暂不支持订阅消息', icon: 'none' }); return }
+    this.setData({ notificationBusy: true })
+    wx.requestSubscribeMessage({
+      tmplIds: [templateId],
+      success: async (result) => {
+        if (result[templateId] !== 'accept') { this.setData({ notificationBusy: false }); wx.showToast({ title: '尚未授权1小时提醒', icon: 'none' }); return }
+        const saved = await notifications.subscribe(match.id, ['pre60'])
+        this.setData({ notificationBusy: false })
+        if (saved.error) { wx.showToast({ title: saved.error.message, icon: 'none' }); return }
+        wx.showToast({ title: '开赛前1小时提醒已设置', icon: 'success' })
+        this.loadNotificationStates(match)
+      },
+      fail: (error) => { this.setData({ notificationBusy: false }); wx.showToast({ title: error && error.errMsg || '订阅失败，请重试', icon: 'none' }) },
+    })
   },
 
   onCompTap() {
@@ -517,11 +814,20 @@ Page({
     nav.toRank(m.comp)
   },
 
-  onShareAppMessage() {
+  onShareAppMessage(e) {
     const m = this.data.match
     if (!m) return share.message()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
+    const isMvp = e && e.target && e.target.dataset && e.target.dataset.kind === 'lol-mvp'
+    const mvp = isMvp && this.mvpShareCandidate
+    if (mvp) {
+      return share.message({
+        title: `我选 ${mvp.name} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
+        path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(mvp.key)}`,
+        imageUrl: this.data.lolMvpShareImage,
+      })
+    }
     const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
     // 有比分就把结果写进标题，比「赛程与比分」更值得点；没比分用 VS（与卡图一致）
     const tail = hasScore ? `${m.home.score}-${m.away.score}` : (m.status === 'live' ? '进行中' : 'VS')
@@ -537,6 +843,14 @@ Page({
     if (!m) return share.timeline()
     const h = m.home.zhName || m.home.name
     const a = m.away.zhName || m.away.name
+    const mvp = this.mvpShareCandidate
+    if (mvp) {
+      return share.timeline({
+        title: `我选 ${mvp.name} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
+        query: `id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(mvp.key)}`,
+        imageUrl: this.data.lolMvpShareImage,
+      })
+    }
     const hasScore = typeof m.home.score === 'number' && typeof m.away.score === 'number'
     const tail = hasScore ? `${m.home.score}-${m.away.score}` : 'VS'
     return share.timeline({

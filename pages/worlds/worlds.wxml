@@ -1,0 +1,64 @@
+<view class="page worlds">
+  <view class="worlds-hero">
+    <view class="worlds-kicker">英雄联盟全球总决赛</view>
+    <view class="worlds-title">Worlds 2026</view>
+    <view class="worlds-sub">10月16日—11月15日 · 北京时间</view>
+    <view class="worlds-brief" bindtap="goBrief">S赛晨报 · 看昨夜赛果与晋级形势 ›</view>
+  </view>
+  <view class="worlds-filters">
+    <view wx:for="{{filters}}" wx:key="key" wx:for-index="fi" class="worlds-filter {{activeFilter === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="onFilterTap">{{item.name}}</view>
+  </view>
+  <view class="worlds-note" wx:if="{{stale}}">当前数据较旧，比分可能尚未更新。</view>
+  <view class="worlds-next" wx:if="{{next}}" data-id="{{next.id}}" bindtap="goDetail">
+    <view class="worlds-section-title">{{next.status === 'live' ? '正在进行' : '下一场'}}</view>
+    <view class="worlds-next-teams">{{next.home.zhName}} vs {{next.away.zhName}}</view>
+    <view class="worlds-date">{{next._worldsTime}}</view>
+    <view class="worlds-date">{{next._stageLabel}} {{next._bo}}</view>
+  </view>
+  <view class="empty" wx:if="{{!total}}">
+    <view class="empty-title">{{activeFilter === 'all' ? '赛程等待官方更新' : '当前筛选暂无比赛'}}</view>
+    <view class="empty-desc" wx:if="{{activeFilter === 'followed'}}">关注参赛队后，可以在这里集中查看。</view>
+    <view class="empty-desc" wx:elif="{{activeFilter === 'lpl'}}">AL、BLG、TES、IG 的比赛公布后会在这里展示。</view>
+    <view class="empty-desc" wx:else>只展示 2026 全球总决赛，不混入往届比赛。抽签前对阵显示待定。</view>
+    <view class="worlds-manage" wx:if="{{activeFilter === 'followed'}}" bindtap="goTeams">管理关注 ›</view>
+  </view>
+  <block wx:for="{{sections}}" wx:for-item="section" wx:for-index="sectionIndex" wx:key="key">
+    <view class="worlds-section" wx:if="{{section.items.length}}">
+      <view class="worlds-section-title">{{section.title}} · {{section.items.length}}场</view>
+      <view class="worlds-match" wx:for="{{section.items}}" wx:for-item="m" wx:for-index="matchIndex" wx:key="id" data-id="{{m.id}}" bindtap="goDetail">
+        <view class="worlds-match-head"><text>{{m._stageLabel}} {{m._bo}}</text><text class="status-{{m.status}}">{{m._statusLabel}}</text></view>
+        <view class="worlds-match-teams"><text>{{m.home.zhName}}</text><text class="worlds-score">{{m._hasScore ? m.home.score : '—'}} : {{m._hasScore ? m.away.score : '—'}}</text><text>{{m.away.zhName}}</text></view>
+        <view class="worlds-date">{{m._worldsTime}}</view>
+      </view>
+    </view>
+  </block>
+  <view class="worlds-section" wx:if="{{swiss.length}}">
+    <view class="worlds-section-title">瑞士轮晋级形势 · 全赛事</view>
+    <view class="worlds-note">官方胜负战绩分组，无组内排名；3胜晋级、3负淘汰。</view>
+    <view class="swiss-group" wx:for="{{swiss}}" wx:for-item="g" wx:for-index="groupIndex" wx:key="key">
+      <view class="swiss-head">{{g.wins}}胜{{g.losses}}负 <text class="swiss-state">{{g.qualification}}</text></view>
+      <view class="swiss-teams"><text wx:for="{{g.teams}}" wx:for-item="t" wx:for-index="teamIndex" wx:key="id" class="swiss-team">{{t.name}}</text></view>
+    </view>
+  </view>
+  <view class="ko" wx:if="{{bracket}}">
+    <view class="ko-title">淘汰赛对阵 · 全赛事</view>
+    <view class="ko-heads">
+      <block wx:for="{{bracket.items}}" wx:key="key" wx:for-item="it" wx:for-index="ii">
+        <view class="ko-head" wx:if="{{it.type === 'col'}}">{{it.label}}</view><view class="ko-head-gap" wx:else></view>
+      </block>
+    </view>
+    <view class="ko-tree">
+      <block wx:for="{{bracket.items}}" wx:key="key" wx:for-item="it" wx:for-index="ii">
+        <view class="ko-col" wx:if="{{it.type === 'col'}}" style="padding-top: {{it.padTop}}rpx">
+          <view class="ko-node" wx:for="{{it.nodes}}" wx:for-item="n" wx:for-index="ni" wx:key="id" data-id="{{n.id}}" bindtap="goDetail">
+            <view class="ko-row {{r.win ? 'win' : ''}}" wx:for="{{n.rows}}" wx:for-item="r" wx:for-index="ri" wx:key="idx"><view class="ko-dot" style="background: {{r.color}}"></view><view class="ko-name">{{r.name}}</view><view class="ko-score" wx:if="{{n.hasScore}}">{{r.score}}</view></view>
+          </view>
+        </view>
+        <view class="ko-gap" wx:else style="height: {{it.height}}rpx"><view class="ko-seg" wx:for="{{it.segs}}" wx:for-item="sg" wx:for-index="si" wx:key="k" style="left: {{sg.left}}rpx; top: {{sg.top}}rpx; width: {{sg.width}}rpx; height: {{sg.height}}rpx"></view></view>
+      </block>
+    </view>
+    <view class="ko-note">连线按同轮时间顺序配对推断，并用官方赛果校验；对阵未定时以官方抽签为准。</view>
+  </view>
+  <view class="worlds-note">时间均为北京时间，赛程变更以官方公告为准。{{source === 'cloud' ? '云端赛程' : '本地赛程'}}；{{updatedAt ? '数据更新：' + updatedAt : '等待数据更新'}}</view>
+  <view class="safe-bottom"></view>
+</view>

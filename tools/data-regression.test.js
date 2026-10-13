@@ -17,6 +17,38 @@ function load(file, overrides = {}) {
   return box
 }
 
+test('following a match never reports notification success when saving consent fails', async () => {
+  const toasts = []
+  let page
+  let finish
+  const settled = new Promise(resolve => { finish = resolve })
+  const config = require('../utils/match-notification-config')
+  const app = { globalData: { authState: 'signed-in' }, refreshFavorites: async () => {}, isFav: () => true }
+  load('../pages/detail/detail.js', {
+    Page: value => { page = value },
+    require: name => {
+      if (name.endsWith('/app-instance')) return { appInstance: () => app }
+      if (name.endsWith('/favorites')) return { add: async () => ({ error: null }) }
+      if (name.endsWith('/match-notification-config')) return config
+      if (name.endsWith('/match-notifications')) return { subscribe: async () => ({ error: { message: 'network failure' } }) }
+      return {}
+    },
+    wx: {
+      showToast: value => toasts.push(value),
+      requestSubscribeMessage: options => options.success(Object.fromEntries(options.tmplIds.map(id => [id, 'accept']))),
+    },
+  })
+  page.data = { match: { id: 'epl-test', comp: 'epl', status: 'upcoming', start: new Date(Date.now() + 3600000).toISOString() }, isFav: false }
+  page.setData = values => Object.assign(page.data, values)
+  page.loadNotificationStates = () => finish()
+  page.onFavTap()
+  await settled
+  assert.equal(page.data.isFav, true)
+  assert.equal(toasts.length, 1)
+  assert.match(toasts[0].title, /通知未保存/)
+  assert.equal(toasts[0].icon, 'none')
+})
+
 test('LOL fast lane sends its authentication header for all leagues', async () => {
   const requests = []
   const box = load('live-watch.js', {
@@ -28,6 +60,26 @@ test('LOL fast lane sends its authentication header for all leagues', async () =
   await box.module.exports.scanLol()
   assert.equal(requests.length, 7)
   assert.ok(requests.every(h => h['x-api-key']))
+})
+
+test('LOL fast lane keeps recent last-good rows for a failed league only', () => {
+  const { preserveLastGoodLolRows } = require('./live-watch')
+  const now = Date.parse('2026-10-13T12:00:00Z')
+  const previous = {
+    rows: [
+      { id: 'lpl-1', st: 'live', hs: 2, as: 1 },
+      { id: 'lck-2', st: 'live', hs: 1, as: 0 },
+      { id: 'kpl-3', st: 'live', hs: 4, as: 2 },
+    ],
+  }
+  const sources = {
+    'lol:lpl': { ok: false, lastSuccess: new Date(now - 4 * 60000).toISOString() },
+    'lol:lck': { ok: false, lastSuccess: new Date(now - 16 * 60000).toISOString() },
+  }
+  const current = [{ id: 'nba-9', st: 'live', hs: 8, as: 7 }]
+  const rows = preserveLastGoodLolRows(current, previous, ['lpl', 'lck'], sources, now)
+  assert.deepEqual(rows.map(r => r.id).sort(), ['lpl-1', 'nba-9'])
+  assert.equal(rows.find(r => r.id === 'lpl-1').hs, 2)
 })
 
 test('CBA uses official finished status even when quarter remains 4', async () => {
@@ -257,12 +309,12 @@ test('an unavailable LOL portrait clears only that player image, keeping their n
   let definition, patch
   load('../pages/detail/detail.js',{Page:p=>{definition=p},require:()=>({})})
   const player={name:'JDG Player',champion:'Ashe',icon:'https://example/icon.png',kda:'1 / 2 / 3'}
-  const page={...definition,data:{detail:{lol:{rounds:[{teams:[{players:[player]}]}]}}},setData:p=>{patch=p}}
-  page.onLolHeroError({currentTarget:{dataset:{round:0,team:0,player:0}}})
-  assert.equal(patch['detail.lol.rounds[0].teams[0].players[0].icon'],'')
+  const page={...definition,data:{detail:{lol:{rounds:[{rows:[{players:[player,null]}]}]}}},setData:p=>{patch=p}}
+  page.onLolHeroError({currentTarget:{dataset:{round:0,row:0,side:0}}})
+  assert.equal(patch['detail.lol.rounds[0].rows[0].players[0].icon'],'')
   assert.equal(player.champion,'Ashe')
   assert.equal(player.kda,'1 / 2 / 3')
   patch=null
-  page.onLolHeroError({currentTarget:{dataset:{round:-1,team:0,player:0}}})
+  page.onLolHeroError({currentTarget:{dataset:{round:-1,row:0,side:0}}})
   assert.equal(patch,null)
 })

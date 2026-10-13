@@ -1,0 +1,157 @@
+.worlds-hero { margin: 24rpx; padding: 32rpx; border-radius: 24rpx; color: #fff; background: linear-gradient(135deg, #14235c, #394266); }
+.worlds-kicker { color: #e4c577; font-size: 24rpx; }
+.worlds-title { font-size: 50rpx; font-weight: 800; margin: 8rpx 0; }
+.worlds-sub { font-size: 24rpx; opacity: .8; }
+.worlds-brief { padding-top: 24rpx; margin-top: 24rpx; border-top: 1rpx solid rgba(255,255,255,.2); font-size: 26rpx; }
+.worlds-filters { display: flex; padding: 0 24rpx; }
+.worlds-filter { margin-right: 16rpx; padding: 14rpx 26rpx; border-radius: 30rpx; background: #fff; color: var(--muted); font-size: 26rpx; }
+.worlds-filter.active { background: var(--brand); color: #fff; }
+.worlds-next, .worlds-section { margin: 24rpx; padding: 24rpx; border-radius: 20rpx; background: #fff; }
+.worlds-next { border: 2rpx solid #c9ac65; }
+.worlds-section-title { font-size: 28rpx; font-weight: 700; margin-bottom: 16rpx; }
+.worlds-next-teams { font-size: 32rpx; font-weight: 700; margin-bottom: 12rpx; }
+.worlds-date { font-size: 22rpx; color: var(--muted); line-height: 1.8; }
+.worlds-match { border-top: 1rpx solid var(--line); padding: 22rpx 0; }
+.worlds-match-head { display: flex; justify-content: space-between; color: var(--muted); font-size: 22rpx; }
+.worlds-match-teams { display: flex; justify-content: space-between; align-items: center; font-size: 28rpx; font-weight: 600; margin: 16rpx 0 8rpx; }
+.worlds-match-teams > text { flex: 1; text-align: center; }
+.worlds-score { flex: none !important; width: 150rpx; color: var(--brand); }
+.worlds-note { margin: 20rpx 24rpx; font-size: 22rpx; line-height: 1.7; color: var(--muted); }
+.worlds-section .worlds-note { margin: 0 0 20rpx; }
+.worlds-manage { margin-top: 20rpx; color: var(--brand); }
+.swiss-group { padding: 20rpx 0; border-top: 1rpx solid var(--line); }
+.swiss-head { font-size: 26rpx; font-weight: 700; }
+.swiss-state { margin-left: 16rpx; color: var(--brand); font-size: 22rpx; }
+.swiss-teams { display: flex; flex-wrap: wrap; margin-top: 12rpx; }
+.swiss-team { margin: 0 20rpx 8rpx 0; color: var(--muted); font-size: 24rpx; }
+.ko {
+  margin: 16rpx 24rpx 0;
+  padding: 20rpx 16rpx 22rpx;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
+}
+
+.ko-title {
+  margin: 0 8rpx 16rpx;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.ko-heads {
+  display: flex;
+  align-items: center;
+  margin: 0 0 14rpx;
+}
+
+.ko-head {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 表头行的走廊占位：宽度必须与 .ko-gap 相同，否则列头和列身对不齐 */
+.ko-head-gap {
+  flex: none;
+  width: 36rpx;
+}
+
+.ko-tree {
+  display: flex;
+  align-items: flex-start;
+}
+
+.ko-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ko-gap {
+  position: relative;
+  flex: none;
+  width: 36rpx;
+}
+
+/* 一条连线线段。位置和长度全部由 bracket.js 算好，这里只负责画出来 */
+.ko-seg {
+  position: absolute;
+  background: var(--line);
+}
+
+.ko-node {
+  box-sizing: border-box;
+  height: 92rpx;
+  border: 2rpx solid var(--line);
+  border-radius: 12rpx;
+  background: #fff;
+  overflow: hidden;
+}
+
+.ko-node + .ko-node {
+  margin-top: 18rpx;
+}
+
+.ko-node-hover {
+  background: var(--brand-soft);
+}
+
+.ko-row {
+  display: flex;
+  align-items: center;
+  height: 44rpx;
+  padding: 0 10rpx;
+}
+
+.ko-dot {
+  flex: none;
+  width: 8rpx;
+  height: 22rpx;
+  margin-right: 8rpx;
+  border-radius: 4rpx;
+}
+
+.ko-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ko-score {
+  flex: none;
+  min-width: 26rpx;
+  text-align: right;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 与比赛卡同一套口径：胜者更黑更重，负者留灰 */
+.ko-row.win .ko-name {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.ko-row.win .ko-score {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.ko-note {
+  margin: 18rpx 8rpx 0;
+  font-size: 20rpx;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* 离屏 canvas：只用于转发前绘制分享卡，移出屏幕而不是 display:none */

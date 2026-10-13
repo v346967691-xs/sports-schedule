@@ -5,6 +5,7 @@ const fmt = require('../../utils/format')
 const follows = require('../../utils/team-follows')
 const briefApi = require('../../utils/brief')
 const nav = require('../../utils/nav')
+const worlds = require('../../utils/worlds')
 
 /** 关注球队的「未来赛程」最多往前看几天 */
 const TEAM_FUTURE_DAYS = 7
@@ -48,6 +49,7 @@ Page({
     teamCount: 0,
     loadError: '',
     brief: null,
+    worldsNext: '',
   },
 
   onLoad() {
@@ -125,6 +127,8 @@ Page({
     wx.navigateTo({ url: '/pages/brief/brief' })
   },
 
+  goWorlds() { wx.navigateTo({ url: '/pages/worlds/worlds' }) },
+
   /**
    * 渲染兜底：任何一步出错都不能把页面留成白板。
    * 真机上白屏最难排查，这里把错误直接显示在页面上。
@@ -148,6 +152,9 @@ Page({
     }
 
     const today = fmt.todayStr()
+    const worldsList = worlds.eventMatches(data.query({ comps: ['worlds'] }))
+    const worldsNext = worldsList.find((m) => m.status === 'live') || worldsList.find((m) => m.status === 'upcoming')
+    this.setData({ worldsNext: worldsNext ? `${worlds.timeLabel(worldsNext)} · ${view.nameOf(worldsNext.home)} vs ${view.nameOf(worldsNext.away)}` : '赛程 · 赛果 · 晋级形势 · 每日晨报' })
     const strip = []
     for (let i = -1; i < 13; i += 1) {
       const d = fmt.shiftDay(today, i)

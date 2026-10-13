@@ -412,7 +412,7 @@ Page({
     const d = this.data
     // ⚠️ 标题里的「N 场」必须和卡图一致（共用 shareHeadline），否则两条信息打架
     const { n, head } = this.shareHeadline()
-    const title = `${head} ${n} 场 · 闪现赛程助手`
+    const title = `${head} ${n} 场`
     return share.message({
       title,
       path: d.activeComp

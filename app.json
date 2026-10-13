@@ -9,7 +9,9 @@
     "pages/player/player",
     "pages/teams/teams",
     "pages/brief/brief",
-    "pages/search/search"
+    "pages/search/search",
+    "pages/worlds/worlds",
+    "pages/worlds-brief/worlds-brief"
   ],
   "window": {
     "backgroundTextStyle": "light",

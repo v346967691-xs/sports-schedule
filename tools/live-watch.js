@@ -4,7 +4,7 @@
  * 用途：只抓「正在打的比赛」的比分/状态，推到云表 `live_scores`（约 10KB），
  *       供小程序在 `schedule_cache` 之上打补丁 —— 让比分延迟从 ~9 分钟降到 ~1 分钟。
  *
- * 用法： node tools/live-watch.js [--once] [--minutes=11] [--every=60] [--dry] [--only=epl,nba]
+ * 用法： node tools/live-watch.js [--once] [--minutes=14] [--every=60] [--dry] [--only=epl,nba]
  *
  * 🔴 为什么不能靠「把主同步加密到 2 分钟」来解决：
  *    `schedule_cache` 一行 **891KB**（2322 场解码后的扁平数组），
@@ -15,7 +15,7 @@
  *    GitHub 原生 cron 在本仓库实测 2.5~5 小时才投递一次（改频率无效），
  *    可靠触发只能靠外部 cron-job.org POST `workflow_dispatch`。
  *    为了**不新增外部配置**，这里把 live 循环挂在**已有的** 15 分钟任务末尾：
- *    一次 Actions 运行 ≈ 2 分钟（主同步）+ 11 分钟（本循环），几乎连续覆盖，
+ *    一次 Actions 运行 ≈ 2 分钟（主同步）+ 14 分钟（本循环），几乎连续覆盖，
  *    等效粒度 = `--every`（默认 60 秒）。详见 .github/workflows/sync-schedule.yml。
  *
  * 设计要点：
@@ -78,7 +78,7 @@ const LOL_COMPS = SYNC_COMPS.filter((c) => c.source === 'lol')
 const LOL_KEYS = LOL_COMPS.map((c) => c.key)
 const lolOn = !onlyArg || onlyArg === 'lol' || onlyArg === 'esports'
   || onlyArg.split(',').some((k) => LOL_KEYS.indexOf(k) > -1)
-const minutes = Number(arg('minutes', 11))
+const minutes = Number(arg('minutes', 14))
 const everySec = Number(arg('every', 60))
 const once = process.argv.includes('--once')
 const dry = process.argv.includes('--dry')
@@ -397,6 +397,27 @@ async function scanKpl() {
  */
 // 时间窗：进行中的一律收；已结束只留 6 小时内的（BO5 最长 ~5h，再加上游 state 滞后）。
 const LOL_FINISH_KEEP_MS = 12 * 3600000
+const LOL_LAST_GOOD_MAX_AGE_MS = 15 * 60000
+
+/** A temporary league API failure must not erase its recent rows from the shared live table. */
+function preserveLastGoodLolRows(rows, previousData, failedLeagueKeys, sources, now = Date.now()) {
+  const out = rows.slice()
+  const ids = new Set(out.map(row => row.id))
+  const previousRows = previousData && Array.isArray(previousData.rows) ? previousData.rows : []
+  for (const key of failedLeagueKeys || []) {
+    const health = sources && sources[`lol:${key}`]
+    const lastSuccess = health && (health.ok ? health.checkedAt : health.lastSuccess)
+    const lastSuccessAt = Date.parse(lastSuccess || '')
+    if (!Number.isFinite(lastSuccessAt) || now - lastSuccessAt > LOL_LAST_GOOD_MAX_AGE_MS) continue
+    const prefix = `${key}-`
+    for (const row of previousRows) {
+      if (typeof row.id !== 'string' || !row.id.startsWith(prefix) || ids.has(row.id)) continue
+      out.push(row)
+      ids.add(row.id)
+    }
+  }
+  return out
+}
 
 async function scanLol() {
   const now = Date.now()
@@ -474,6 +495,20 @@ async function main() {
     endpoint: publicConfig.endpoint,
     publishableKey: publicConfig.publishableKey,
   })
+  let previousLiveData = null
+  try {
+    const { data, error } = await cloud.database.from('live_scores')
+      .select('data').eq('id', 'latest').maybeSingle()
+    if (error) throw error
+    previousLiveData = data && data.data || null
+    // Carry only LoL health forward. Other sources are checked on their normal paths below.
+    for (const key of LOL_KEYS) {
+      const source = previousLiveData && previousLiveData.sources && previousLiveData.sources[`lol:${key}`]
+      if (source) sourceHealth[`lol:${key}`] = source
+    }
+  } catch (err) {
+    console.warn('[live-watch] 读取上一份实时比分失败，暂时无法保留 LoL 来源旧值：', (err && err.message) || err)
+  }
   console.log(`[live-watch] 候选赛事 ${TARGETS.length} 个，间隔 ${everySec}s${once ? '（单次）' : `，最长 ${minutes} 分钟`}`)
 
   const deadline = Date.now() + minutes * 60 * 1000
@@ -534,6 +569,13 @@ async function main() {
           if (liveComps.indexOf(k) === -1) liveComps.push(k)
         })
       }
+      const failedLolKeys = LOL_KEYS.filter(key => sourceHealth[`lol:${key}`] && !sourceHealth[`lol:${key}`].ok)
+      if (failedLolKeys.length) {
+        const before = rows.length
+        rows.splice(0, rows.length, ...preserveLastGoodLolRows(rows, previousLiveData, failedLolKeys, sourceHealth))
+        const kept = rows.length - before
+        if (kept > 0) console.warn(`[live-watch] 保留 ${failedLolKeys.join(', ')} 上次成功的 ${kept} 场 LoL 实时数据`)
+      }
     }
     const live = rows.filter((r) => r.st === 'live').length
     console.log(
@@ -555,6 +597,10 @@ async function main() {
           writeFailed = false
           lastSig = sig
           roundsSinceWrite = 0
+          previousLiveData = {
+            rows: rows.map(row => ({ ...row })),
+            sources: JSON.parse(JSON.stringify(sourceHealth)),
+          }
         } else writeFailed = true
       }
     }
@@ -597,4 +643,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, espnDates, TARGETS, LOL_KEYS }
+module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows }

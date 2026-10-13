@@ -240,6 +240,20 @@
   margin: 28rpx 24rpx 0;
 }
 
+.match-notifications {
+  margin: 22rpx 0;
+  padding: 22rpx 24rpx;
+  border-radius: 18rpx;
+  background: #f3f5fb;
+}
+.match-notifications-title { color: var(--brand); font-size: 28rpx; font-weight: 700; }
+.match-notifications-note { margin-top: 8rpx; color: var(--muted); font-size: 22rpx; line-height: 1.6; }
+.notification-state-row { display: flex; justify-content: space-between; padding-top: 14rpx; color: var(--text); font-size: 24rpx; }
+.notification-state { color: var(--muted); }
+.notification-state.ready { color: #25855a; }
+.notification-action { margin-top: 16rpx; padding: 14rpx 18rpx; border-radius: 12rpx; color: #fff; background: var(--brand); text-align: center; font-size: 24rpx; }
+.notification-action.secondary { color: var(--brand); background: #e4e9f7; }
+
 /* 2026-09-30 用户定：关注按钮缩到一半，分享赛果占右半边，中间留 20rpx 缝 */
 .btn-row {
   display: flex;
@@ -859,6 +873,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.kp-winner-tag {
+  display: inline-block;
+  margin-left: 8rpx;
+  padding: 2rpx 8rpx;
+  border-radius: 8rpx;
+  color: #fff;
+  background: #1f9d68;
+  font-size: 19rpx;
+  font-weight: 600;
+  vertical-align: 2rpx;
+}
+
 /* 对位行：左队靠左、右队靠右，中间位置标签 */
 .kp-row {
   display: flex;
@@ -939,18 +965,57 @@
 
 .lol-note { font-size: 22rpx; color: var(--muted); margin: 16rpx 0; }
 .lol-note.partial { color: #a36b12; }
-.lol-team { margin-top: 24rpx; }
+.lol-team-pair { display: flex; margin-top: 20rpx; padding-bottom: 10rpx; }
+.lol-team-summary { flex: 1; min-width: 0; }
+.lol-team-summary + .lol-team-summary { margin-left: 18rpx; text-align: right; }
 .lol-team-name { font-size: 28rpx; font-weight: 600; }
 .lol-side { font-size: 22rpx; color: var(--muted); margin-left: 10rpx; font-weight: 400; }
 .lol-totals { font-size: 21rpx; color: var(--muted); margin: 12rpx 0; line-height: 1.6; }
-.lol-player { display: flex; align-items: center; padding: 14rpx 0; border-bottom: 1rpx solid var(--line, #edf0f3); font-size: 22rpx; }
-.lol-head { color: var(--muted); font-size: 20rpx; }
-.lol-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.lol-identity { display: flex; align-items: center; }
+.lol-duel { padding: 18rpx 0; border-top: 1rpx solid var(--line, #edf0f3); }
+.lol-duel-identities { display: flex; align-items: center; margin-bottom: 10rpx; }
+.lol-duel-player { display: flex; align-items: center; flex: 1; min-width: 0; font-size: 22rpx; overflow-wrap: anywhere; }
+.lol-duel-player.away { flex-direction: row-reverse; text-align: right; }
+.lol-duel-player.away .lol-hero { margin-right: 0; margin-left: 10rpx; }
+.lol-duel-role { width: 90rpx; flex: none; text-align: center; font-size: 21rpx; font-weight: 600; color: var(--brand); }
+.lol-compare-stat { display: flex; align-items: center; margin-top: 7rpx; font-size: 22rpx; font-variant-numeric: tabular-nums; }
+.lol-compare-stat > text { flex: 1; min-width: 0; text-align: center; }
+.lol-compare-stat > .lol-stat-label { width: 90rpx; flex: none; color: var(--muted); font-size: 19rpx; }
+.lol-missing { color: var(--muted); font-size: 20rpx; }
 .lol-hero { width: 52rpx; height: 52rpx; margin-right: 10rpx; border-radius: 8rpx; flex: none; background: var(--line, #edf0f3); }
 .lol-hero-placeholder { display: flex; align-items: center; justify-content: center; color: var(--muted); }
 .lol-copy { flex: 1; min-width: 0; }
 .lol-champion { color: var(--muted); font-size: 20rpx; margin-top: 5rpx; }
-.lol-kda { width: 145rpx; text-align: center; flex: none; }
-.lol-cs { width: 65rpx; text-align: center; flex: none; }
-.lol-gold { width: 85rpx; text-align: right; flex: none; }
+
+.mvp-intro { color: var(--muted); font-size: 22rpx; line-height: 1.6; margin-top: 10rpx; }
+.mvp-summary { display: flex; align-items: center; justify-content: space-between; margin-top: 16rpx; padding: 14rpx 16rpx; border-radius: 12rpx; background: rgba(46, 124, 246, 0.08); }
+.mvp-total-label { color: var(--muted); font-size: 21rpx; }
+.mvp-total-number { color: var(--brand); font-size: 32rpx; font-weight: 750; font-variant-numeric: tabular-nums; }
+.mvp-leader { max-width: 65%; color: var(--brand); font-size: 20rpx; font-weight: 650; text-align: right; overflow-wrap: anywhere; }
+.mvp-team-head, .mvp-matchup-row { display: flex; align-items: stretch; }
+.mvp-team-head { margin-top: 18rpx; }
+.mvp-role-head, .mvp-role-label { width: 76rpx; flex: none; }
+.mvp-team-title { min-width: 0; flex: 1; padding: 0 10rpx 10rpx; color: var(--muted); font-size: 20rpx; font-weight: 600; text-align: center; overflow-wrap: anywhere; }
+.mvp-matchup-row { border-top: 1rpx solid var(--line, #edf0f3); }
+.mvp-role-label { padding-top: 18rpx; color: var(--brand); font-size: 21rpx; font-weight: 650; }
+.mvp-side-list { min-width: 0; flex: 1; padding: 10rpx 8rpx 10rpx 0; }
+.mvp-side-list.away { padding: 10rpx 0 10rpx 8rpx; border-left: 1rpx solid var(--line, #edf0f3); }
+.mvp-candidate-compact { min-width: 0; margin-top: 6rpx; padding: 12rpx 10rpx; border: 1rpx solid var(--line, #edf0f3); border-radius: 12rpx; }
+.mvp-candidate-compact:first-child { margin-top: 0; }
+.mvp-candidate-compact.mine { border-color: #2f9b6b; background: rgba(47, 155, 107, 0.06); }
+.mvp-candidate-compact.locked { opacity: .78; }
+.mvp-candidate-compact.mine.locked { opacity: 1; }
+.mvp-candidate-compact.shared { box-shadow: 0 0 0 2rpx rgba(185, 148, 51, 0.38) inset; }
+.mvp-candidate-top { display: flex; align-items: center; justify-content: space-between; }
+.mvp-candidate-name { min-width: 0; font-size: 23rpx; font-weight: 650; overflow-wrap: anywhere; }
+.mvp-team { margin-left: 8rpx; color: var(--muted); font-size: 20rpx; font-weight: 400; }
+.mvp-vote-badge { flex: none; margin-left: 5rpx; padding: 3rpx 7rpx; border-radius: 16rpx; color: #fff; background: var(--brand); font-size: 17rpx; white-space: nowrap; }
+.mvp-vote-number { font-size: 22rpx; font-weight: 750; font-variant-numeric: tabular-nums; }
+.mvp-champions { min-height: 30rpx; margin-top: 7rpx; color: var(--muted); font-size: 18rpx; overflow-wrap: anywhere; }
+.mvp-stats { margin-top: 6rpx; font-size: 18rpx; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mvp-games { margin-top: 5rpx; color: var(--muted); font-size: 17rpx; }
+.mvp-empty { padding: 14rpx 4rpx; color: var(--muted); font-size: 18rpx; text-align: center; }
+.mvp-dot { margin: 0 8rpx; color: var(--muted); }
+.mvp-action { margin-top: 7rpx; color: var(--brand); font-size: 18rpx; font-weight: 600; }
+.mvp-action.locked-text { color: var(--muted); }
+.mvp-share-btn { margin-top: 18rpx; }
+.mvp-share-btn::after { border: 0; }

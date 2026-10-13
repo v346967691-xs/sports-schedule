@@ -361,6 +361,53 @@ function drawPlayer(ctx, o) {
   brand(ctx, MUTED)
 }
 
+/** LOL 系列赛 MVP 分享卡：投票选手 + 跨局累计 K/D/A、补刀与经济。 */
+function drawLolMvp(ctx, o) {
+  const accent = o.accent || '#B99433'
+  base(ctx, o, accent)
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  ctx.fillStyle = MUTED
+  ctx.font = font(18)
+  ctx.fillText(ellipsis(ctx, o.comp || 'LOL', 340), 32, 52)
+  ctx.textAlign = 'right'
+  ctx.fillStyle = accent
+  ctx.font = font(18, 700)
+  ctx.fillText('系列赛 MVP', W - 32, 52)
+
+  ctx.textAlign = 'left'
+  ctx.fillStyle = INK
+  ctx.font = font(40, 700)
+  ctx.fillText(ellipsis(ctx, o.name || '', 420), 32, 112)
+  ctx.fillStyle = '#5A6272'
+  ctx.font = font(19)
+  ctx.fillText(ellipsis(ctx, o.team || '', 420), 32, 150)
+  const champions = (o.champions || []).map(c => c.name).filter(Boolean).join(' / ')
+  if (champions) {
+    ctx.fillStyle = MUTED
+    ctx.font = font(17)
+    ctx.fillText(ellipsis(ctx, `使用英雄：${champions}`, 420), 32, 184)
+  }
+
+  rule(ctx, 214)
+  ctx.textAlign = 'center'
+  ctx.fillStyle = INK
+  ctx.font = font(42, 700)
+  ctx.fillText(`${o.k || 0} / ${o.d || 0} / ${o.a || 0}`, W / 2, 264)
+  ctx.fillStyle = MUTED
+  ctx.font = font(17)
+  ctx.fillText(`K / D / A · ${o.games || 0} 局累计`, W / 2, 294)
+  ctx.textAlign = 'left'
+  ctx.fillStyle = '#5A6272'
+  ctx.font = font(18, 600)
+  ctx.fillText(`补刀 ${o.cs || 0}`, 72, 344)
+  ctx.textAlign = 'right'
+  ctx.fillText(`经济 ${o.gold || 0}`, W - 72, 344)
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  brand(ctx, MUTED)
+}
+
 /**
  * 球队卡：队名 + 排名/积分 + 近 5 场胜平负色块 + 下一场
  * opt: { comp, name, sub, form: ['W','D','L'…], nextText, accent }
@@ -471,7 +518,15 @@ function drawSchedule(ctx, o) {
  * @param {string} kind   'match' | 'brief' | 'rank' | 'player' | 'team' | 'schedule'
  * @param {object} opt    绘制参数
  */
+let buildQueue = Promise.resolve()
+
 function build(page, id, kind, opt) {
+  const current = buildQueue.then(() => buildCanvas(page, id, kind, opt))
+  buildQueue = current.catch(() => '')
+  return current
+}
+
+function buildCanvas(page, id, kind, opt) {
   return new Promise((resolve) => {
     if (!wx.createSelectorQuery) return resolve('')
     const q = wx.createSelectorQuery().in(page)
@@ -500,6 +555,7 @@ function build(page, id, kind, opt) {
         if (kind === 'brief') drawBrief(ctx, full)
         else if (kind === 'rank') drawRank(ctx, full)
         else if (kind === 'player') drawPlayer(ctx, full)
+        else if (kind === 'lol-mvp') drawLolMvp(ctx, full)
         else if (kind === 'team') drawTeam(ctx, full)
         else if (kind === 'schedule') drawSchedule(ctx, full)
         else drawMatch(ctx, full)
@@ -523,6 +579,7 @@ module.exports = {
   drawBrief,
   drawRank,
   drawPlayer,
+  drawLolMvp,
   drawTeam,
   drawSchedule,
   wrap,

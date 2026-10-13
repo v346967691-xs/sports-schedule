@@ -76,9 +76,9 @@
        （包体积取舍，见 tools/match-detail.js 的 staleLineups）—— 这是设计好的，
        但以前只在源码注释里写了，用户看到的是「只剩比分卡、其他全没了」，
        第一反应是没加载出来或者 App 坏了。这里显式说一句。 -->
-  <view class="pre-tip" wx:if="{{match.status === 'finished' && (!detail || !(detail.hasTimeline || detail.hasStats || detail.hasForm || detail.hasH2H || detail.hasBox || detail.hasKpl))}}">
-    <view class="pre-tip-title">赛后数据已归档</view>
-    <view class="pre-tip-desc">完赛超过 48 小时的比赛不再保留事件与技术统计，比分不受影响</view>
+  <view class="pre-tip" wx:if="{{match.status === 'finished' && (!detail || !(detail.hasTimeline || detail.hasStats || detail.hasForm || detail.hasH2H || detail.hasBox || detail.hasKpl || detail.hasLol))}}">
+    <view class="pre-tip-title">{{match.comp === 'worlds' ? '单局数据暂未就绪' : '赛后数据暂不可用'}}</view>
+    <view class="pre-tip-desc">{{match.comp === 'worlds' ? 'Worlds2026 赛程与单局数据保留至决赛后 30 天；未结算或未返回的数据稍后补齐' : '比赛详情按保留窗口显示；阵容与球员统计仅保留约 48 小时，比分不受影响'}}</view>
   </view>
 
   <!-- ① 事件时间轴 -->
@@ -180,9 +180,9 @@
       <view wx:if="{{detail.kpl.active === idx}}" class="kp-round">
         <!-- 局条：胜方一侧高亮 + 到这局为止的累计局分（从逐局胜方推出，不是击杀比分） -->
         <view class="kp-bar">
-          <text class="kp-side-name {{r.s === 'h' ? 'win' : 'dim'}}">{{detail.kpl.homeLabel}}</text>
+          <text class="kp-side-name {{r.s === 'h' ? 'win' : 'dim'}}">{{detail.kpl.homeLabel}}<text wx:if="{{r.s === 'h'}}" class="kp-winner-tag">胜方</text></text>
           <text class="kp-score">{{r.hs}} : {{r.as}}</text>
-          <text class="kp-side-name rt {{r.s === 'a' ? 'win' : 'dim'}}">{{detail.kpl.awayLabel}}</text>
+          <text class="kp-side-name rt {{r.s === 'a' ? 'win' : 'dim'}}">{{detail.kpl.awayLabel}}<text wx:if="{{r.s === 'a'}}" class="kp-winner-tag">胜方</text></text>
         </view>
 
         <!-- 对位：左右两队各 5 人，按位置对齐；胜方一侧头像带描边 -->
@@ -221,23 +221,94 @@
     <block wx:for="{{detail.lol.rounds}}" wx:for-item="r" wx:for-index="ri" wx:key="id">
       <view wx:if="{{detail.lol.active === ri}}">
         <view class="lol-note {{r.complete ? '' : 'partial'}}">{{r.note}}</view>
-        <view class="lol-team" wx:for="{{r.teams}}" wx:for-item="t" wx:for-index="ti" wx:key="label">
+        <view class="lol-team-pair">
+          <view class="lol-team-summary" wx:for="{{r.teams}}" wx:for-item="t" wx:for-index="ti" wx:key="label">
           <view class="lol-team-name">{{t.label}} <text class="lol-side">{{t.side}}</text></view>
-          <view class="lol-totals">击杀 {{t.kills}} · 经济 {{t.gold}} · 推塔 {{t.towers}} · 小龙 {{t.dragons}} · 大龙 {{t.barons}}</view>
-          <view class="lol-player lol-head"><view class="lol-name">选手 / 英雄</view><view class="lol-kda">K / D / A</view><view class="lol-cs">补刀</view><view class="lol-gold">经济</view></view>
-          <view class="lol-player" wx:for="{{t.players}}" wx:for-item="p" wx:for-index="pi" wx:key="id">
-            <view class="lol-name lol-identity">
-              <image wx:if="{{p.icon}}" class="lol-hero" src="{{p.icon}}" mode="aspectFill" lazy-load="{{true}}"
-                data-round="{{ri}}" data-team="{{ti}}" data-player="{{pi}}" binderror="onLolHeroError" />
-              <view wx:else class="lol-hero lol-hero-placeholder">—</view>
-              <view class="lol-copy"><view>{{p.name}}</view><view class="lol-champion">{{p.role}} · {{p.champion}}</view></view>
-            </view>
-            <view class="lol-kda">{{p.kda}}</view><view class="lol-cs">{{p.cs}}</view><view class="lol-gold">{{p.gold}}</view>
+          <view class="lol-totals">击杀 {{t.kills}} · 经济 {{t.gold}}<view>推塔 {{t.towers}} · 小龙 {{t.dragons}} · 大龙 {{t.barons}}</view></view>
           </view>
+        </view>
+        <view class="lol-duel" wx:for="{{r.rows}}" wx:for-item="duel" wx:for-index="di" wx:key="key">
+          <view class="lol-duel-identities">
+            <block wx:for="{{duel.players}}" wx:for-item="p" wx:for-index="si">
+              <view wx:if="{{si === 1}}" class="lol-duel-role">{{duel.label}}</view>
+              <view class="lol-duel-player {{si === 1 ? 'away' : ''}}">
+                <block wx:if="{{p}}">
+                  <image wx:if="{{p.icon}}" class="lol-hero" src="{{p.icon}}" mode="aspectFill" lazy-load="{{true}}"
+                    data-round="{{ri}}" data-row="{{di}}" data-side="{{si}}" binderror="onLolHeroError" />
+                  <view wx:else class="lol-hero lol-hero-placeholder">—</view>
+                  <view class="lol-copy"><view>{{p.name}}</view><view class="lol-champion">{{p.champion}}</view></view>
+                </block>
+                <view wx:else class="lol-missing">暂无选手数据</view>
+              </view>
+            </block>
+          </view>
+          <view class="lol-compare-stat"><text>{{duel.players[0] ? duel.players[0].kda : '—'}}</text><text class="lol-stat-label">K / D / A</text><text>{{duel.players[1] ? duel.players[1].kda : '—'}}</text></view>
+          <view class="lol-compare-stat"><text>{{duel.players[0] ? duel.players[0].cs : '—'}}</text><text class="lol-stat-label">补刀</text><text>{{duel.players[1] ? duel.players[1].cs : '—'}}</text></view>
+          <view class="lol-compare-stat"><text>{{duel.players[0] ? duel.players[0].gold : '—'}}</text><text class="lol-stat-label">经济</text><text>{{duel.players[1] ? duel.players[1].gold : '—'}}</text></view>
         </view>
       </view>
     </block>
     <view class="foot-note tight">统计来自 LOL 官方赛事数据。未补齐的单局显示最后可用记录；击杀比分不代表该局胜负。</view>
+  </view>
+
+  <view class="section card" wx:if="{{detail.lolMvp.available && detail.lolMvp.enabled}}">
+    <view class="sec-title">系列赛 MVP 投票</view>
+    <view class="mvp-intro">每个账号仅能投 1 票，投出后不可更改。数据为完整系列赛各局累计。</view>
+    <view class="mvp-summary">
+      <view class="mvp-total-label">累计投票 <text class="mvp-total-number">{{detail.lolMvp.totalVotes}}</text> 票</view>
+      <view class="mvp-leader">当前领先：{{detail.lolMvp.leaderSummary}}</view>
+    </view>
+    <view class="mvp-team-head">
+      <view class="mvp-role-head"></view>
+      <view class="mvp-team-title">{{detail.lolMvp.homeLabel}}</view>
+      <view class="mvp-team-title">{{detail.lolMvp.awayLabel}}</view>
+    </view>
+    <view class="mvp-matchup-row" wx:for="{{detail.lolMvp.positions}}" wx:for-item="position" wx:for-index="positionIndex" wx:key="roleKey">
+      <view class="mvp-role-label">{{position.label}}</view>
+      <view class="mvp-side-list">
+        <view class="mvp-candidate-compact {{item.isMine ? 'mine' : ''}} {{item.isShared ? 'shared' : ''}} {{detail.lolMvp.myVote ? 'locked' : ''}}"
+          wx:for="{{position.home}}" wx:for-item="item" wx:for-index="candidateIndex" wx:key="key"
+          data-key="{{item.key}}" bindtap="onLolMvpVote">
+          <view class="mvp-candidate-top">
+            <view class="mvp-candidate-name">{{item.name}}</view>
+            <view class="mvp-vote-badge"><text class="mvp-vote-number">{{item.votes}}</text><text> 票</text></view>
+          </view>
+          <view class="mvp-champions">{{item.championText}}</view>
+          <view class="mvp-stats">K/D/A {{item.k}}/{{item.d}}/{{item.a}}</view>
+          <view class="mvp-stats">补刀 {{item.cs}} · 经济 {{item.gold}}</view>
+          <view class="mvp-games">{{item.games}} 局</view>
+          <view class="mvp-action" wx:if="{{item.isMine}}">你已投出 MVP</view>
+          <view class="mvp-action locked-text" wx:elif="{{detail.lolMvp.myVote}}">本场已投</view>
+          <view class="mvp-action" wx:elif="{{item.isShared}}">好友分享的选择</view>
+          <view class="mvp-action" wx:elif="{{mvpVoteBusy}}">正在记录…</view>
+          <view class="mvp-action" wx:else>选 TA</view>
+        </view>
+        <view class="mvp-empty" wx:if="{{!position.home.length}}">暂无完整数据</view>
+      </view>
+      <view class="mvp-side-list away">
+        <view class="mvp-candidate-compact {{item.isMine ? 'mine' : ''}} {{item.isShared ? 'shared' : ''}} {{detail.lolMvp.myVote ? 'locked' : ''}}"
+          wx:for="{{position.away}}" wx:for-item="item" wx:for-index="candidateIndex" wx:key="key"
+          data-key="{{item.key}}" bindtap="onLolMvpVote">
+          <view class="mvp-candidate-top">
+            <view class="mvp-candidate-name">{{item.name}}</view>
+            <view class="mvp-vote-badge"><text class="mvp-vote-number">{{item.votes}}</text><text> 票</text></view>
+          </view>
+          <view class="mvp-champions">{{item.championText}}</view>
+          <view class="mvp-stats">K/D/A {{item.k}}/{{item.d}}/{{item.a}}</view>
+          <view class="mvp-stats">补刀 {{item.cs}} · 经济 {{item.gold}}</view>
+          <view class="mvp-games">{{item.games}} 局</view>
+          <view class="mvp-action" wx:if="{{item.isMine}}">你已投出 MVP</view>
+          <view class="mvp-action locked-text" wx:elif="{{detail.lolMvp.myVote}}">本场已投</view>
+          <view class="mvp-action" wx:elif="{{item.isShared}}">好友分享的选择</view>
+          <view class="mvp-action" wx:elif="{{mvpVoteBusy}}">正在记录…</view>
+          <view class="mvp-action" wx:else>选 TA</view>
+        </view>
+        <view class="mvp-empty" wx:if="{{!position.away.length}}">暂无完整数据</view>
+      </view>
+    </view>
+    <button class="btn primary mvp-share-btn" wx:if="{{detail.lolMvp.myVote && lolMvpShareImage}}"
+      open-type="share" data-kind="lol-mvp">分享我的 MVP 选择</button>
+    <view class="foot-note tight">投票只对已结束且统计完整的系列赛开放；选手数据按稳定选手编号跨局合并。</view>
   </view>
 
   <!-- ④ 双方近况 -->
@@ -276,6 +347,28 @@
         {{isFav ? '已关注 · 点击取消' : '关注这场比赛'}}
       </view>
       <button class="btn primary share-btn" open-type="share">分享赛果</button>
+    </view>
+    <view class="match-notifications" wx:if="{{isFav && (match.status === 'upcoming' || match.status === 'live')}}">
+      <view class="match-notifications-title">比赛通知</view>
+      <view class="match-notifications-note">每次微信授权发送一条。赛前可分别设置开赛前 1 小时和 15 分钟提醒。</view>
+      <view class="notification-state-row" wx:if="{{canRequestPre15}}">
+        <text>开赛前 15 分钟</text>
+        <text class="notification-state {{notificationStates.pre15 ? 'ready' : ''}}">{{notificationStates.pre15 === 'sent' ? '已发送' : notificationStates.pre15 === 'sending' ? '发送中' : notificationStates.pre15 ? '已订阅' : '未设置'}}</text>
+      </view>
+      <view class="notification-state-row" wx:if="{{canRequestPre60}}">
+        <text>开赛前 1 小时</text>
+        <text class="notification-state {{notificationStates.pre60 ? 'ready' : ''}}">{{notificationStates.pre60 === 'sent' ? '已发送' : notificationStates.pre60 === 'sending' ? '发送中' : notificationStates.pre60 ? '已订阅' : '未设置'}}</text>
+      </view>
+      <view class="notification-state-row">
+        <text>比赛结束赛果</text>
+        <text class="notification-state {{notificationStates.result ? 'ready' : ''}}">{{notificationStates.result === 'sent' ? '已发送' : notificationStates.result === 'sending' ? '发送中' : notificationStates.result ? '已订阅' : '未设置'}}</text>
+      </view>
+      <view class="notification-action" wx:if="{{(match.status === 'upcoming' && ((canRequestPre15 && !notificationStates.pre15) || !notificationStates.result)) || (match.status === 'live' && !notificationStates.result)}}" bindtap="onNotificationTap">
+        {{notificationBusy ? '处理中…' : match.status === 'live' ? '订阅比赛结束赛果通知' : '设置赛前15分钟 / 赛果通知'}}
+      </view>
+      <view class="notification-action secondary" wx:if="{{canRequestPre60 && !notificationStates.pre60}}" bindtap="onExtraPreReminderTap">
+        {{notificationBusy ? '处理中…' : '加一轮：开赛前1小时提醒'}}
+      </view>
     </view>
     <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>
     <view class="btn ghost" wx:if="{{hasStandings}}" bindtap="onStandingsTap">查看{{comp.name}}排行榜</view>

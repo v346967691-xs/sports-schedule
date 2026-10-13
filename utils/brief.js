@@ -92,6 +92,7 @@ async function doFetch(n) {
     const { data, error } = await cloudClient.cloud.database
       .from(TABLE)
       .select('id, kind, date, pub_at, mode, payload, generated_at')
+      .not('id', 'like', 'worlds-morning-%')
       .order('pub_at', { ascending: false })
       .limit(n + FUTURE_BUFFER)
     if (error || !Array.isArray(data)) {

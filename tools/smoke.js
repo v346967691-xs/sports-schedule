@@ -607,6 +607,9 @@ async function run() {
   //    2026-10-08 踩了两次：先只改卡图（标题还是总数），卡图说 4 场、标题说 84 场照样打架。
   //    → 守卫要覆盖到 onShareAppMessage / onShareTimeline，不能只盯 buildShareImage。
   const shareBlock = schedJsSrc.slice(schedJsSrc.indexOf('  shareHeadline()'))
+  check('分享：赛程卡标题不重复显示顶部已有的小程序名称',
+    /const title = `\$\{head\} \$\{n\} 场`/.test(shareBlock)
+    && !/const title = `\$\{head\} \$\{n\} 场 · 闪现赛程助手`/.test(shareBlock))
   check('分享：卡图与分享标题共用同一份「哪天 · 多少场」（两处各取各的会打架）',
     (schedJsSrc.match(/this\.shareHeadline\(\)/g) || []).length === 3
     && /allGroups/.test(shareBlock) && shareBlock.indexOf('totalMatches') < 0,
@@ -903,10 +906,12 @@ async function run() {
     /loadingFavs/.test(mineJs) && /loadingFavs/.test(mineWxml)
     && /wx:elif="\{\{loadingFavs\}\}"/.test(mineWxml))
 
-  // ③ 老比赛（>48h）详情被裁是设计好的，但必须给用户一句话说明
+  // ③ 老比赛详情按赛事保留窗口裁剪；Worlds 单局数据还可能等待官方结算
   const detailWxml = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
-  check('详情：已结束却没有任何内容时给出「已归档」说明（不然像没加载出来）',
-    detailWxml.indexOf('赛后数据已归档') > -1
+  check('详情：缺少赛后数据时说明数据窗口或 Worlds 官方结算状态',
+    detailWxml.indexOf('比赛详情按保留窗口显示') > -1
+    && detailWxml.indexOf('单局数据暂未就绪') > -1
+    && detailWxml.indexOf('未结算或未返回的数据稍后补齐') > -1
     && /match\.status === 'finished'/.test(detailWxml))
 
   // ④ teams 页底注承诺了「去我的」，goMine 必须接线（以前是死代码）

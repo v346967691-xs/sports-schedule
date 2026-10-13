@@ -40,6 +40,9 @@ test('summary shortens complete sentences without cutting names or guessing miss
   assert.ok(Array.from(writer.summary(long)).length <= 20)
   assert.equal(writer.summary(match('ucl', null, 1)), '赛果数据待补齐')
   assert.equal(writer.summary(match('ucl', 1, 0, { status: 'live' })), '赛果数据待补齐')
+  assert.equal(writer.summary(match('ucl', 0, 0, { statusText: '已延期' })), '比赛延期，等待新赛程')
+  assert.equal(writer.summary(match('ucl', 3, 2, { statusText: '点球大战' })), 'AL点球战胜T1')
+  assert.equal(writer.summary(match('ucl', 1, 1, { statusText: '点球大战' })), '双方经点球大战决出胜负')
 })
 
 async function liveLoop({ flags = ['--notify'], rounds = 1, pushFails = false, notifyFails = false } = {}) {

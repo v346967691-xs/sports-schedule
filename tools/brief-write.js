@@ -423,6 +423,10 @@ function summary(m, limit = 20) {
   const validScore = (s) => s.score !== null && s.score !== undefined
     && String(s.score).trim() !== '' && Number.isFinite(Number(s.score));
   if (!m || m.status !== 'finished' || !validScore(h) || !validScore(a)) return '赛果数据待补齐';
+  // 上游把延期等特殊状态也归为 finished，不能把占位 0-0 写成互交白卷。
+  if (/延期|推迟/.test(m.statusText || '')) return '比赛延期，等待新赛程';
+  if (/取消/.test(m.statusText || '')) return '比赛取消，请查看赛事安排';
+  if (/中止|腰斩/.test(m.statusText || '')) return '比赛中止，赛果待官方确认';
   const hs = Number(h.score); const as = Number(a.score);
   const ws = Math.max(hs, as) + '-' + Math.min(hs, as);
   const score = hs + '-' + as;
@@ -442,7 +446,8 @@ function summary(m, limit = 20) {
     const w = nameOf(win); const l = nameOf(lose);
     if (!home || !away) continue;
     let text;
-    if (nar === 'goalless') text = home + '与' + away + '互交白卷';
+    if (/点球/.test(m.statusText || '')) text = draw ? '双方经点球大战决出胜负' : w + '点球战胜' + l;
+    else if (nar === 'goalless') text = home + '与' + away + '互交白卷';
     else if (draw) text = home + score + '战平' + away;
     else if (nar === 'thriller') text = w + '打满' + bw.boZh + '力克' + l;
     else if (nar === 'close_series') text = w + '三局苦战击败' + l;
@@ -454,6 +459,7 @@ function summary(m, limit = 20) {
     if (fit(text)) return text;
   }
   // 极长队名仍放在通知的「参赛人员」字段。备注保留比分和主叙事，避免硬切姓名。
+  if (/点球/.test(m.statusText || '')) return '双方经点球大战决出胜负';
   if (nar === 'goalless') return '双方互交白卷';
   if (draw) return '双方' + score + '战平';
   const result = hs > as ? '主队' : '客队';

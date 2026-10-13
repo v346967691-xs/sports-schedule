@@ -181,5 +181,6 @@ test('football and basketball posters say 我的MVP and display their own statis
   assert.ok(height > 750)
   assert.ok(text.includes('闪现 · 我的MVP'))
   assert.ok(text.includes('得分') && text.includes('30') && text.includes('0'))
+  assert.ok(!text.some(s => /\d+\s*票|票数/.test(s)))
   assert.ok(!text.some(s => /undefined|击杀|补刀|暂无英雄|MVP 之选/.test(s)))
 })

@@ -735,7 +735,6 @@ Page({
         home: view.nameOf(match.home), away: view.nameOf(match.away), homeScore: match.home.score, awayScore: match.away.score,
         dateText: match.date, timeText: match.time, name: candidate.name, team: candidate.team, role: candidate.role,
         stats: candidate.stats, champions: candidate.champions, note: mvp.note,
-        votes: candidate.votes, totalVotes: mvp.totalVotes,
       })
       if (!path) throw new Error('长图生成失败，请重试')
       if (this.data.match && this.data.match.id === match.id) wx.previewImage({ current: path, urls: [path] })
@@ -763,7 +762,6 @@ Page({
         name: candidate.name, team: candidate.team, role: candidate.role,
         champions: candidate.champions, games: candidate.games,
         k: candidate.k, d: candidate.d, a: candidate.a, cs: candidate.cs, gold: candidate.gold,
-        votes: candidate.votes, totalVotes: mvp.totalVotes,
       })
       if (!path) throw new Error('长图生成失败，请重试')
       if (!this.data.match || this.data.match.id !== match.id) return

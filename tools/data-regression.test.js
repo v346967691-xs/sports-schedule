@@ -38,7 +38,7 @@ test('MVP long poster exports all cumulative statistics, wrapped names and the m
   assert.ok(values.includes('46730'))
   assert.ok(values.join('').includes(options.name))
   assert.ok(values.join('').includes('Renata / Nautilus / Alistar'))
-  assert.ok(values.join('').includes('TA 获得 7 票 · 本场共 20 票'))
+  assert.ok(!values.some(value => /\d+\s*票|票数/.test(value)))
   assert.equal(images.length, 1)
   const canvas = {
     getContext: () => ctx,
@@ -96,7 +96,8 @@ test('MVP long poster requires the recorded vote, prevents duplicate generation 
   assert.equal(calls.length, 1)
   assert.equal(calls[0][1], 'mvp-long-canvas')
   assert.equal(calls[0][3].name, 'MyPick')
-  assert.equal(calls[0][3].totalVotes, 9)
+  assert.equal(calls[0][3].totalVotes, undefined)
+  assert.equal(page.data.detail.lolMvp.totalVotes, 9)
   resolveExport('long.jpg')
   await exporting
   assert.deepEqual(Array.from(previews[0].urls), ['long.jpg'])

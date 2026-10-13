@@ -304,7 +304,7 @@
     </view>
     <view class="btn-row mvp-share-actions" wx:if="{{detail.matchMvp.myVote}}">
       <button class="btn primary mvp-share-btn" open-type="share" data-kind="match-mvp" disabled="{{!matchMvpShareImage}}">分享我的 MVP 选择</button>
-      <button class="btn ghost mvp-share-btn" bindtap="generateMatchMvpPoster" loading="{{matchMvpPosterBusy}}" disabled="{{matchMvpPosterBusy}}">生成长图</button>
+      <button class="btn primary mvp-share-btn" bindtap="generateMatchMvpPoster" loading="{{matchMvpPosterBusy}}" disabled="{{matchMvpPosterBusy}}">生成长图</button>
     </view>
     <view class="foot-note tight">{{detail.matchMvp.note}}</view>
   </view>
@@ -367,7 +367,7 @@
     <view class="btn-row mvp-share-actions" wx:if="{{detail.lolMvp.myVote}}">
       <button class="btn primary mvp-share-btn" open-type="share" data-kind="lol-mvp"
         disabled="{{!lolMvpShareImage}}">分享我的 MVP 选择</button>
-      <button class="btn ghost mvp-share-btn" bindtap="generateLolMvpPoster"
+      <button class="btn primary mvp-share-btn" bindtap="generateLolMvpPoster"
         loading="{{mvpPosterBusy}}" disabled="{{mvpPosterBusy}}">生成长图</button>
     </view>
     <view class="foot-note tight">投票只对已结束且统计完整的系列赛开放；选手数据按稳定选手编号跨局合并。</view>

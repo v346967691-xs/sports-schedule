@@ -65,8 +65,7 @@ function layout(ctx, o, draw) {
     text('本场使用英雄', 60, y + 12, 28, BLUE, 700); y += 80
     y += text(champions.join(' / ') || '暂无英雄信息', 60, y, 27, INK, 600, 630) + 30
   }
-  y += text(`TA 获得 ${o.votes || 0} 票 · 本场共 ${o.totalVotes || 0} 票`, 42, y, 28, BLUE, 700) + 10
-  y += text(`${o.note || (series ? '数据为该选手实际出场的各局累计。' : '数据为该球员本场实际出场表现。')}票数截至本次页面更新。`, 42, y, 20, MUTED) + 30
+  y += text(o.note || (series ? '数据为该选手实际出场的各局累计。' : '数据为该球员本场实际出场表现。'), 42, y, 20, MUTED) + 30
   rect(0, y, WIDTH, 230, BLUE)
   if (draw && o.qr) ctx.drawImage(o.qr, 42, y + 34, 162, 162)
   text('长按识别 · 闪现赛程助手', 236, y + 58, 27, '#ffffff', 700, 472)

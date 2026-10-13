@@ -288,8 +288,9 @@ function parseTemplateFields(content) {
   return { keys, labelByKey, fields }
 }
 
-function templateData(match, content, kind = 'pre15') {
+function templateData(match, content, kind = 'pre15', options = {}) {
   const values = matchValues(match)
+  if (kind === 'result' && options.remark) values.remark = options.remark
   // pre60 / pre15 共用 kickoff 模板，位置兜底也共用同一张表
   const shape = kind === 'result' ? 'result' : 'kickoff'
   const fallbacks = POSITION_FALLBACK[shape].map((key) => values[key])

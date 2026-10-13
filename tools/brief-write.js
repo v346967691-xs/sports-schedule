@@ -417,4 +417,50 @@ function factbox(m) {
   };
 }
 
-module.exports = { narrative, title, lead, body, factbox, compZh, stageZh, pad, tidy, zhNum, boWords, COMP_ZH };
+/** 订阅通知的一句话战报：复用日报叙事，按字段长度改写，不截断队名或句子。 */
+function summary(m, limit = 20) {
+  const h = m && m.home || {}; const a = m && m.away || {};
+  const validScore = (s) => s.score !== null && s.score !== undefined
+    && String(s.score).trim() !== '' && Number.isFinite(Number(s.score));
+  if (!m || m.status !== 'finished' || !validScore(h) || !validScore(a)) return '赛果数据待补齐';
+  const hs = Number(h.score); const as = Number(a.score);
+  const ws = Math.max(hs, as) + '-' + Math.min(hs, as);
+  const score = hs + '-' + as;
+  const draw = hs === as;
+  const win = hs > as ? h : a; const lose = hs > as ? a : h;
+  const nar = draw ? (T.isFootball(m.comp) && hs === 0 ? 'goalless' : 'draw') : narrative(m).key;
+  const bw = boWords(Number(m.bo) || 1);
+  const fit = (s) => Array.from(s).length <= limit;
+  // 首先保留双方中文名；其次用日报既有称呼；再用官方缩写。每一级都重写完整句子。
+  const choices = [
+    (side) => T.disp(side),
+    (side) => N.label(T.disp(side)),
+    (side) => side.abbr || T.disp(side),
+  ];
+  for (const nameOf of choices) {
+    const home = nameOf(h); const away = nameOf(a);
+    const w = nameOf(win); const l = nameOf(lose);
+    if (!home || !away) continue;
+    let text;
+    if (nar === 'goalless') text = home + '与' + away + '互交白卷';
+    else if (draw) text = home + score + '战平' + away;
+    else if (nar === 'thriller') text = w + '打满' + bw.boZh + '力克' + l;
+    else if (nar === 'close_series') text = w + '三局苦战击败' + l;
+    else if (nar === 'sweep' || nar === 'shutout') text = w + ws + '零封' + l;
+    else if (nar === 'upset') text = w + ws + '爆冷击败' + l;
+    else if (T.isFootball(m.comp) && Math.abs(hs - as) >= 3) text = w + ws + '大胜' + l;
+    else if (nar === 'nailbiter') text = w + ws + '险胜' + l;
+    else text = w + ws + '击败' + l;
+    if (fit(text)) return text;
+  }
+  // 极长队名仍放在通知的「参赛人员」字段。备注保留比分和主叙事，避免硬切姓名。
+  if (nar === 'goalless') return '双方互交白卷';
+  if (draw) return '双方' + score + '战平';
+  const result = hs > as ? '主队' : '客队';
+  if (nar === 'thriller') return '打满' + bw.boZh + '，' + result + ws + '取胜';
+  if (nar === 'sweep' || nar === 'shutout') return result + ws + '零封取胜';
+  if (nar === 'nailbiter') return result + ws + '险胜';
+  return result + ws + '取胜';
+}
+
+module.exports = { narrative, title, summary, lead, body, factbox, compZh, stageZh, pad, tidy, zhNum, boWords, COMP_ZH };

@@ -222,7 +222,7 @@ test('claim → send → mark：result 模板五个字段全部填对', async ()
     time10: { value: '2026年10月20日 10:00' },
     thing9: { value: '洛杉矶湖人 vs 金州勇士' },
     character_string6: { value: '112:108' },
-    thing11: { value: 'NBA · 季前赛' },
+    thing11: { value: '洛杉矶湖人112-108击败金州勇士' },
   })
   assert.equal(writes.find((w) => w.type === 'update').filter.values.status, 'sent')
 })
@@ -248,6 +248,23 @@ test('字段类型无法满足时拒绝发送，并留下可读的 last_error', 
   const mark = writes.find((w) => w.type === 'update')
   assert.match(String(mark.filter.values.last_error), /phrase9/)
   assert.equal(mark.filter.values.status, 'pending') // 首次失败仍可重试
+})
+
+test('result message uses a complete daily-brief summary instead of status or stage, within 20 characters', () => {
+  for (const [comp, hs, as, bo, home, away, expected] of [
+    ['ucl', 1, 4, null, '加拉塔萨雷', '巴塞罗那', '巴塞罗那4-1大胜加拉塔萨雷'],
+    ['worlds', 3, 2, '5', 'AL', 'T1', 'AL打满五局力克T1'],
+    ['kpl', 4, 0, '7', 'AG', 'KSG', 'AG4-0零封KSG'],
+    ['nba', 112, 110, null, '湖人', '勇士', '湖人112-110险胜勇士'],
+  ]) {
+    const r = row({ kind: 'result' })
+    const m = { ...r.match_data, comp, bo, status: 'finished', statusText: '已结束',
+      stage: '阶段信息', home: { zh: home, score: hs }, away: { zh: away, score: as } }
+    const message = worker.createMessage(r, m, PRODUCTION_TEMPLATES[1], 'trial')
+    assert.equal(message.data.thing11.value, expected)
+    assert.ok(Array.from(message.data.thing11.value).length <= 20)
+    assert.equal(message.data.character_string6.value, `${hs}:${as}`)
+  }
 })
 
 test('已过期的提醒记为 expired，不会发出消息', async () => {

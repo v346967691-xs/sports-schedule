@@ -4,7 +4,8 @@
  * 用途：只抓「正在打的比赛」的比分/状态，推到云表 `live_scores`（约 10KB），
  *       供小程序在 `schedule_cache` 之上打补丁 —— 让比分延迟从 ~9 分钟降到 ~1 分钟。
  *
- * 用法： node tools/live-watch.js [--once] [--minutes=14] [--every=60] [--dry] [--only=epl,nba]
+ * 用法： node tools/live-watch.js [--once] [--minutes=14] [--every=60] [--dry] [--only=epl,nba] [--notify]
+ * --notify：每轮比分落库后检查订阅通知；--dry 始终不领取或发送通知。
  *
  * 🔴 为什么不能靠「把主同步加密到 2 分钟」来解决：
  *    `schedule_cache` 一行 **891KB**（2322 场解码后的扁平数组），
@@ -82,6 +83,7 @@ const minutes = Number(arg('minutes', 14))
 const everySec = Number(arg('every', 60))
 const once = process.argv.includes('--once')
 const dry = process.argv.includes('--dry')
+const notify = process.argv.includes('--notify') && !dry
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -522,6 +524,7 @@ async function main() {
   let roundsSinceWrite = 0
   let idleWritesSkipped = 0
   let writeFailed = false
+  let notificationFailed = false
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -604,6 +607,18 @@ async function main() {
         } else writeFailed = true
       }
     }
+    // 先完成实时状态写入，再领取到期通知；内容未变也检查赛前时间窗口。
+    // 使用原有原子领取/回写接口，并发班次不会重复领取同一份授权。
+    if (notify && !writeFailed) {
+      try {
+        const result = await require('./match-notification-push').main(cloud)
+        console.log('[match-notification:live]', JSON.stringify(result))
+        if (result.failed) notificationFailed = true
+      } catch (err) {
+        notificationFailed = true
+        console.error('[match-notification:live]', err && err.message || 'failed')
+      }
+    }
     roundsSinceWrite += 1
     total += rows.length
 
@@ -633,7 +648,7 @@ async function main() {
     `[live-watch] 完成：${round} 轮，共 ${total} 场`
     + (idleWritesSkipped ? `，内容未变跳过 ${idleWritesSkipped} 次云端写入` : '')
   )
-  if (writeFailed || Object.values(sourceHealth).some(s => !s.ok)) process.exitCode = 2
+  if (writeFailed || notificationFailed || Object.values(sourceHealth).some(s => !s.ok)) process.exitCode = 2
 }
 
 if (require.main === module) {
@@ -643,4 +658,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows }
+module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows }

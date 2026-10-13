@@ -150,7 +150,15 @@ jobs:
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
       # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
       - name: 盯进行中的比赛（实时比分）
-        run: node tools/live-watch.js --minutes=14 --every=60
+        # 复用每分钟盯场循环检查赛前/赛果通知，避免只在每班开始时发送一次。
+        env:
+          NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
+          WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
+        run: |
+          if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
+          node tools/live-watch.js --minutes=14 --every=60 --notify
 
       # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
       - name: 校验实时比分新鲜度

@@ -69,7 +69,8 @@ function createMessage(row, match, template, state) {
     compName: comp.name || comp.full || match.comp,
     compCat: comp.cat,
   })
-  const mappedData = core.templateData(contentMatch, template.content, row.kind === 'result' ? 'result' : row.kind)
+  const mappedData = core.templateData(contentMatch, template.content, row.kind === 'result' ? 'result' : row.kind,
+    row.kind === 'result' ? { remark: require('./brief-write').summary(match) } : {})
   if (!Object.keys(mappedData).length) throw new Error('Subscription template has no readable data fields')
   return {
     touser: recipient,

@@ -17,6 +17,103 @@ function load(file, overrides = {}) {
   return box
 }
 
+function followedHomeFixture() {
+  const matches = [
+    ['up-lol-late', 'lpl', 'upcoming', '2026-10-15T10:00:00Z'],
+    ['done-foot-old', 'ucl', 'finished', '2026-10-13T18:00:00Z'],
+    ['live-foot', 'ucl', 'live', '2026-10-14T18:00:00Z'],
+    ['up-nba-near', 'nba', 'upcoming', '2026-10-15T01:00:00Z'],
+    ['done-lol-new', 'lpl', 'finished', '2026-10-14T10:00:00Z'],
+    ['not-followed', 'nba', 'live', '2026-10-14T20:00:00Z'],
+  ].map(([id, comp, status, start]) => ({
+    id, comp, status, start, date: start.slice(0, 10), time: '02:00',
+    home: { name: 'Home', abbr: 'H', score: status === 'upcoming' ? null : 0 },
+    away: { name: 'Away', abbr: 'A', score: status === 'upcoming' ? null : 1 },
+  }))
+  const app = {
+    globalData: { authState: 'signed-in', favIds: matches.slice(0, 5).map(m => m.id) },
+    refreshAuth: async () => {},
+  }
+  const destinations = []
+  let page
+  load('../pages/index/index.js', {
+    Page: value => { page = value },
+    wx: { navigateTo: value => destinations.push(value.url) },
+    require: name => {
+      if (name.endsWith('/app-instance')) return { appInstance: () => app }
+      if (name.endsWith('/data')) return {
+        matches: () => matches,
+        compOf: key => ({ name: key, accent: '#14235c' }),
+      }
+      if (name.endsWith('/view')) return require('../utils/view')
+      return {}
+    },
+  })
+  page.data = { ...page.data, activeCat: 'basketball', activeDate: '2099-01-01' }
+  page.setData = values => Object.assign(page.data, values)
+  page.liveVisible = true
+  return { page, app, matches, destinations }
+}
+
+test('homepage followed matches span sports and all states in live, finished, upcoming order', () => {
+  const { page, matches, destinations } = followedHomeFixture()
+  const originalOrder = matches.map(m => m.id)
+  page.buildFollowedMatches()
+  assert.deepEqual(Array.from(page.data.followedMatches, m => m.id), [
+    'live-foot', 'done-lol-new', 'done-foot-old', 'up-nba-near', 'up-lol-late',
+  ])
+  assert.deepEqual(matches.map(m => m.id), originalOrder)
+  assert.equal(page.data.followedMatches[0]._hasScore, true)
+  assert.equal(page.data.followedMatches[0].home.score, 0)
+  assert.equal(page.data.followedMatches[3]._hasScore, false)
+  page.goDetail({ currentTarget: { dataset: { id: page.data.followedMatches[1].id } } })
+  assert.deepEqual(destinations, ['/pages/detail/detail?id=done-lol-new'])
+})
+
+test('homepage followed section disappears on unfollow or sign-out even with stale IDs', () => {
+  const { page, app } = followedHomeFixture()
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 5)
+  app.globalData.favIds = []
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 0)
+  app.globalData.favIds = ['live-foot']
+  app.globalData.authState = 'signed-out'
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 0)
+})
+
+test('homepage refreshes followed matches after cloud auth and displays subsequent live score changes', async () => {
+  const { page, app, matches } = followedHomeFixture()
+  app.globalData.authState = 'unknown'
+  app.globalData.favIds = []
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 0)
+  app.refreshAuth = async () => {
+    app.globalData.authState = 'signed-in'
+    app.globalData.favIds = ['up-nba-near']
+  }
+  await page.loadFollowedMatches()
+  assert.equal(page.data.followedMatches[0].status, 'upcoming')
+  const match = matches.find(m => m.id === 'up-nba-near')
+  match.status = 'live'
+  match.home.score = 105
+  match.away.score = 103
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches[0].home.score, 105)
+  assert.equal(page.data.followedMatches[0]._hasScore, true)
+  match.status = 'finished'
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches[0]._homeWin, true)
+  app.refreshAuth = async () => { app.globalData.favIds = [] }
+  await page.loadFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 0)
+  page.liveVisible = false
+  app.refreshAuth = async () => { app.globalData.favIds = ['live-foot'] }
+  await page.loadFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 0)
+})
+
 test('following a match never reports notification success when saving consent fails', async () => {
   const toasts = []
   let page

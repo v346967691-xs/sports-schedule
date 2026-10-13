@@ -6,6 +6,7 @@ const follows = require('../../utils/team-follows')
 const briefApi = require('../../utils/brief')
 const nav = require('../../utils/nav')
 const worlds = require('../../utils/worlds')
+const { appInstance } = require('../../utils/app-instance')
 
 /** 关注球队的「未来赛程」最多往前看几天 */
 const TEAM_FUTURE_DAYS = 7
@@ -43,6 +44,7 @@ Page({
     activeDate: '',
     dayMatches: [],
     liveMatches: [],
+    followedMatches: [],
     entries: [],
     stats: { upcoming: 0, days: 0, comps: 0, updatedAt: '' },
     teamMatches: [],
@@ -67,6 +69,7 @@ Page({
     this.build()
     this.loadBrief()
     data.refresh().then(() => this.build())
+    this.loadFollowedMatches()
     this.syncLivePoll()
   },
 
@@ -101,9 +104,31 @@ Page({
     this.liveTimer = null
   },
 
+  async loadFollowedMatches() {
+    try {
+      await appInstance().refreshAuth()
+      if (this.liveVisible) this.buildFollowedMatches()
+    } catch (err) {
+      console.warn('[赛程助手] 关注比赛读取失败', err)
+    }
+  },
+
+  buildFollowedMatches() {
+    const app = appInstance()
+    const ids = new Set(app.globalData.authState === 'signed-in' ? app.globalData.favIds || [] : [])
+    // 关注按比赛 ID 匹配，独立于首页的赛事分类、日期和关注球队，覆盖所有比赛状态。
+    const order = { live: 0, finished: 1, upcoming: 2 }
+    // 数据源没有可靠的结束时刻；已结束比赛按比赛日期倒序，未开始按开赛时间正序。
+    const matches = data.matches().filter(m => ids.has(m.id)).sort((a, b) => {
+      const rank = (order[a.status] == null ? 3 : order[a.status]) - (order[b.status] == null ? 3 : order[b.status])
+      return rank || (a.status === 'upcoming' ? Date.parse(a.start) - Date.parse(b.start) : Date.parse(b.start) - Date.parse(a.start))
+    })
+    this.setData({ followedMatches: view.decorateList(matches, { compOf: data.compOf }) })
+  },
+
   /**
-   * 日报入口条：只取最新一期做一句话摘要。
-   * 日报是附加功能，取不到就整条不显示，不打扰看比分的主流程。
+   * 快报头图区：复用日报的最新一期和一句话摘要。
+   * 取不到快报时隐藏头图，比赛列表仍正常展示。
    */
   async loadBrief() {
     try {
@@ -143,6 +168,7 @@ Page({
   },
 
   doBuild() {
+    this.buildFollowedMatches()
     // 数据文件没打进包时（最常见的真机空白原因），直接说清楚，别给用户一片白
     if (!data.matches().length) {
       this.setData({

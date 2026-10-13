@@ -1,21 +1,11 @@
 <view class="page">
-  <view class="hero">
-    <view class="hero-title">热门赛事赛程</view>
-    <view class="hero-sub">足球五大联赛 · 欧冠 · NBA · 英雄联盟重要赛事</view>
-    <view class="hero-stats">
-      <view class="hero-stat">
-        <view class="hero-stat-num">{{stats.upcoming}}</view>
-        <view class="hero-stat-label">待开赛</view>
-      </view>
-      <view class="hero-stat">
-        <view class="hero-stat-num">{{stats.days}}</view>
-        <view class="hero-stat-label">覆盖比赛日</view>
-      </view>
-      <view class="hero-stat">
-        <view class="hero-stat-num">{{stats.comps}}</view>
-        <view class="hero-stat-label">赛事</view>
-      </view>
+  <view class="brief-entry" wx:if="{{brief}}" bindtap="goBrief" hover-class="brief-entry-hover">
+    <view class="be-head">
+      <view class="be-kicker">闪现快报</view>
+      <view class="be-when" wx:if="{{brief.pubText}}">{{brief.pubText}} · {{brief.kindZh}}</view>
     </view>
+    <view class="be-title">{{brief.tip}}</view>
+    <view class="be-link">阅读完整快报 <text>→</text></view>
   </view>
 
   <!-- 搜索入口。搜索是独立页面，这里只是一个「长得像输入框」的入口，
@@ -29,15 +19,6 @@
     <view class="se-go">搜索</view>
   </view>
 
-  <!-- 日报入口 -->
-  <view class="brief-entry" wx:if="{{brief}}" bindtap="goBrief" hover-class="brief-entry-hover">
-    <view class="be-head">
-      <view class="be-kicker">综合赛事日报</view>
-      <view class="be-when" wx:if="{{brief.pubText}}">{{brief.pubText}} {{brief.kindZh}}</view>
-    </view>
-    <view class="be-title">{{brief.tip}}</view>
-  </view>
-
   <view class="stale-tip" wx:if="{{stats.stale}}">
     数据{{stats.staleLabel}}，比分可能不是最新结果
   </view>
@@ -45,6 +26,40 @@
   <view class="empty" wx:if="{{loadError}}">
     <view class="empty-title">数据没能加载出来</view>
     <view class="empty-desc">{{loadError}}</view>
+  </view>
+
+  <view class="section" wx:if="{{followedMatches.length}}">
+    <view class="section-head">
+      <view class="section-title">我关注的比赛</view>
+    </view>
+    <view class="mc" wx:for="{{followedMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail" hover-class="mc-hover">
+      <view class="mc-head">
+        <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+        <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
+      </view>
+      <view class="mc-body">
+        <view class="mc-time">
+          <view class="mc-time-main">{{item.time}}</view>
+          <view class="mc-time-sub">{{item._dayLabel}}</view>
+        </view>
+        <view class="mc-line"></view>
+        <view class="mc-teams">
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.home.color}}"></view>
+            <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
+            <view class="mc-abbr">{{item.home.abbr}}</view>
+            <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
+          </view>
+          <view class="mc-row">
+            <view class="mc-dot" style="background: {{item.away.color}}"></view>
+            <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
+            <view class="mc-abbr">{{item.away.abbr}}</view>
+            <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 
   <view class="section" wx:if="{{liveMatches.length}}">

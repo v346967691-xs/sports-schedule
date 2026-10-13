@@ -18,6 +18,9 @@ function load(file, overrides = {}) {
 }
 
 function followedHomeFixture() {
+  const clock = { now: Date.parse('2026-10-14T21:00:00Z') }
+  class Clock extends Date { static now() { return clock.now } }
+  let poll
   const matches = [
     ['up-lol-late', 'lpl', 'upcoming', '2026-10-15T10:00:00Z'],
     ['done-foot-old', 'ucl', 'finished', '2026-10-13T18:00:00Z'],
@@ -37,12 +40,16 @@ function followedHomeFixture() {
   const destinations = []
   let page
   load('../pages/index/index.js', {
+    Date: Clock,
+    setInterval: callback => { poll = callback; return 1 },
+    clearInterval: () => { poll = null },
     Page: value => { page = value },
     wx: { navigateTo: value => destinations.push(value.url) },
     require: name => {
       if (name.endsWith('/app-instance')) return { appInstance: () => app }
       if (name.endsWith('/data')) return {
         matches: () => matches,
+        needsLivePoll: () => false,
         compOf: key => ({ name: key, accent: '#14235c' }),
       }
       if (name.endsWith('/view')) return require('../utils/view')
@@ -52,8 +59,47 @@ function followedHomeFixture() {
   page.data = { ...page.data, activeCat: 'basketball', activeDate: '2099-01-01' }
   page.setData = values => Object.assign(page.data, values)
   page.liveVisible = true
-  return { page, app, matches, destinations }
+  return { page, app, matches, destinations, clock, tick: () => poll() }
 }
+
+test('homepage followed results expire only after 48 hours while live and upcoming matches remain', () => {
+  const { page, app, matches, clock } = followedHomeFixture()
+  const add = (id, status, age) => {
+    const match = { ...matches[0], id, status, start: new Date(clock.now - age).toISOString() }
+    matches.push(match)
+    app.globalData.favIds.push(id)
+  }
+  const hours48 = 48 * 3600000
+  add('done-at-limit', 'finished', hours48)
+  add('done-too-old', 'finished', hours48 + 1)
+  add('live-long-series', 'live', hours48 + 1)
+  add('up-overdue', 'upcoming', hours48 + 1)
+  add('done-invalid-time', 'finished', 0)
+  matches.find(m => m.id === 'done-invalid-time').start = 'invalid'
+  const favIds = app.globalData.favIds.slice()
+  page.buildFollowedMatches()
+  const shown = Array.from(page.data.followedMatches, m => m.id)
+  assert.ok(shown.includes('done-at-limit'))
+  assert.ok(!shown.includes('done-too-old'))
+  assert.ok(shown.includes('live-long-series'))
+  assert.ok(shown.includes('up-overdue'))
+  assert.ok(!shown.includes('done-invalid-time'))
+  assert.deepEqual(app.globalData.favIds, favIds)
+})
+
+test('homepage expires followed results while visible even when no live request is needed', () => {
+  const { page, app, matches, clock, tick } = followedHomeFixture()
+  app.globalData.favIds = ['done-lol-new']
+  const match = matches.find(m => m.id === 'done-lol-new')
+  match.start = new Date(clock.now - 48 * 3600000).toISOString()
+  page.buildFollowedMatches()
+  assert.equal(page.data.followedMatches.length, 1)
+  page.startLivePoll()
+  clock.now += 1
+  tick()
+  assert.equal(page.data.followedMatches.length, 0)
+  page.stopLivePoll()
+})
 
 test('homepage followed matches span sports and all states in live, finished, upcoming order', () => {
   const { page, matches, destinations } = followedHomeFixture()
@@ -319,7 +365,7 @@ for(const name of ['index','schedule']) {
     load(`../pages/${name}/${name}.js`,{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
       : n==='../../utils/format'?real(n):{},
       setInterval:fn=>{timer=fn;return 1},clearInterval:()=>{timer=null;cleared++}})
-    const page={...definition,liveVisible:true,build:()=>{},reload:()=>{}}
+    const page={...definition,liveVisible:true,build:()=>{},reload:()=>{},buildFollowedMatches:()=>{}}
     page.syncLivePoll()
     await new Promise(resolve=>setImmediate(resolve))
     assert.equal(typeof timer,'function')

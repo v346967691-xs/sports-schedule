@@ -14,6 +14,9 @@ const TEAM_FUTURE_DAYS = 7
 /** 实时比分轮询间隔（与赛程页/详情页同值，服务端 live_scores 也是 60 秒刷一次） */
 const LIVE_POLL_MS = 60 * 1000
 
+/** 首页关注赛果只保留 48 小时；当前赛事数据没有可靠的结束时刻，按开赛时间计算。 */
+const FOLLOWED_RESULT_MS = 48 * 60 * 60 * 1000
+
 /**
  * 某个赛事积分榜的领头羊：「成都蓉城 52分」/「曼城 15分」。
  * 给首页赛事入口一个额外的点击理由 —— 光看「3 场待开赛」太平了。
@@ -91,6 +94,7 @@ Page({
   startLivePoll() {
     if (this.liveTimer) return
     this.liveTimer = setInterval(() => {
+      this.buildFollowedMatches()
       if (!data.needsLivePoll()) return
       data.refreshLive(true).then((r) => {
         if (r.patched) this.build()
@@ -116,10 +120,16 @@ Page({
   buildFollowedMatches() {
     const app = appInstance()
     const ids = new Set(app.globalData.authState === 'signed-in' ? app.globalData.favIds || [] : [])
-    // 关注按比赛 ID 匹配，独立于首页的赛事分类、日期和关注球队，覆盖所有比赛状态。
+    // 关注独立于首页的赛事分类、日期和关注球队；已结束场次只展示 48 小时内的赛果。
+    const cutoff = Date.now() - FOLLOWED_RESULT_MS
     const order = { live: 0, finished: 1, upcoming: 2 }
     // 数据源没有可靠的结束时刻；已结束比赛按比赛日期倒序，未开始按开赛时间正序。
-    const matches = data.matches().filter(m => ids.has(m.id)).sort((a, b) => {
+    const matches = data.matches().filter(m => {
+      if (!ids.has(m.id)) return false
+      if (m.status !== 'finished') return true
+      const start = Date.parse(m.start)
+      return Number.isFinite(start) && start >= cutoff
+    }).sort((a, b) => {
       const rank = (order[a.status] == null ? 3 : order[a.status]) - (order[b.status] == null ? 3 : order[b.status])
       return rank || (a.status === 'upcoming' ? Date.parse(a.start) - Date.parse(b.start) : Date.parse(b.start) - Date.parse(a.start))
     })

@@ -19,6 +19,16 @@ const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 /** 实时比分轮询间隔（与赛程页同值，服务端 live_scores 也是 60 秒刷一次） */
 const LIVE_POLL_MS = 60 * 1000
 
+/** 电竞分享标题把战队与选手 ID 连写，避免缩略卡上难以辨认归属。 */
+function mvpShareName(match, candidate) {
+  const name = String(candidate && candidate.name || '').trim()
+  const team = String(candidate && candidate.team || '').trim()
+  if (!name || !team || !match || data.compOf(match.comp).cat !== 'esports') return name
+  const player = name.startsWith(`${team}.`) ? name.slice(team.length + 1)
+    : name.startsWith(`${team} `) ? name.slice(team.length + 1) : name
+  return player ? `${team}.${player}` : name
+}
+
 function notificationAvailability(match) {
   const start = Date.parse(match && match.start || '')
   const upcoming = !!match && match.status === 'upcoming' && Number.isFinite(start)
@@ -979,7 +989,7 @@ Page({
     if (e && e.target && e.target.dataset && e.target.dataset.kind === 'match-mvp' && this.matchMvpShareCandidate) {
       const candidate = this.matchMvpShareCandidate
       const stats = candidate.stats.slice(0, 3).map(s => `${s.label} ${s.value}`).join(' · ')
-      return share.message({ title: `我选 ${candidate.name} 为本场 MVP${stats ? ` · ${stats}` : ''}`,
+      return share.message({ title: `我选 ${mvpShareName(m, candidate)} 为本场 MVP${stats ? ` · ${stats}` : ''}`,
         path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(candidate.key)}`,
         imageUrl: this.data.matchMvpShareImage,
       })
@@ -988,7 +998,7 @@ Page({
     const mvp = isMvp && this.mvpShareCandidate
     if (mvp) {
       return share.message({
-        title: `我选 ${mvp.name} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
+        title: `我选 ${mvpShareName(m, mvp)} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
         path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(mvp.key)}`,
         imageUrl: this.data.lolMvpShareImage,
       })
@@ -1010,13 +1020,13 @@ Page({
     const a = m.away.zhName || m.away.name
     if (this.matchMvpShareCandidate) {
       const candidate = this.matchMvpShareCandidate
-      return share.timeline({ title: `我选 ${candidate.name} 为本场 MVP`,
+      return share.timeline({ title: `我选 ${mvpShareName(m, candidate)} 为本场 MVP`,
         query: `id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(candidate.key)}`, imageUrl: this.data.matchMvpShareImage })
     }
     const mvp = this.mvpShareCandidate
     if (mvp) {
       return share.timeline({
-        title: `我选 ${mvp.name} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
+        title: `我选 ${mvpShareName(m, mvp)} 为本场 MVP · ${mvp.k}/${mvp.d}/${mvp.a}`,
         query: `id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(mvp.key)}`,
         imageUrl: this.data.lolMvpShareImage,
       })

@@ -29,6 +29,15 @@ function mvpShareName(match, candidate) {
   return player ? `${team}.${player}` : name
 }
 
+/** 足球分享只保留进攻数据，门将额外展示扑救；投票区仍可查看完整候选人数据。 */
+function matchMvpShareStats(candidate, kind) {
+  const stats = Array.isArray(candidate && candidate.stats) ? candidate.stats : []
+  if (kind !== 'football') return stats
+  const allowed = new Set(['进球', '助攻', '射门', '射正'])
+  const goalkeeper = candidate.roleKey === 'G' || candidate.role === '门将'
+  return stats.filter(stat => allowed.has(stat.label) || (goalkeeper && stat.label === '扑救'))
+}
+
 function notificationAvailability(match) {
   const start = Date.parse(match && match.start || '')
   const upcoming = !!match && match.status === 'upcoming' && Number.isFinite(start)
@@ -718,7 +727,8 @@ Page({
     try {
       const comp = this.data.comp || {}
       const img = await poster.build(this, 'share-canvas', 'match-mvp', {
-        comp: comp.full || comp.name, name: candidate.name, team: candidate.team, role: candidate.role, stats: candidate.stats,
+        comp: comp.full || comp.name, name: candidate.name, team: candidate.team, role: candidate.role,
+        stats: matchMvpShareStats(candidate, this.data.detail && this.data.detail.matchMvp && this.data.detail.matchMvp.kind),
       })
       if (img && this.data.match && this.data.match.id === matchId && this.matchMvpShareCandidate
         && this.matchMvpShareCandidate.key === candidate.key) this.setData({ matchMvpShareImage: img })
@@ -744,7 +754,7 @@ Page({
         comp: comp.full || comp.name, kind: mvp.kind,
         home: view.nameOf(match.home), away: view.nameOf(match.away), homeScore: match.home.score, awayScore: match.away.score,
         dateText: match.date, timeText: match.time, name: candidate.name, team: candidate.team, role: candidate.role,
-        stats: candidate.stats, champions: candidate.champions, note: mvp.note,
+        stats: matchMvpShareStats(candidate, mvp.kind), champions: candidate.champions, note: mvp.note,
       })
       if (!path) throw new Error('长图生成失败，请重试')
       if (this.data.match && this.data.match.id === match.id) wx.previewImage({ current: path, urls: [path] })
@@ -988,7 +998,10 @@ Page({
     const a = m.away.zhName || m.away.name
     if (e && e.target && e.target.dataset && e.target.dataset.kind === 'match-mvp' && this.matchMvpShareCandidate) {
       const candidate = this.matchMvpShareCandidate
-      const stats = candidate.stats.slice(0, 3).map(s => `${s.label} ${s.value}`).join(' · ')
+      const kind = this.data.detail && this.data.detail.matchMvp && this.data.detail.matchMvp.kind
+      const availableStats = matchMvpShareStats(candidate, kind)
+      const stats = (kind === 'football' ? availableStats : availableStats.slice(0, 3))
+        .map(s => `${s.label} ${s.value}`).join(' · ')
       return share.message({ title: `我选 ${mvpShareName(m, candidate)} 为本场 MVP${stats ? ` · ${stats}` : ''}`,
         path: `/pages/detail/detail?id=${encodeURIComponent(m.id)}&mvp=${encodeURIComponent(candidate.key)}`,
         imageUrl: this.data.matchMvpShareImage,

@@ -229,7 +229,6 @@ function decorateDetail(d, match) {
   const lineups = buildLineups(d, sideName)
   const box = buildBox(d, sideName)
   const quarters = buildQuarters(match, sideName)
-  const tennisSets = buildTennisSets(match, sideName)
   const kpl = kplView.buildKpl(d, sideName('home'), sideName('away'))
   const lol = lolView.buildLol(d, sideName('home'), sideName('away'))
   const lolMvpCandidates = lolView.buildMvpCandidates(d, sideName('home'), sideName('away'))
@@ -250,8 +249,6 @@ function decorateDetail(d, match) {
     hasBox: !!box,
     quarters,
     hasQuarters: !!quarters,
-    tennisSets,
-    hasTennisSets: !!tennisSets,
     kpl,
     hasKpl: !!kpl,
     lol,
@@ -289,6 +286,7 @@ Page({
     authState: 'unknown',
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     detail: null,        // 比赛详情（事件时间轴 / 近况 / 交锋 / 技术统计），没有就整块隐藏
+    tennisSets: null,    // 网球逐盘比分来自赛程/实时通道，不依赖通用比赛详情。
     detailAll: false,    // 是否展开换人事件
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
     lolMvpShareImage: '',
@@ -354,6 +352,11 @@ Page({
    * 普通赛事保持原保留窗口；Worlds2026 日桶保留到决赛后 30 天。
    */
   async loadDetail(match) {
+    // 网球逐盘数据已随 applyMatch 更新，无需轮询不提供网球数据的通用详情日桶。
+    if (data.compOf(match.comp).cat === 'tennis') {
+      this.finalDetailReady = match.status === 'finished'
+      return
+    }
     if (Date.now() - (this.detailReadAt || 0) < 3 * 60000) return
     this.detailReadAt = Date.now()
     const raw = await data.matchDetail(match)
@@ -389,7 +392,7 @@ Page({
   applyMatch(raw) {
     const changedToFinished = this.data.match && this.data.match.status !== 'finished' && raw.status === 'finished'
     if (changedToFinished) this.detailReadAt = 0
-    if (raw.status === 'finished' && raw.comp !== 'cba' && !this.detailPollUntil
+    if (raw.status === 'finished' && raw.comp !== 'cba' && data.compOf(raw.comp).cat !== 'tennis' && !this.detailPollUntil
       && Date.now() - Date.parse(raw.start) < 48 * 3600000) this.detailPollUntil = Date.now() + 20 * 60000
     const app = appInstance()
     const match = view.decorate.call({ compOf: data.compOf }, raw)
@@ -408,6 +411,7 @@ Page({
       match,
       comp,
       rows,
+      tennisSets: buildTennisSets(match, side => (match[side] && (match[side].zhName || match[side].name)) || ''),
       loading: false,
       loadError: '',
       isFav: app.isFav(match.id),
@@ -992,6 +996,11 @@ Page({
     const team = side === 'home' ? m.home : m.away
     // 未确定的对阵（待定 / TBD）不是一支球队，点了也没东西可看
     if (!team || !team.id || String(team.id) === 'TBD' || team.name === '待定') return
+    if (data.compOf(m.comp).cat === 'tennis') {
+      appInstance().globalData.pendingTeam = { comp: m.comp, id: team.id, name: team.name, abbr: team.abbr, display: team.zhName || team.name }
+      wx.switchTab({ url: '/pages/schedule/schedule' })
+      return
+    }
     wx.navigateTo({
       url: `/pages/team/team?comp=${encodeURIComponent(m.comp)}&id=${encodeURIComponent(String(team.id))}`,
       fail() {

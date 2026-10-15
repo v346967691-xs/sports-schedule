@@ -500,7 +500,7 @@ test('detail waits for the final result but stops after completion or timeout', 
   page.finalDetailReady=false;page.detailPollUntil=Date.now()-1;page.syncLivePoll();assert.equal(timer,null)
 })
 
-test('schedule tabs separate all 31 competitions and keep overnight live games', () => {
+test('schedule tabs separate all competitions and keep overnight live games', () => {
   const comps = require('./sync').COMPETITIONS
   const fmt = require('../utils/format')
   const today = fmt.todayStr()
@@ -514,12 +514,12 @@ test('schedule tabs separate all 31 competitions and keep overnight live games',
   })))
   const data = load('../utils/data.js', {require:n=>n==='../data/matches.js'?fixtures
     :n==='../data/meta.js'?{generatedAt:new Date().toISOString(),competitions:comps,
-      categories:['football','basketball','esports'].map(key=>({key,competitions:comps.filter(c=>c.cat===key).map(c=>c.key)}))}
+      categories:['football','basketball','esports','tennis'].map(key=>({key,competitions:comps.filter(c=>c.cat===key).map(c=>c.key)}))}
     :n==='./cloud'?{isReady:()=>false}:real(n)}).module.exports
   const pageRequire = createRequire(path.join(__dirname,'../pages/schedule/schedule.js'))
   let definition
   load('../pages/schedule/schedule.js',{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
-    :n==='../../utils/view'||n==='../../utils/format'?pageRequire(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}: {}})
+    :n==='../../utils/view'||n==='../../utils/format'||n==='../../utils/tennis'?pageRequire(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}: {}})
   const page={...definition,data:{...definition.data},buildShareImage:()=>{},
     setData(p,cb){Object.assign(this.data,p);if(cb)cb()}}
   for(const c of comps) for(const mode of ['upcoming','live','finished']) {

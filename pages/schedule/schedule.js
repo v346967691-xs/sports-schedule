@@ -5,6 +5,7 @@ const fmt = require('../../utils/format')
 const nav = require('../../utils/nav')
 const poster = require('../../utils/poster')
 const bracket = require('../../utils/bracket')
+const tennis = require('../../utils/tennis')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -22,6 +23,7 @@ const LIVE_POLL_MS = 60 * 1000
 
 /** 一场比赛属于哪个阶段（轮次）。与卡片小字共用 view.roundLabel，保证筛选条和卡片是同一个词 */
 function stageOf(m) {
+  if (tennis.isTennis(m)) return tennis.roundOf(m)
   const comp = data.compOf(m.comp) || {}
   return view.roundLabel(m.stage, comp.name)
 }
@@ -64,6 +66,9 @@ Page({
     /** 阶段（轮次）筛选条：只有一个阶段时不渲染，见 stageChipsOf */
     stageChips: [],
     stageFilter: '',
+    tournamentChips: [],
+    tournamentFilter: '',
+    tournamentLabel: '',
     /** 淘汰赛对阵树（只在选中淘汰赛轮次时有值，见 doReload） */
     bracket: null,
     rows: [],
@@ -81,14 +86,19 @@ Page({
   },
 
   onLoad(query) {
-    let cat = 'football'
+    let cat = query && CATS.some(c => c.key === query.cat) ? query.cat : 'football'
     let comp = ''
     if (query && query.comp) {
       comp = decodeURIComponent(query.comp)
       const found = data.compMap()[comp]
       if (found) cat = found.cat
     }
-    this.setData({ activeCat: cat, activeComp: comp })
+    const tennisQuery = cat === 'tennis' ? {
+      tournamentFilter: query && query.tournament ? decodeURIComponent(query.tournament) : '',
+      stageFilter: query && query.round ? decodeURIComponent(query.round) : '',
+      mode: query && ['upcoming', 'live', 'finished'].includes(query.mode) ? query.mode : 'upcoming',
+    } : {}
+    this.setData({ activeCat: cat, activeComp: comp, ...tennisQuery })
     this.applyCat(cat)
     this.cloudRefresh()
   },
@@ -101,7 +111,7 @@ Page({
       const found = data.compMap()[pending]
       app.globalData.pendingComp = ''
       if (found) {
-        this.setData({ activeCat: found.cat, activeComp: pending, teamFilter: null, shownGroups: PAGE_SIZE, stageFilter: '' })
+        this.setData({ activeCat: found.cat, activeComp: pending, teamFilter: null, shownGroups: PAGE_SIZE, stageFilter: '', tournamentFilter: '' })
         this.reload()
         this.cloudRefresh()
         return
@@ -122,6 +132,7 @@ Page({
           teamFilter: pendingTeam,
           shownGroups: PAGE_SIZE,
           stageFilter: '',
+          tournamentFilter: '',
         })
         this.reload()
         this.cloudRefresh()
@@ -223,7 +234,15 @@ Page({
 
     // 阶段筛选。选项按**未筛选**的列表算，否则选完某阶段后选项本身就没了，切不回来。
     // 筛掉的阶段在 totalMatches / totalGroups 里也不出现，所以「共 N 场」跟眼睛看到的一致。
-    const stageChips = activeComp ? stageChipsOf(list) : []
+    const tournamentChips = activeCat === 'tennis' ? tennis.tournamentChipsOf(list).map(c => ({
+      ...c, label: activeComp ? c.name : `${c.comp.toUpperCase()} · ${c.name}`,
+    })) : []
+    const selectedTournament = tournamentChips.find(c => c.key === this.data.tournamentFilter)
+    const tournamentFilter = selectedTournament ? selectedTournament.key : ''
+    if (tournamentFilter) list = list.filter(m => tennis.tournamentOf(m).key === tournamentFilter)
+    const stageChips = activeCat === 'tennis'
+      ? (tournamentFilter ? stageChipsOf(list) : [])
+      : (activeComp ? stageChipsOf(list) : [])
     const stage = stageChips.some((c) => c.key === stageFilter) ? stageFilter : ''
     if (stage) list = list.filter((m) => stageOf(m) === stage)
 
@@ -238,7 +257,7 @@ Page({
      *    拿筛过的 list 去建永远只能出一列，直接返回 null。
      * 对阵树跨轮次展示，不受列表的三种比赛状态筛选影响。
      */
-    const koTree = activeComp && bracket.koIndexOf(stage) >= 0
+    const koTree = activeCat !== 'tennis' && activeComp && bracket.koIndexOf(stage) >= 0
       ? bracket.buildBracket(data.query({ comps: [activeComp], team: teamFilter }), compName)
       : null
 
@@ -249,6 +268,9 @@ Page({
       totalMatches: list.length,
       stageChips,
       stageFilter: stage,
+      tournamentChips,
+      tournamentFilter,
+      tournamentLabel: selectedTournament ? selectedTournament.label : '',
       bracket: koTree,
       updatedAt: this.updatedLabel(),
       stale: data.staleInfo().stale,
@@ -275,7 +297,7 @@ Page({
   shareHeadline() {
     const first = (this.allGroups || [])[0]
     const items = (first && first.items) || []
-    const stage = this.data.stageFilter || ''
+    const stage = [this.data.tournamentLabel, this.data.stageFilter].filter(Boolean).join(' · ')
     const day = (first && first.dayLabel) || ''
     // 三个出口（卡图 / 给朋友 / 朋友圈）共用这一份。2026-10-09 加阶段：
     // 筛到「瑞士轮」后只说「8 场」等于没说清楚是哪 8 场，标题必须带上阶段。
@@ -299,7 +321,7 @@ Page({
         time: m.time || '',
         home: view.nameOf(m.home),
         away: view.nameOf(m.away),
-        comp: (data.compOf(m.comp) || {}).name || '',
+        comp: tennis.isTennis(m) ? [!d.activeComp ? m.comp.toUpperCase() : '', tennis.tournamentOf(m).name, tennis.roundOf(m)].filter(Boolean).join(' · ') : (data.compOf(m.comp) || {}).name || '',
       })),
       accent: (d.activeComp && (data.compOf(d.activeComp) || {}).accent) || '#2E7CF6',
     })
@@ -357,14 +379,14 @@ Page({
 
   onCatTap(e) {
     const cat = e.currentTarget.dataset.key
-    this.setData({ activeCat: cat, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '', stageChips: [] })
+    this.setData({ activeCat: cat, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '', stageChips: [], tournamentFilter: '' })
     this.applyCat(cat)
   },
 
   onCompTap(e) {
     const key = e.currentTarget.dataset.key
     const next = key === this.data.activeComp ? '' : key
-    this.setData({ activeComp: next, shownGroups: PAGE_SIZE, teamFilter: null, stageFilter: '' })
+    this.setData({ activeComp: next, shownGroups: PAGE_SIZE, teamFilter: null, stageFilter: '', tournamentFilter: '' })
     this.reload()
   },
 
@@ -380,9 +402,16 @@ Page({
     this.reload()
   },
 
+  onTournamentTap(e) {
+    const key = e.currentTarget.dataset.key || ''
+    const next = key === this.data.tournamentFilter ? '' : key
+    this.setData({ tournamentFilter: next, stageFilter: '', shownGroups: PAGE_SIZE })
+    this.reload()
+  },
+
   /** 取消「只看某队」 */
   onClearTeam() {
-    this.setData({ teamFilter: null, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '' })
+    this.setData({ teamFilter: null, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '', tournamentFilter: '' })
     this.reload()
   },
 
@@ -409,6 +438,17 @@ Page({
     this.reload()
     wx.stopPullDownRefresh()
   },
+  shareQuery() {
+    const d = this.data
+    const params = d.activeComp ? [`comp=${encodeURIComponent(d.activeComp)}`] : []
+    if (d.activeCat === 'tennis') {
+      if (!d.activeComp) params.push('cat=tennis')
+      if (d.tournamentFilter) params.push(`tournament=${encodeURIComponent(d.tournamentFilter)}`)
+      if (d.stageFilter) params.push(`round=${encodeURIComponent(d.stageFilter)}`)
+      params.push(`mode=${d.mode}`)
+    }
+    return params.join('&')
+  },
   onShareAppMessage() {
     const d = this.data
     // ⚠️ 标题里的「N 场」必须和卡图一致（共用 shareHeadline），否则两条信息打架
@@ -416,9 +456,7 @@ Page({
     const title = `${head} ${n} 场`
     return share.message({
       title,
-      path: d.activeComp
-        ? `/pages/schedule/schedule?comp=${encodeURIComponent(d.activeComp)}`
-        : '/pages/schedule/schedule',
+      path: '/pages/schedule/schedule' + (this.shareQuery() ? `?${this.shareQuery()}` : ''),
       imageUrl: d.shareImage,
     })
   },
@@ -429,7 +467,7 @@ Page({
     const title = `${head} ${n} 场`
     return share.timeline({
       title,
-      query: d.activeComp ? `comp=${encodeURIComponent(d.activeComp)}` : '',
+      query: this.shareQuery(),
       imageUrl: d.shareImage,
     })
   },

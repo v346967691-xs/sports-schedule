@@ -167,3 +167,86 @@ test('tennis detail displays and refreshes set scores without a generic detail p
   assert.match(quarters, /wx:for="\{\{detail.quarters.cols\}\}"[^>]*>\{\{r.scores\[index\]\}\}/)
   assert.doesNotMatch(quarters, /tennisSets\.cols/)
 })
+
+test('tennis cards retain the station and round, and ATP/WTA events with the same name remain distinct', () => {
+  const tennis = require('../utils/tennis')
+  const view = require('../utils/view')
+  const a = { comp: 'atp', stage: 'China Open · Semifinals', status: 'upcoming', date: '2026-10-15',
+    home: { name: 'Player A' }, away: { name: 'Player B' } }
+  assert.equal(tennis.roundOf(a), '半决赛')
+  assert.equal(view.decorate.call({ compOf: () => ({ name: 'ATP' }) }, a)._stageLabel, '中国网球公开赛 · 半决赛')
+  assert.notEqual(tennis.tournamentOf(a).key, tennis.tournamentOf({ ...a, comp: 'wta' }).key)
+  assert.equal(tennis.tournamentOf({ ...a, stage: 'New Event · Round of 16' }).name, 'New Event')
+  assert.equal(tennis.roundOf({ ...a, stage: 'New Event · Round of 16' }), '16强赛')
+})
+
+function tennisSchedulePage() {
+  const day = '2026-10-16'
+  const game = (id, comp, stage, status = 'upcoming') => ({ id, comp, stage, status, date: day, time: '12:00', start: day + 'T04:00:00Z',
+    home: { id: id + '-h', name: 'Player A', score: null }, away: { id: id + '-a', name: 'Player B', score: null } })
+  const matches = [game('a1', 'atp', 'China Open · Semifinals'), game('a2', 'atp', 'China Open · Final'),
+    game('b1', 'atp', 'Almaty Open · Semifinals'), game('w1', 'wta', 'China Open · Semifinals'),
+    game('live', 'atp', 'Almaty Open · Quarterfinals', 'live')]
+  const compMap = { atp: { key: 'atp', cat: 'tennis', name: 'ATP' }, wta: { key: 'wta', cat: 'tennis', name: 'WTA' } }
+  const query = (opt = {}) => matches.filter(m => (!opt.comps || !opt.comps.length || opt.comps.includes(m.comp))
+    && (!opt.status || (Array.isArray(opt.status) ? opt.status : [opt.status]).includes(m.status)))
+  const data = { matches: () => matches, compOf: k => compMap[k], compMap: () => compMap,
+    categories: () => [{ key: 'tennis', competitions: ['atp', 'wta'] }], query,
+    upcoming: opt => query({ ...opt, status: 'upcoming' }), finished: opt => query({ ...opt, status: 'finished' }),
+    teamForm: () => [], standingsOf: () => null, generatedAt: () => '', source: () => 'local', staleInfo: () => ({ stale: false }) }
+  const filename = path.join(__dirname, '../pages/schedule/schedule.js')
+  const realRequire = createRequire(filename)
+  let page
+  load('../pages/schedule/schedule.js', { Page: value => { page = value }, require: name => name.endsWith('/data') ? data : realRequire(name) })
+  page.data = { ...page.data, activeCat: 'tennis', activeComp: 'atp' }
+  page.setData = (value, done) => { Object.assign(page.data, value); if (done) done() }
+  page.buildShareImage = page.cloudRefresh = () => {}
+  return page
+}
+
+test('tennis schedule selects station before round and never combines different stations into one knockout tree', () => {
+  const page = tennisSchedulePage()
+  page.doReload()
+  assert.equal(page.data.tournamentChips.length, 2)
+  assert.equal(page.data.stageChips.length, 0)
+  assert.equal(page.data.totalMatches, 3)
+  page.onTournamentTap({ currentTarget: { dataset: { key: 'atp|China Open' } } })
+  assert.equal(page.data.totalMatches, 2)
+  assert.deepEqual(Array.from(page.data.stageChips, c => c.key), ['半决赛', '决赛'])
+  page.onStageTap({ currentTarget: { dataset: { key: '半决赛' } } })
+  assert.equal(page.data.totalMatches, 1)
+  assert.equal(page.data.rows.find(r => r.type === 'match').match.id, 'a1')
+  assert.equal(page.data.bracket, null)
+  assert.match(page.shareHeadline().head, /ATP · 中国网球公开赛 · 半决赛/)
+  page.onTournamentTap({ currentTarget: { dataset: { key: 'atp|Almaty Open' } } })
+  assert.equal(page.data.stageFilter, '')
+  assert.equal(page.data.totalMatches, 1)
+  assert.equal(page.data.rows.find(r => r.type === 'match').match.id, 'b1')
+  page.onCompTap({ currentTarget: { dataset: { key: 'wta' } } })
+  assert.equal(page.data.tournamentFilter, '')
+  assert.equal(page.data.tournamentChips[0].key, 'wta|China Open')
+})
+
+test('tennis schedule shares and restores the selected station, round and status', () => {
+  const page = tennisSchedulePage()
+  page.onLoad({ comp: 'atp', tournament: 'atp|China Open', round: '半决赛', mode: 'upcoming' })
+  assert.equal(page.data.totalMatches, 1)
+  const query = Object.fromEntries(new URLSearchParams(page.shareQuery()))
+  assert.equal(query.tournament, 'atp|China Open')
+  assert.equal(query.round, '半决赛')
+  const other = tennisSchedulePage()
+  other.onLoad(query)
+  assert.equal(other.data.rows.find(r => r.type === 'match').match.id, 'a1')
+  page.onModeTap({ currentTarget: { dataset: { mode: 'live' } } })
+  assert.equal(page.data.totalMatches, 1)
+  assert.equal(page.data.tournamentFilter, '')
+  assert.equal(page.data.rows.find(r => r.type === 'match').match.id, 'live')
+  const all = tennisSchedulePage()
+  all.onLoad({ cat: 'tennis' })
+  assert.equal(all.data.tournamentChips.length, 3)
+  assert.ok(all.data.tournamentChips.every(c => /^(ATP|WTA) · /.test(c.label)))
+  all.onTournamentTap({ currentTarget: { dataset: { key: 'wta|China Open' } } })
+  assert.match(all.shareHeadline().head, /WTA · 中国网球公开赛/)
+  const wxml = fs.readFileSync(path.join(__dirname, '../pages/schedule/schedule.wxml'), 'utf8')
+  assert.match(wxml, /item\.match\._stageLabel/)
+})

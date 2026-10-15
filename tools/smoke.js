@@ -687,12 +687,12 @@ async function run() {
     && schWxml.indexOf('onStageTap') > -1)
   // 🔴 选项必须在**筛选前**的列表上算：先筛再算选项，选完某阶段后选项本身就没了，切不回来
   check('赛程页：阶段选项在筛选之前算（选完还要能切回别的阶段）',
-    /const stageChips = activeComp \? stageChipsOf\(list\)/.test(schJs)
+    schJs.indexOf('const stageChips =') < schJs.indexOf('if (stage) list = list.filter')
     && /if \(stage\) list = list\.filter/.test(schJs))
   // 只有选了具体赛事才给选项：选「全部」时各赛事 stage 混在一起，而足球那些 stage
   // 就是赛事名本身 → 会拼出一条把每个联赛都列一遍的垃圾筛选条
   check('赛程页：选「全部赛事」时不给阶段选项（否则会把每个联赛都列成一遍阶段）',
-    /const stageChips = activeComp \? stageChipsOf\(list\) : \[\]/.test(schJs))
+    /:\s*\(activeComp \? stageChipsOf\(list\) : \[\]\)/.test(schJs))
   const chipsFn = schJs.slice(schJs.indexOf('function stageChipsOf'), schJs.indexOf('Page({'))
   check('赛程页：阶段按「各阶段最早一场」排序（已结束模式的列表是倒序的，照列表顺序会把决赛排最前）',
     /Date\.parse\(m\.start\)/.test(chipsFn) && /\.sort\(/.test(chipsFn))

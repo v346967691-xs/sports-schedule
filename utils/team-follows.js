@@ -136,9 +136,9 @@ function clear() {
   return list.length
 }
 
-/** 给 data.query 用的 [{ comp, id }] */
+/** 网球补充排名使用稳定的名单 ID，筛选时同时保留选手姓名用于与上游 ID 对齐。 */
 function asFilter() {
-  return all().map((t) => ({ comp: t.comp, id: t.id }))
+  return all().map((t) => ({ comp: t.comp, id: t.id, name: t.name, abbr: t.abbr, display: t.display }))
 }
 
 /* ------------------------------------------------------------ 云端同步 */

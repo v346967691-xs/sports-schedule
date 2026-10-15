@@ -107,8 +107,6 @@ const COMPETITIONS = [
   { key: 'friendly', source: 'espn', sport: 'soccer', cat: 'football', name: '国际友谊赛', full: '国际足联国际友谊赛', espn: 'fifa.friendly', accent: '#4A6FA5' },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
   { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
-  { key: 'atp', source: 'tennis', tour: 'atp', cat: 'tennis', name: 'ATP', full: 'ATP 男子职业网球巡回赛', accent: '#1C6B45' },
-  { key: 'wta', source: 'tennis', tour: 'wta', cat: 'tennis', name: 'WTA', full: 'WTA 女子职业网球巡回赛', accent: '#7B3F8C' },
   // 电竞顺序：全球总决赛 → 德玛西亚杯 → LPL → LCK → KPL → LEC → 季中冠军赛 → 亚运会
   { key: 'worlds', source: 'lol', cat: 'esports', name: '全球总决赛', full: '英雄联盟全球总决赛', lol: '98767975604431411', lolSlug: 'worlds', accent: '#B99433' },
   {
@@ -126,6 +124,8 @@ const COMPETITIONS = [
     // LoL Esports API 的 leagues 列表里叫 Asian Games（asian_games）
     lol: '117228885404001005', lolSlug: 'asian_games', accent: '#C8952A',
   },
+  { key: 'atp', source: 'tennis', tour: 'atp', cat: 'tennis', name: 'ATP', full: 'ATP 男子职业网球巡回赛', accent: '#1C6B45' },
+  { key: 'wta', source: 'tennis', tour: 'wta', cat: 'tennis', name: 'WTA', full: 'WTA 女子职业网球巡回赛', accent: '#7B3F8C' },
 ]
 
 /* 各大类里的展示顺序（2026-10-02 用户定，与上面 COMPETITIONS 的顺序保持一致） */
@@ -382,15 +382,21 @@ const TENNIS_PLAYER_ZH = {
   '6048': '郑钦文', '3387': '王欣瑜', '707': '张帅', '3155': '王曦雨', '2916': '袁悦',
 }
 
+function tennisScore(competitor) {
+  const score = competitor && competitor.score
+  if (score != null && String(score).trim() !== '' && Number.isFinite(Number(score))) return Number(score)
+  const sets = competitor && competitor.linescores || []
+  return sets.length ? sets.filter(x => x.winner === true).length : null
+}
+
 function tennisPlayer(competitor, accent) {
   const athlete = competitor && competitor.athlete || {}
   const name = athlete.displayName || athlete.fullName || '待定'
   const flag = athlete.flag || {}
   return {
-    id: String(athlete.id || competitor.id || name), name, zh: TENNIS_PLAYER_ZH[String(athlete.id || '')] || '', abbr: athlete.shortName || name,
+    id: String(athlete.id || competitor.id || name), name, zh: TENNIS_PLAYER_ZH[String(athlete.id || competitor.id || '')] || '', abbr: athlete.shortName || name,
     color: accent,
-    score: competitor.score != null && Number.isFinite(Number(competitor.score)) ? Number(competitor.score)
-      : ((competitor.linescores || []).length ? (competitor.linescores || []).filter(x => x.winner).length : null),
+    score: tennisScore(competitor),
     country: flag.alt || '', portrait: athlete.headshot && athlete.headshot.href || '',
   }
 }
@@ -1101,4 +1107,4 @@ if (require.main === module) {
 //    别让两边各写一份语义（第二处实现的老毛病）。
 // ⚠️ LOL / LOL_KEY 也导出：live-watch.js 的 LoL 快通道要打同一个上游，
 //    两处各写一份 key 迟早会漂移（当年 ESPN 域名就踩过）。
-module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus }
+module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus, tennisScore, WTA_TOUR_EVENT_IDS }

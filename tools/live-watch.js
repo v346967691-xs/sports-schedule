@@ -238,19 +238,21 @@ async function scan(comps) {
 }
 
 async function scanTennis() {
-  const rows = []
+  const { tennisScore, WTA_TOUR_EVENT_IDS } = require('./sync')
+  const rows = new Map()
   const now = Date.now()
   for (const tour of ['atp', 'wta']) {
     if (onlyArg && onlyArg !== 'tennis' && onlyArg.split(',').indexOf(tour) < 0) continue
-    let hit = 0
     try {
       const dates = espnDates()
       for (const date of dates) {
         const j = await getJSON(`${ESPN}/tennis/${tour}/scoreboard?dates=${date}`)
         for (const ev of (j.events || [])) for (const group of (ev.groupings || [])) {
+          if (tour === 'wta' && !WTA_TOUR_EVENT_IDS.has(String(ev.id || '').split('-')[0])) continue
           const expected = tour === 'atp' ? 'mens-singles' : 'womens-singles'
           if (!group.grouping || group.grouping.slug !== expected) continue
           for (const game of group.competitions || []) {
+            if (/qualif/i.test(game.round && game.round.displayName || '')) continue
             const state = game.status && game.status.type && game.status.type.state
             const start = Date.parse(game.date || '')
             if (!Number.isFinite(start) || (state !== 'in' && !(state === 'post' && start >= now - 12 * 3600000))) continue
@@ -260,15 +262,14 @@ async function scanTennis() {
             if (!h || !a) continue
             const number = x => x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x)
             const ls = { h: (h.linescores || []).map(x => number(x.value)), a: (a.linescores || []).map(x => number(x.value)) }
-            const setWins = player => (player.linescores || []).filter(x => x.winner).length
             const row = {
               id: `${tour}-${game.id}`, st: state === 'in' ? 'live' : 'finished',
               stt: state === 'in' ? `第${game.status?.period || 1}盘进行中` : '已结束',
-              hs: number(h.score) == null ? ((h.linescores || []).length ? setWins(h) : null) : number(h.score),
-              as: number(a.score) == null ? ((a.linescores || []).length ? setWins(a) : null) : number(a.score),
+              hs: tennisScore(h),
+              as: tennisScore(a),
             }
             if (ls.h.length || ls.a.length) row.ls = ls
-            rows.push(row); hit += 1
+            rows.set(row.id, row)
           }
         }
       }
@@ -277,9 +278,8 @@ async function scanTennis() {
       console.warn(`[live-watch] ${tour.toUpperCase()} 抓取失败：`, err.message)
       sourceResult(`tennis:${tour}`, err)
     }
-    if (hit) sourceResult(`tennis:${tour}`)
   }
-  return rows
+  return [...rows.values()]
 }
 
 /**
@@ -565,7 +565,6 @@ async function main() {
   let comps = TARGETS
   let total = 0
   let cbaActive = false // CBA 上一轮有没有「正在打 or 窗口内有」比赛（有就继续扫，省得每轮都白打 270KB）
-  let tennisActive = false
   // 写入去重的状态（详见下面 while 里的「内容去重 + 心跳保活」）
   let lastSig = null
   let roundsSinceWrite = 0
@@ -627,13 +626,13 @@ async function main() {
         if (kept > 0) console.warn(`[live-watch] 保留 ${failedLolKeys.join(', ')} 上次成功的 ${kept} 场 LoL 实时数据`)
       }
     }
-    if (tennisOn && (round === 1 || round % DISCOVER_EVERY === 0 || tennisActive)) {
+    // 与 LoL 一样逐轮发现新开赛比赛，完赛比分也持续保留供赛果通知重试。
+    if (tennisOn) {
       const tennisRows = await scanTennis()
       if (tennisRows.length) {
         rows.push(...tennisRows)
         tennisRows.forEach(r => { const k = r.id.slice(0, r.id.indexOf('-')); if (liveComps.indexOf(k) < 0 && r.st === 'live') liveComps.push(k) })
       }
-      tennisActive = tennisRows.some(r => r.st === 'live')
     }
     const live = rows.filter((r) => r.st === 'live').length
     console.log(

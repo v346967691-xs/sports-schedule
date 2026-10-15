@@ -43,6 +43,7 @@ const SCORER_ROWS = 20
  * ⚠️ 篮球那几张数据榜**不写死在这里** —— 上游给几张就追加几张（见 tierDefs）。
  */
 const TIER_PLAN = {
+  tennis: [{ key: 'tennis-weekly', label: '单打世界排名', kind: 'tennis' }],
   football: [
     { key: 'standings', label: '积分榜', kind: 'standings' },
     { key: 'goals', label: '射手榜', kind: 'scorer' },
@@ -180,6 +181,7 @@ function timeLabel(iso) {
 Page({
   data: {
     comps: [],
+    tennisChinaOnly: false,
     activeComp: '',
     /** swiper 当前页 —— 与 activeComp 同步，横滑内容区时由 bindchange 反推 */
     swiperIndex: 0,
@@ -228,6 +230,7 @@ Page({
     this.setData({
       activeComp,
       tier,
+      tennisChinaOnly: !!(query && query.scope === 'china'),
       comps: keys.map((k) => {
         const c = data.compOf(k)
         return { key: k, name: c.name, accent: c.accent }
@@ -322,6 +325,10 @@ Page({
    * 上游不给榜的赛事（欧协联没有球员榜、KPL 没有积分榜）自然就没有那一档。
    */
   tierAvailable(key, tier) {
+    if (tier === 'tennis-weekly') {
+      const board = data.tennisRankingBoard(key, false)
+      return !!board && board.rows.length > 0
+    }
     if (tier === 'standings') return !!data.standingsOf(key)
     if (tier === 'swiss') return this.swissOf(key).length > 0
     const cat = data.catOf(key)
@@ -371,7 +378,8 @@ Page({
     data.categories().forEach((cat) => {
       ;(cat.competitions || []).forEach((key) => {
         // 四种榜任意一种有内容，这个赛事才值得进来
-        if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length || swiss[key]) order.push(key)
+        if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length || swiss[key]
+          || (cat.key === 'tennis' && this.tierAvailable(key, 'tennis-weekly'))) order.push(key)
       })
     })
     return order
@@ -408,6 +416,14 @@ Page({
     const visible = near || !!this._rendered[key]
     if (visible) this._rendered[key] = true
 
+    if (data.catOf(key) === 'tennis') {
+      const board = data.tennisRankingBoard(key, this.data.tennisChinaOnly) || { rows: [] }
+      const china = data.tennisRankingBoard(key, true)
+      return { key, name, index, visible, rankRows: board.rows, tennis: board, tennisChinaCount: china ? china.rows.length : 0,
+        columns: [], groups: [], legend: [], totalTeams: 0, season: '',
+        goals: [], assists: [], boards: [], swiss: [], swissTeams: 0,
+        scrollTop: this.data.slideTop[key] || 0 }
+    }
     const goals = data.scorersTop(key, 'goals', SCORER_ROWS)
     const assists = data.scorersTop(key, 'assists', SCORER_ROWS)
     // 每一屏自带当前档位的行数据 —— 这样 WXML 里不必按档位写两套 wx:for，
@@ -515,7 +531,7 @@ Page({
       totalTeams: cur.totalTeams,
       swiss: cur.swiss || [],
       swissTeams: cur.swissTeams || 0,
-      updatedAt: timeLabel(pickUpdatedAt(tier)),
+      updatedAt: timeLabel(cur.tennis ? cur.tennis.fetchedAt : pickUpdatedAt(tier)),
       source: data.source() === 'cloud' ? '云端' : '本地',
     }, () => {
       this.buildShareImage()
@@ -531,7 +547,7 @@ Page({
     if (!rows.length) return
     const img = await poster.build(this, 'share-canvas', 'rank', {
       comp: this.data.compName || '',
-      boardName: this.data.tierLabel || '排行榜',
+      boardName: (this.data.tierLabel || '排行榜') + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : ''),
       rows,
       accent: (data.compOf(this.data.activeComp) || {}).accent || '#2E7CF6',
     })
@@ -619,6 +635,17 @@ Page({
    * ⚠️ 球队行才有 comp+id；射手榜的行是**球员**，没有球员详情页，
    *    所以这里跟着球队 id 走：射手榜一行点了就去他所在的球队。
    */
+  onTennisScopeTap(e) {
+    this.setData({ tennisChinaOnly: e.currentTarget.dataset.scope === 'china' }, () => this.render())
+  },
+
+  onTennisRowTap(e) {
+    const row = (this.data.rankRows || []).find(r => r.id === e.currentTarget.dataset.id)
+    if (!row) return
+    appInstance().globalData.pendingTeam = { comp: this.data.activeComp, id: row.id, name: row.en, abbr: row.en, display: row.name }
+    wx.switchTab({ url: '/pages/schedule/schedule' })
+  },
+
   onRowTap(e) {
     const id = e.currentTarget.dataset.id
     if (!id || String(id) === 'TBD') return
@@ -636,11 +663,11 @@ Page({
 
   onShareAppMessage() {
     const name = this.data.compName
-    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier)
+    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier) + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : '')
     return share.message({
       title: name ? `${name}${tierLabel} · 闪现赛程助手` : `闪现赛程助手 · 各赛事${tierLabel}`,
       path: this.data.activeComp
-        ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
+        ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
         : '/pages/rank/rank',
       imageUrl: this.data.shareImage,
     })
@@ -648,11 +675,11 @@ Page({
 
   onShareTimeline() {
     const name = this.data.compName
-    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier)
+    const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier) + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : '')
     return share.timeline({
-      title: name ? `${name}${tierLabel}实时更新` : `各赛事${tierLabel}实时更新`,
+      title: name ? `${name}${tierLabel}${this.data.tierKind === 'tennis' ? ' · 正式周榜' : '实时更新'}` : `各赛事${tierLabel}实时更新`,
       query: this.data.activeComp
-        ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}`
+        ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
         : '',
       imageUrl: this.data.shareImage,
     })

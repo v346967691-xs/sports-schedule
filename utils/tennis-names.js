@@ -12,6 +12,7 @@
 // Learner Tien interview https://www.sbs.com.au/language/chinese/zh-hans/podcast-episode/ao-2026-interview-with-learner-tien/3v0j09pwg
 // Maria Sakkari sponsor profile https://www.rolex.com/zh-hans-cn/rolex-family/tennis/maria-sakkari
 const NAMES = {
+  'Rigele Te': '特日格乐', // https://www.sport.gov.cn/n20001280/n20745751/n20767274/c23384540/content.html
   'Botic Van De Zandschulp': '博蒂克·范德赞德舒尔普',
   'Maria Sakkari': '玛利亚·萨卡里',
   'Qu Yihan': '渠依含',

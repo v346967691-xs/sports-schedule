@@ -326,3 +326,87 @@ test('tennis notification names and result summary are Chinese even with an olde
   assert.equal(message.data.thing9.value, '郑钦文 vs 王欣瑜')
   assert.equal(message.data.thing11.value, '郑钦文以2-0战胜王欣瑜')
 })
+
+function weeklyRankingFeed(now) {
+  return { asof_calc: new Date(now).toISOString(), snap_by: { atp: '2026-10-05', wta: '2026-10-12' },
+    s: Array.from({ length: 110 }, (_, i) => ({ n: i === 0 ? 'Jannik Sinner' : i === 104 ? 'Zhizhen Zhang' : 'Player ' + i,
+      c: i === 104 ? 'CHN' : 'USA', r: 110 - i, p: 90000 + i,
+      or: i + 1, op: 10000 - i })) }
+}
+
+test('tennis weekly boards use only published rank and points, never the feeds live estimates', () => {
+  const tool = require('./tennis-rankings')
+  const now = Date.now(), feed = weeklyRankingFeed(now)
+  const table = tool.normalize(feed, 'atp', now)
+  assert.equal(table.rows.length, 101)
+  assert.equal(table.rows[0].name, 'Jannik Sinner')
+  assert.equal(table.rows[0].rank, 1)
+  assert.equal(table.rows[0].points, 10000)
+  assert.equal(table.rows.find(r => r.name === 'Zhizhen Zhang').rank, 105)
+  assert.equal(table.rankingDate, '2026-10-05')
+  assert.throws(() => tool.normalize({ ...feed, s: feed.s.slice(0, 99) }, 'atp', now), /前百/)
+  assert.throws(() => tool.normalize({ ...feed, snap_by: { atp: 'invalid' } }, 'atp', now), /日期/)
+  const broken = JSON.parse(JSON.stringify(feed)); broken.s[1].or = 1
+  assert.throws(() => tool.normalize(broken, 'atp', now), /不完整/)
+})
+
+test('weekly ranking refresh retains each tours successful board on failure or a regressed ranking date', async () => {
+  const tool = require('./tennis-rankings')
+  const now = Date.now(), fakeFetch = async () => ({ ok: true, json: async () => weeklyRankingFeed(now) })
+  const first = await tool.refresh({}, { now, fetch: fakeFetch })
+  const errors = []
+  const second = await tool.refresh(first, { now: now + 86400000,
+    fetch: async url => { if (url.includes('atp')) throw Error('offline'); return { ok: true, json: async () => ({ ...weeklyRankingFeed(now), snap_by: { wta: '2026-10-05' } }) } },
+    onError: tour => errors.push(tour) })
+  assert.equal(errors.length, 2)
+  assert.equal(second.atp.fetchedAt, first.atp.fetchedAt)
+  assert.equal(second.wta.rankingDate, first.wta.rankingDate)
+  assert.equal(second.wta.fetchedAt, first.wta.fetchedAt)
+})
+
+test('weekly board shows Chinese names, preserves zero points, filters China and resists older cloud snapshots', () => {
+  const tool = require('./tennis-rankings'), view = require('../utils/tennis-rankings')
+  const now = Date.now(), weekly = { atp: tool.normalize(weeklyRankingFeed(now), 'atp', now) }
+  weekly.atp.rows[0].points = 0
+  const world = view.board(weekly, 'atp', false, now)
+  assert.equal(world.rows.length, 100)
+  assert.equal(world.rows[0].name, '扬尼克·辛纳')
+  assert.equal(world.rows[0].value, 0)
+  const china = view.board(weekly, 'atp', true, now)
+  assert.equal(china.rows[0].name, '张之臻')
+  assert.equal(china.rows[0].pos, 105)
+  assert.equal(view.board(weekly, 'atp', false, now + 30 * 86400000).stale, true)
+  assert.equal(view.merge(weekly, {}).atp, weekly.atp)
+  assert.equal(view.merge(weekly, { atp: { ...weekly.atp, rankingDate: '2026-09-28' } }).atp, weekly.atp)
+})
+
+test('ranking page exposes only ATP/WTA weekly boards with China filtering, schedule links and restorable sharing', () => {
+  let page
+  const app = { globalData: {} }
+  let destination
+  const filename = path.join(__dirname, '../pages/rank/rank.js'), actual = createRequire(filename)
+  load('../pages/rank/rank.js', { Page: p => { page = p }, wx: { switchTab: opt => { destination = opt.url } },
+    require: name => name.endsWith('/app-instance') ? { appInstance: () => app } : actual(name) })
+  page.setData = (value, done) => { Object.assign(page.data, value); if (done) done() }
+  page.buildShareImage = () => {}
+  page.onLoad({ comp: 'atp', scope: 'china' })
+  assert.equal(page.data.activeComp, 'atp')
+  assert.equal(page.data.tier, 'tennis-weekly')
+  assert.equal(page.data.tierKind, 'tennis')
+  assert.equal(page.data.tiers.length, 1)
+  assert.equal(page.data.rankRows.length, 10)
+  assert.ok(page.data.comps.some(c => c.key === 'wta'))
+  assert.ok(page.data.rankRows.every(r => r.country === 'CHN'))
+  assert.match(page.onShareAppMessage().path, /scope=china/)
+  page.onTennisScopeTap({ currentTarget: { dataset: { scope: 'all' } } })
+  assert.equal(page.data.rankRows.length, 100)
+  assert.equal(page.shareRows()[0].name, '扬尼克·辛纳')
+  const row = page.data.rankRows[0]
+  page.onTennisRowTap({ currentTarget: { dataset: { id: row.id } } })
+  assert.equal(destination, '/pages/schedule/schedule')
+  assert.equal(app.globalData.pendingTeam.name, row.en)
+  assert.equal(app.globalData.pendingTeam.comp, 'atp')
+  page.onCompTap({ currentTarget: { dataset: { key: 'wta' } } })
+  assert.equal(page.data.rankRows.length, 100)
+  assert.equal(page.data.tier, 'tennis-weekly')
+})

@@ -52,7 +52,30 @@
       <scroll-view class="slide-scroll" scroll-y scroll-top="{{item.scrollTop}}">
         <block wx:if="{{item.visible}}">
           <!-- 积分榜档（tierKind = standings） -->
-          <block wx:if="{{tierKind === 'standings'}}">
+          <block wx:if="{{tierKind === 'tennis'}}">
+            <view class="meta">
+              <text class="meta-main">{{item.name}} · 单打世界排名</text>
+              <text class="meta-sub">正式周榜 · 排名日期 {{item.tennis.rankingDate}}</text>
+              <text class="meta-sub">同步于 {{updatedAt}} · {{item.tennis.source}}</text>
+            </view>
+            <view class="tennis-scope">
+              <text class="{{!tennisChinaOnly ? 'selected' : ''}}" data-scope="all" bindtap="onTennisScopeTap">世界前 100</text>
+              <text class="{{tennisChinaOnly ? 'selected' : ''}}" data-scope="china" bindtap="onTennisScopeTap">中国选手</text>
+            </view>
+            <view class="tennis-warning" wx:if="{{item.tennis.stale}}">暂未同步到较新的周榜，当前展示上次成功取得的排名。</view>
+            <view class="table card scorer">
+              <view class="tr th">
+                <view class="th-pos">排名</view><view class="th-player">选手</view><view class="th-val">积分</view>
+              </view>
+              <view wx:for="{{item.rankRows}}" wx:for-item="row" wx:key="id" class="tr" data-id="{{row.id}}" bindtap="onTennisRowTap" hover-class="tr-hover">
+                <view class="td-pos"><text class="pos-num">{{row.pos}}</text></view>
+                <view class="td-player"><view class="player-name">{{row.name}}</view><view class="tennis-country">{{row.country === 'CHN' ? '中国' : row.country}}</view></view>
+                <view class="td-val">{{row.value}}</view>
+              </view>
+            </view>
+            <view class="foot-note">展示 ATP / WTA 正式周排名，按标注的排名日期为准；中国选手展示来源覆盖的前 {{item.tennisChinaCount}} 位。点击选手可查看赛程。</view>
+          </block>
+          <block wx:elif="{{tierKind === 'standings'}}">
             <view class="meta" wx:if="{{item.totalTeams}}">
               <text class="meta-main">{{item.name}} · {{item.totalTeams}} 支球队</text>
               <text class="meta-sub" wx:if="{{updatedAt}}">更新于 {{updatedAt}}{{source ? '（' + source + '）' : ''}}</text>

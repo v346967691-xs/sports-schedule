@@ -37,6 +37,7 @@ const CATS = [
   { key: 'football', name: '足球' },
   { key: 'basketball', name: '篮球' },
   { key: 'esports', name: '电竞' },
+  { key: 'tennis', name: '网球' },
 ]
 
 Page({

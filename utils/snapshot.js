@@ -135,6 +135,7 @@ function encodeSnapshot(list, extra) {
     rec.a = encTeam(m.away, m.comp)
     if (m.stage) rec.g = m.stage
     if (m.venue) rec.v = m.venue
+    if (m.sets) rec.q = m.sets
     if (m.statusText) rec.x = m.statusText
     if (m.bo != null) rec.o = m.bo
     if (m.broadcast && m.broadcast.length) rec.b = m.broadcast
@@ -197,6 +198,7 @@ function decodeMatch(rec, comp, teams) {
     away: decTeam(rec.a, teams),
   }
   if (rec.l) m.slug = rec.l
+  if (rec.q) m.sets = rec.q
   if (rec.n) m.seasonid = rec.n
   if (rec.z) m.historical = true
   return m

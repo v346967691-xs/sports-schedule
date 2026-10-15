@@ -669,6 +669,7 @@ async function main() {
   delete require.cache[require.resolve('../data/meta.js')]
   const matches = decodeSnapshot(require('../data/matches.js'))
   const meta = require('../data/meta.js')
+  try { meta.tennisRankings = require('../data/tennis-rankings.js') } catch (err) { /* 老快照兼容 */ }
   log(`本地快照：${matches.length} 场，bundle 生成时间 ${meta.generatedAt || '(空)'}`)
 
   if (!Array.isArray(matches) || matches.length === 0) {

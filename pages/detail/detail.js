@@ -152,6 +152,19 @@ function buildQuarters(match, sideName) {
   }
 }
 
+function buildTennisSets(match, sideName) {
+  const sets = match && match.sets
+  if (!sets || !(sets.h || []).length || !(sets.a || []).length) return null
+  const n = Math.max(sets.h.length, sets.a.length)
+  return {
+    cols: Array.from({ length: n }, (_, i) => `第${i + 1}盘`),
+    rows: [
+      { side: sideName('home'), scores: Array.from({ length: n }, (_, i) => sets.h[i] == null ? '-' : String(sets.h[i])) },
+      { side: sideName('away'), scores: Array.from({ length: n }, (_, i) => sets.a[i] == null ? '-' : String(sets.a[i])) },
+    ],
+  }
+}
+
 
 /**
  * 把云端详情整理成页面直接可用的形状。
@@ -216,6 +229,7 @@ function decorateDetail(d, match) {
   const lineups = buildLineups(d, sideName)
   const box = buildBox(d, sideName)
   const quarters = buildQuarters(match, sideName)
+  const tennisSets = buildTennisSets(match, sideName)
   const kpl = kplView.buildKpl(d, sideName('home'), sideName('away'))
   const lol = lolView.buildLol(d, sideName('home'), sideName('away'))
   const lolMvpCandidates = lolView.buildMvpCandidates(d, sideName('home'), sideName('away'))
@@ -236,6 +250,8 @@ function decorateDetail(d, match) {
     hasBox: !!box,
     quarters,
     hasQuarters: !!quarters,
+    tennisSets,
+    hasTennisSets: !!tennisSets,
     kpl,
     hasKpl: !!kpl,
     lol,
@@ -1053,4 +1069,4 @@ Page({
   },
 })
 
-module.exports = { decorateDetail, buildLineups, buildBox, buildQuarters, BASKET_COLS }
+module.exports = { decorateDetail, buildLineups, buildBox, buildQuarters, buildTennisSets, BASKET_COLS }

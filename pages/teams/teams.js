@@ -24,7 +24,7 @@ const { appInstance } = require('../../utils/app-instance')
 const SELECTABLE = [
   'epl', 'liga', 'seriea', 'bundesliga', 'ligue1', 'nations', 'chn', 'csl',
   'acl', 'acl2',
-  'asiacup', 'u17', 'u17w', 'friendly', 'nba', 'cba', 'lpl', 'lck', 'kpl',
+  'asiacup', 'u17', 'u17w', 'friendly', 'nba', 'cba', 'lpl', 'lck', 'kpl', 'atp', 'wta',
 ]
 
 /**
@@ -83,13 +83,14 @@ Page({
     // 每支队可能横跨多个赛事 → 某个赛事里「已关注 N」要按「这支队在该赛事有没有比赛」来分
     const followedByComp = {}
     followedList.forEach((t) => {
-      data.compsOfTeam(t.comp, t.id).forEach((k) => { followedByComp[k] = (followedByComp[k] || 0) + 1 })
+      if (t.comp === 'atp' || t.comp === 'wta') followedByComp[t.comp] = (followedByComp[t.comp] || 0) + 1
+      else data.compsOfTeam(t.comp, t.id).forEach((k) => { followedByComp[k] = (followedByComp[k] || 0) + 1 })
     })
 
     // 赛会制赛事（U17 世界杯）在窗口外没有比赛 → 抽不出球队，那个分类就不显示，
     // 等比赛进入抓取窗口会自动冒出来，不用发版
     const cats = SELECTABLE
-      .filter((k) => data.teamsOf(k).length > 0)
+      .filter((k) => (k === 'atp' || k === 'wta' ? data.tennisPlayers(k).length > 0 : data.teamsOf(k).length > 0))
       .map((k) => ({
         key: k,
         name: data.compOf(k).name,
@@ -98,17 +99,20 @@ Page({
 
     const kw = String(this.data.keyword || '').trim().toLowerCase()
     const catFilter = CAT_TEAM_FILTER[this.data.activeCat]
-    const teams = data
-      .teamsOf(this.data.activeCat)
+    const pool = this.data.activeCat === 'atp' || this.data.activeCat === 'wta'
+      ? data.tennisPlayers(this.data.activeCat)
+      : data.teamsOf(this.data.activeCat)
+    const teams = pool
       .filter((t) => !catFilter || catFilter.test(t.display))
       .filter((t) => !kw
         || t.display.toLowerCase().indexOf(kw) > -1
         || t.name.toLowerCase().indexOf(kw) > -1
         || t.abbr.toLowerCase().indexOf(kw) > -1)
       .map((t) => Object.assign({}, t, {
+        isTennis: t.comp === 'atp' || t.comp === 'wta',
         k: follows.key(t.comp, t.id),
         followed: !!followedSet[follows.teamKey(t)],
-        rankText: this.rankText(t.comp, t.id),
+        rankText: t.rankText || this.rankText(t.comp, t.id),
       }))
 
     this.setData({ cats, teams, followedCount: followedList.length })
@@ -140,6 +144,7 @@ Page({
   onTeamTap(e) {
     const item = this.data.teams[e.currentTarget.dataset.index]
     if (!item) return
+    if (item.comp === 'atp' || item.comp === 'wta') return
     wx.navigateTo({
       url: `/pages/team/team?comp=${encodeURIComponent(item.comp)}&id=${encodeURIComponent(String(item.id))}`,
       fail() {
@@ -166,8 +171,8 @@ Page({
     if (!this.data.followedCount) return
     const self = this
     wx.showModal({
-      title: '清空关注球队',
-      content: `将取消全部 ${this.data.followedCount} 支已关注球队，确定吗？`,
+      title: '清空关注',
+      content: `将取消全部 ${this.data.followedCount} 项关注，确定吗？`,
       confirmText: '清空',
       cancelText: '取消',
       success(res) {

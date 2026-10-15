@@ -43,11 +43,13 @@ function sameTeam(a, b) {
   if (!a || !b) return false
   if (String(a.id || '') !== String(b.id || '')) return false
   if (!a.comp || !b.comp) return a.comp === b.comp
+  if (data.catOf(a.comp) === 'tennis' || data.catOf(b.comp) === 'tennis') return a.comp === b.comp
   return a.comp === b.comp || data.catOf(a.comp) === data.catOf(b.comp)
 }
 
 /** 球队维度的去重键（`all()` 与云端合并都用它） */
 function teamKey(t) {
+  if (data.catOf(t.comp) === 'tennis') return `${t.comp}|${String(t.id)}`
   return `${data.catOf(t.comp)}|${String(t.id)}`
 }
 

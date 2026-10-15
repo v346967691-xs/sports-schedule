@@ -1,7 +1,7 @@
 <view class="page teams">
   <view class="tf-head">
     <view class="tf-count">
-      已关注 <text class="tf-num">{{followedCount}}</text> 支球队
+      已关注 <text class="tf-num">{{followedCount}}</text> 项
     </view>
     <view class="tf-acts">
       <!-- 这页的输入框只在**当前分类内**过滤，且不覆盖欧战/世界赛。
@@ -28,7 +28,7 @@
   <view class="tf-search">
     <input
       class="tf-input"
-      placeholder="搜索球队，如 阿森纳 / JDG"
+      placeholder="搜索球队或选手，如 阿森纳 / 郑钦文"
       placeholder-class="tf-ph"
       value="{{keyword}}"
       bindinput="onSearch"
@@ -46,7 +46,12 @@
     >
       <view class="tf-bar" style="background: {{item.color}}"></view>
       <!-- 主体点击进球队详情，右下角按钮才关注：两个动作分开，避免误触取消关注 -->
-      <view class="tf-body" data-index="{{index}}" bindtap="onTeamTap">
+      <view class="tf-body" wx:if="{{item.isTennis}}">
+        <view class="tf-name">{{item.display}}</view>
+        <view class="tf-abbr">{{item.abbr}}</view>
+        <view class="tf-rank" wx:if="{{item.rankText}}">{{item.rankText}}</view>
+      </view>
+      <view class="tf-body" wx:else data-index="{{index}}" bindtap="onTeamTap">
         <view class="tf-name">{{item.display}}</view>
         <view class="tf-abbr">{{item.abbr}}</view>
         <view class="tf-rank" wx:if="{{item.rankText}}">{{item.rankText}}</view>
@@ -56,14 +61,14 @@
   </view>
 
   <view class="empty" wx:if="{{!teams.length}}">
-    <view class="empty-title">没有匹配的球队</view>
-    <view class="empty-desc">换个关键词，或切换到其他赛事看看</view>
+    <view class="empty-title">没有匹配的球队或选手</view>
+    <view class="empty-desc">换个关键词，或切换其他赛事 / 巡回赛</view>
   </view>
 
   <!-- 🔴 这句文案一直在承诺「去我的」，但 `teams.js` 的 goMine() 从来没被接线
        （2026-10-08 修）：把它变成可点的入口，配一个箭头让用户看得出能点。 -->
   <view class="tf-foot" bindtap="goMine" hover-class="tf-foot-hover">
-    关注的球队会出现在「我的」，登录后换设备也能同步 ›
+    关注的球队和网球选手会出现在「我的」，登录后换设备也能同步 ›
   </view>
   <view class="safe-bottom"></view>
 </view>

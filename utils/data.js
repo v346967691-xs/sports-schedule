@@ -59,6 +59,10 @@ let meta = (() => {
   }
 })()
 
+let tennisRankings = (() => {
+  try { return require('../data/tennis-rankings.js') } catch (err) { return { generatedAt: '', tours: {} } }
+})()
+
 let cache = null
 
 /* 云端赛程缓存：打开即读，无需重新发布即可看到最新比分（每小时由定时任务刷新云端） */
@@ -103,7 +107,10 @@ function applyLive() {
     if (p.stt != null) m.statusText = p.stt
     if (p.hs != null && m.home) m.home.score = p.hs
     if (p.as != null && m.away) m.away.score = p.as
-    if (p.ls) m.linescores = p.ls
+    if (p.ls) {
+      if (catOf(m.comp) === 'tennis') m.sets = p.ls
+      else m.linescores = p.ls
+    }
     n += 1
   })
   return n
@@ -293,6 +300,11 @@ function query(opt) {
 function matchHasTeam(m, team) {
   if (!team) return false
   const id = String(team.id)
+  if (catOf(m.comp) === 'tennis' && catOf(team.comp) === 'tennis') {
+    const nameKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).sort().join(' ')
+    return [m.home, m.away].some(side => String(side.id) === id
+      || [side.name, side.abbr].some(a => nameKey(a) && [team.name, team.abbr, team.display].some(b => nameKey(a) === nameKey(b))))
+  }
   if (String(m.home.id) !== id && String(m.away.id) !== id) return false
   if (m.comp === team.comp) return true
   return catOf(m.comp) === catOf(team.comp)
@@ -353,6 +365,17 @@ function teamsOf(compKey) {
     })
   })
   return out.sort((a, b) => zhCompare(a.display, b.display))
+}
+
+function tennisPlayers(tour) {
+  const list = tennisRankings && tennisRankings.tours && tennisRankings.tours[tour]
+  if (!Array.isArray(list)) return []
+  return list.map(p => ({
+    comp: tour, id: String(p.id), name: p.name, zh: p.zh || '', abbr: p.name,
+    color: tour === 'atp' ? '#1C6B45' : '#7B3F8C', display: p.zh || p.name,
+    rank: p.rank, country: p.country === 'China' ? '中国' : p.country, headshot: p.headshot,
+    rankText: `世界第 ${p.rank} 位${p.country ? ` · ${p.country === 'China' ? '中国' : p.country}` : ''}`,
+  }))
 }
 
 /** 未来赛程：从今天起，按时间升序 */
@@ -646,6 +669,7 @@ function staleInfo() {
 function applyCloudSnapshot(snapList, snapMeta) {
   cache = snapList
   meta = snapMeta
+  if (snapMeta && snapMeta.tennisRankings) tennisRankings = snapMeta.tennisRankings
   dataSource = 'cloud'
   // ⚠️ 云端大表最多落后 15 分钟，而实时小表 60 秒刷一次 ——
   //    换上新快照后必须**立刻**把实时补丁盖回去，否则比分会往回跳。
@@ -926,6 +950,7 @@ module.exports = {
   matchHasTeam,
   compsOfTeam,
   teamsOf,
+  tennisPlayers,
   upcoming,
   finished,
   recentFinished,

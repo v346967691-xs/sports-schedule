@@ -107,6 +107,8 @@ const COMPETITIONS = [
   { key: 'friendly', source: 'espn', sport: 'soccer', cat: 'football', name: '国际友谊赛', full: '国际足联国际友谊赛', espn: 'fifa.friendly', accent: '#4A6FA5' },
   { key: 'nba', source: 'espn', sport: 'basketball', cat: 'basketball', name: 'NBA', full: '美国职业篮球联赛', espn: 'nba', accent: '#C8102E' },
   { key: 'cba', source: 'cba', sport: 'basketball', cat: 'basketball', name: 'CBA', full: '中国男子篮球职业联赛', accent: '#1E5FA8' },
+  { key: 'atp', source: 'tennis', tour: 'atp', cat: 'tennis', name: 'ATP', full: 'ATP 男子职业网球巡回赛', accent: '#1C6B45' },
+  { key: 'wta', source: 'tennis', tour: 'wta', cat: 'tennis', name: 'WTA', full: 'WTA 女子职业网球巡回赛', accent: '#7B3F8C' },
   // 电竞顺序：全球总决赛 → 德玛西亚杯 → LPL → LCK → KPL → LEC → 季中冠军赛 → 亚运会
   { key: 'worlds', source: 'lol', cat: 'esports', name: '全球总决赛', full: '英雄联盟全球总决赛', lol: '98767975604431411', lolSlug: 'worlds', accent: '#B99433' },
   {
@@ -134,13 +136,15 @@ const SPORT_CATS = {
   },
   basketball: { name: '篮球', competitions: ['nba', 'cba'] },
   esports: { name: '电竞', competitions: ['worlds', 'demacia', 'lpl', 'lck', 'kpl', 'lec', 'msi', 'agames'] },
+  tennis: { name: '网球', competitions: ['atp', 'wta'] },
 }
 
 /** 解析命令行第四个参数，决定本次要刷哪些赛事 */
 function resolveTargets() {
   if (!only) return COMPETITIONS
   if (only === 'lol' || only === 'esports') return COMPETITIONS.filter((c) => c.source === 'lol')
-  if (only === 'espn' || only === 'sports') return COMPETITIONS.filter((c) => c.source !== 'lol')
+  if (only === 'tennis') return COMPETITIONS.filter((c) => c.source === 'tennis')
+  if (only === 'espn' || only === 'sports') return COMPETITIONS.filter((c) => c.source === 'espn' || c.source === 'cba')
   const hit = COMPETITIONS.filter((c) => c.key === only || c.name === only)
   if (hit.length) return hit
   console.warn(`⚠ 未识别的范围「${only}」，可选：${COMPETITIONS.map((c) => c.key).join('/')} / lol / espn。本次按全量处理。`)
@@ -361,6 +365,142 @@ async function fetchEspn(comp) {
     }
   }
   return [...seen.values()]
+}
+
+/* ------------------------------------------------------------------ ATP / WTA */
+
+// ESPN 的 WTA scoreboard 同时含 WTA125/ITF，按 2026 WTA 正赛巡回站 ID 白名单过滤。
+// ATP scoreboard 自身只返回 ATP Tour 级别赛事。大满贯在两个巡回源中均保留。
+const WTA_TOUR_EVENT_IDS = new Set([
+  '970','925','245','611','154','930','793','1053','256','25','911','908','411','713','228',
+  '199','254','900','413','414','237','231','172','997','415','635','866','636','444','188',
+  '1069','1002','401','888','421','718','341','189','887','1005','1009','811','959','381',
+  '963','345','264','232','889','380','382',
+])
+const TENNIS_PLAYER_ZH = {
+  '11382': '布云朝克特', '2875': '吴易昺',
+  '6048': '郑钦文', '3387': '王欣瑜', '707': '张帅', '3155': '王曦雨', '2916': '袁悦',
+}
+
+function tennisPlayer(competitor, accent) {
+  const athlete = competitor && competitor.athlete || {}
+  const name = athlete.displayName || athlete.fullName || '待定'
+  const flag = athlete.flag || {}
+  return {
+    id: String(athlete.id || competitor.id || name), name, zh: TENNIS_PLAYER_ZH[String(athlete.id || '')] || '', abbr: athlete.shortName || name,
+    color: accent,
+    score: competitor.score != null && Number.isFinite(Number(competitor.score)) ? Number(competitor.score)
+      : ((competitor.linescores || []).length ? (competitor.linescores || []).filter(x => x.winner).length : null),
+    country: flag.alt || '', portrait: athlete.headshot && athlete.headshot.href || '',
+  }
+}
+
+async function fetchTennis(comp) {
+  const seen = new Map()
+  for (const month of months()) {
+    let json
+    try {
+      json = await getJSON(`${ESPN}/tennis/${comp.tour}/scoreboard?dates=${month}`)
+    } catch (err) {
+      console.warn(`\n  ! ${comp.key} ${month} 抓取失败: ${err.message}`)
+      continue
+    }
+    for (const event of (json && json.events) || []) {
+      const eventId = String(event.id || '').split('-')[0]
+      if (comp.tour === 'wta' && !WTA_TOUR_EVENT_IDS.has(eventId)) continue
+      for (const grouping of event.groupings || []) {
+        const slug = grouping.grouping && grouping.grouping.slug || ''
+        if (slug !== (comp.tour === 'atp' ? 'mens-singles' : 'womens-singles')) continue
+        for (const game of grouping.competitions || []) {
+          if (/qualif/i.test(game.round && game.round.displayName || '')) continue
+          const competitors = game.competitors || []
+          const homeRaw = competitors.find(x => x.homeAway === 'home') || competitors[0]
+          const awayRaw = competitors.find(x => x.homeAway === 'away') || competitors[1]
+          if (!homeRaw || !awayRaw || !game.date) continue
+          const state = game.status && game.status.type && game.status.type.state
+          const sets = { h: (homeRaw.linescores || []).map(x => Number(x.value)), a: (awayRaw.linescores || []).map(x => Number(x.value)) }
+          const match = {
+            id: `${comp.key}-${game.id}`, comp: comp.key, start: game.date,
+            date: beijingDay(game.date), time: beijingTime(game.date),
+            status: STATE_MAP[state] || 'upcoming',
+            statusText: state === 'in' ? `第${game.status?.period || 1}盘进行中` : zhStatus(state, game.status?.type?.shortDetail),
+            stage: `${event.name || comp.name}${game.round?.displayName ? ` · ${game.round.displayName}` : ''}`,
+            venue: [game.venue?.fullName, game.venue?.court].filter(Boolean).join(' · '),
+            bo: null, sets,
+            home: tennisPlayer(homeRaw, comp.accent), away: tennisPlayer(awayRaw, comp.accent),
+          }
+          seen.set(match.id, match)
+        }
+      }
+    }
+  }
+  return [...seen.values()]
+}
+
+async function fetchTennisRankings() {
+  const generatedAt = new Date().toISOString()
+  let previous = { tours: {} }
+  try { previous = require(path.join(OUT_DIR, 'tennis-rankings.js')) } catch (err) { /* 首次生成 */ }
+  const tours = {}
+  for (const tour of ['atp', 'wta']) {
+    let top = []
+    try {
+      const json = await getJSON(`${ESPN}/tennis/${tour}/rankings`)
+      const ranks = json.rankings?.[0]?.ranks || []
+      const rows = ranks.map(row => {
+        const a = row.athlete || {}
+        const flag = a.flag || {}
+        const country = a.flagAltText || (typeof flag === 'object' ? flag.alt : '') || a.citizenshipCountry || ''
+        return { id: String(a.id || ''), name: a.displayName || a.fullName || '', zh: TENNIS_PLAYER_ZH[String(a.id || '')] || '', rank: Number(row.current), points: Number(row.points) || 0,
+          country: country === 'CHN' ? 'China' : country, flag: typeof flag === 'string' ? flag : flag.href || '', headshot: a.headshot?.href || '' }
+      }).filter(x => x.id && x.name && x.rank)
+      top = rows.filter(x => x.rank <= 30)
+      // ESPN 排名接口最多返回前 150 名；用公开的国家排名页补齐中国选手前十。
+      let china = []
+      try {
+        const page = await fetch(`https://www.valuebetennis.com/en/classement-${tour}/china.htm`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SportsSchedule/1.0)' },
+          signal: AbortSignal.timeout(20000),
+        })
+        if (!page.ok) throw new Error(`HTTP ${page.status}`)
+        const html = await page.text()
+        const scripts = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+        for (const script of scripts) {
+          let ld
+          try { ld = JSON.parse(script[1]) } catch (err) { continue }
+          const list = (ld['@graph'] || []).find(x => x['@type'] === 'ItemList')
+          if (!list || !Array.isArray(list.itemListElement)) continue
+          china = list.itemListElement.slice(0, 10).map(x => {
+            const item = x.item || {}
+            const name = item.name || ''
+            const slug = String(item.url || '').split('/').pop().replace(/\.htm$/, '')
+            const rank = Number(x.position)
+            const existing = rows.find(p => tennisNameKey(p.name) === tennisNameKey(name))
+            return Object.assign({}, existing || {}, {
+              id: `cn-${tour}-${slug}`, name: existing && existing.name || name, rank,
+              points: existing && existing.points || 0, country: 'China', flag: existing && existing.flag || '',
+              headshot: existing && existing.headshot || '', zh: TENNIS_PLAYER_ZH[existing && existing.id] || '',
+            })
+          }).filter(x => x.id && x.name && x.rank)
+          break
+        }
+        if (!china.length) throw new Error('没有返回有效名单')
+      } catch (err) {
+        console.warn(`  ! ${tour.toUpperCase()} 中国选手补充排名不可用: ${err.message}`)
+        china = (previous.tours && previous.tours[tour] || []).filter(x => x.country === 'China')
+      }
+      const byId = new Map([...top, ...china].map(x => [tennisNameKey(x.name), x]))
+      tours[tour] = [...byId.values()].sort((a, b) => a.rank - b.rank)
+    } catch (err) {
+      console.warn(`  ! ${tour.toUpperCase()} 排名抓取失败: ${err.message}`)
+      tours[tour] = top.length ? top : (previous.tours && previous.tours[tour] || [])
+    }
+  }
+  return { generatedAt, source: 'ESPN world top 30 + Valuebetennis China top 10', tours }
+}
+
+function tennisNameKey(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).sort().join(' ')
 }
 
 /* ------------------------------------------------------------------ LoL */
@@ -780,6 +920,7 @@ function report(all) {
 function missingZh(all) {
   const map = new Map()
   all.forEach((m) => {
+    if (m.comp === 'atp' || m.comp === 'wta') return
     [m.home, m.away].forEach((t) => {
       if (!t.zh && t.abbr !== 'TBD') map.set(t.id, `${t.abbr}  ${t.name}`)
     })
@@ -868,7 +1009,9 @@ async function main() {
 
   for (const comp of targets) {
     process.stdout.write(`抓取 ${comp.name.padEnd(6)} …`)
-    const rows = comp.source === 'lol'
+    const rows = comp.source === 'tennis'
+      ? await fetchTennis(comp)
+      : comp.source === 'lol'
       ? await fetchLol(comp)
       : comp.source === 'kpl'
         ? await fetchKpl(comp)
@@ -913,6 +1056,12 @@ async function main() {
   }))
 
   fs.writeFileSync(metaPath, toModule(meta))
+  const rankingPath = path.join(OUT_DIR, 'tennis-rankings.js')
+  let tennisRankings
+  if (targets.some(c => c.source === 'tennis')) {
+    tennisRankings = await fetchTennisRankings()
+    fs.writeFileSync(rankingPath, toModule(tennisRankings))
+  }
   // ⚠️ 快照用**紧凑格式**写（utils/snapshot.js 的 encodeSnapshot）：
   //    球队抽成共享字典、date/time 由 start 推、空值不写，实测 790KB → 230KB。
   //    读回来一律走 utils/snapshot.js 的 decodeSnapshot，运行时拿到的还是原来那个扁平数组。

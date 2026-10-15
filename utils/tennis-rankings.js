@@ -14,8 +14,33 @@ function merge(current = {}, incoming = {}) {
     const next = incoming[tour]
     if (next && Array.isArray(next.rows) && next.rows.filter(r => r.rank >= 1 && r.rank <= 100).length === 100
       && Number.isFinite(Date.parse(next.rankingDate))
-      && (!current[tour] || next.rankingDate >= current[tour].rankingDate)) result[tour] = next
+      && (!current[tour] || next.rankingDate >= current[tour].rankingDate)) {
+      result[tour] = Object.assign({}, next, {
+        tournaments: Array.isArray(next.tournaments) ? next.tournaments : (current[tour] && current[tour].tournaments) || [],
+      })
+    }
   })
   return result
 }
-module.exports = { board, merge }
+
+function eventLevel(tournaments, tour, name, date) {
+  const normalizeName = value => {
+    let text = String(value || '').toLowerCase()
+    if (typeof text.normalize === 'function') text = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    else text = text.replace(/[àáâãäå]/g, 'a').replace(/[èéêë]/g, 'e').replace(/[ìíîï]/g, 'i')
+      .replace(/[òóôõö]/g, 'o').replace(/[ùúûü]/g, 'u').replace(/ç/g, 'c').replace(/ñ/g, 'n')
+    return text.replace(/\b20\d{2}\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+  }
+  const candidate = normalizeName(name)
+  if (!candidate || !Array.isArray(tournaments)) return ''
+  const day = String(date || '').slice(0, 10)
+  const events = tournaments.filter(event => {
+    if (!event || (event.tour && event.tour !== tour)) return false
+    const names = [event.name, event.city].map(normalizeName).filter(value => value.length >= 4)
+    const matched = names.some(value => candidate === value || candidate.includes(value) || value.includes(candidate))
+    if (!matched) return false
+    return !day || !event.start || !event.end || (day >= event.start && day <= event.end)
+  })
+  return events.length === 1 ? events[0].level || '' : ''
+}
+module.exports = { board, merge, eventLevel }

@@ -104,7 +104,7 @@ function decorate(m) {
   // 数据里的 stage 形如「全球总决赛 · 瑞士轮」「LEC · 第 4 周」——
   // 第一段是赛事名，去掉；「联赛阶段 · D1组」这种第一段本身就是阶段，保留。
   const stageLabel = tennis.isTennis(m)
-    ? [tennis.tournamentOf(m).name, tennis.roundOf(m)].filter(Boolean).join(' · ')
+    ? [tennis.tournamentLabel(m, ctx.tennisTournamentLevel), tennis.roundOf(m)].filter(Boolean).join(' · ')
     : roundLabel(m.stage, comp.name)
 
   return Object.assign({}, m, {

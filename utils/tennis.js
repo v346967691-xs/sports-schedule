@@ -22,7 +22,13 @@ function isTennis(match) { return !!match && (match.comp === 'atp' || match.comp
 
 function tournamentOf(match) {
   const raw = String(match && match.stage || '').split('·')[0].trim() || '分站待公布'
-  return { key: `${match.comp}|${raw}`, name: STATIONS[raw] || raw, comp: match.comp }
+  return { key: `${match.comp}|${raw}`, raw, name: STATIONS[raw] || raw, comp: match.comp }
+}
+
+function tournamentLabel(match, getLevel) {
+  const station = tournamentOf(match)
+  const level = typeof getLevel === 'function' ? getLevel(station.comp, station.raw, match && match.date) : ''
+  return [station.name, level].filter(Boolean).join(' · ')
 }
 
 function roundOf(match) {
@@ -33,15 +39,16 @@ function roundOf(match) {
   return size ? `${size[1]}强赛` : rounds[raw] || raw
 }
 
-function tournamentChipsOf(list) {
+function tournamentChipsOf(list, getLevel) {
   const stations = new Map()
   list.filter(isTennis).forEach(match => {
     const station = tournamentOf(match)
+    const level = typeof getLevel === 'function' ? getLevel(station.comp, station.raw, match.date) : ''
     const existing = stations.get(station.key)
     if (existing) existing.count += 1
-    else stations.set(station.key, { ...station, count: 1 })
+    else stations.set(station.key, { ...station, level, label: [station.name, level].filter(Boolean).join(' · '), count: 1 })
   })
   return [...stations.values()]
 }
 
-module.exports = { isTennis, tournamentOf, roundOf, tournamentChipsOf }
+module.exports = { isTennis, tournamentOf, tournamentLabel, roundOf, tournamentChipsOf }

@@ -58,6 +58,7 @@ async function send(token, message) {
 }
 
 function createMessage(row, match, template, state) {
+  match = require('../utils/tennis-names').localizeMatch(match)
   const recipient = recipientOpenId(row.owner_id)
   if (!recipient) throw new Error('Unsupported account identifier')
   const comp = require('../data/meta').competitions.find(item => item.key === match.comp) || {}

@@ -22,6 +22,7 @@
 const { cloud, isReady, getSession } = require('./cloud')
 // ⚠️ 只为了拿 catOf —— data.js 不 require 本文件，不会成环
 const data = require('./data')
+const tennisNames = require('./tennis-names')
 
 const TABLE = 'team_follows'
 const STORE_KEY = 'team_follows_v1'
@@ -54,14 +55,17 @@ function teamKey(t) {
 }
 
 function normalize(team) {
+  const zh = (team.comp === 'atp' || team.comp === 'wta')
+    ? tennisNames.nameZh(team.name) || tennisNames.nameZh(team.abbr) || team.zh || ''
+    : team.zh || ''
   return {
     comp: String(team.comp || ''),
     id: String(team.id || ''),
     name: team.name || '',
-    zh: team.zh || '',
+    zh,
     abbr: team.abbr || '',
     color: team.color || '#9CA3AF',
-    display: team.display || team.zh || team.name || team.abbr || String(team.id || ''),
+    display: ((team.comp === 'atp' || team.comp === 'wta') && zh) || team.display || zh || team.name || team.abbr || String(team.id || ''),
   }
 }
 

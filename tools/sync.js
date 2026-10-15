@@ -377,10 +377,7 @@ const WTA_TOUR_EVENT_IDS = new Set([
   '1069','1002','401','888','421','718','341','189','887','1005','1009','811','959','381',
   '963','345','264','232','889','380','382',
 ])
-const TENNIS_PLAYER_ZH = {
-  '11382': '布云朝克特', '2875': '吴易昺',
-  '6048': '郑钦文', '3387': '王欣瑜', '707': '张帅', '3155': '王曦雨', '2916': '袁悦',
-}
+const { nameZh: tennisNameZh } = require('../utils/tennis-names')
 
 function tennisScore(competitor) {
   const score = competitor && competitor.score
@@ -394,7 +391,7 @@ function tennisPlayer(competitor, accent) {
   const name = athlete.displayName || athlete.fullName || '待定'
   const flag = athlete.flag || {}
   return {
-    id: String(athlete.id || competitor.id || name), name, zh: TENNIS_PLAYER_ZH[String(athlete.id || competitor.id || '')] || '', abbr: athlete.shortName || name,
+    id: String(athlete.id || competitor.id || name), name, zh: tennisNameZh(name), abbr: athlete.shortName || name,
     color: accent,
     score: tennisScore(competitor),
     country: flag.alt || '', portrait: athlete.headshot && athlete.headshot.href || '',
@@ -457,7 +454,7 @@ async function fetchTennisRankings() {
         const a = row.athlete || {}
         const flag = a.flag || {}
         const country = a.flagAltText || (typeof flag === 'object' ? flag.alt : '') || a.citizenshipCountry || ''
-        return { id: String(a.id || ''), name: a.displayName || a.fullName || '', zh: TENNIS_PLAYER_ZH[String(a.id || '')] || '', rank: Number(row.current), points: Number(row.points) || 0,
+        return { id: String(a.id || ''), name: a.displayName || a.fullName || '', zh: tennisNameZh(a.displayName || a.fullName), rank: Number(row.current), points: Number(row.points) || 0,
           country: country === 'CHN' ? 'China' : country, flag: typeof flag === 'string' ? flag : flag.href || '', headshot: a.headshot?.href || '' }
       }).filter(x => x.id && x.name && x.rank)
       top = rows.filter(x => x.rank <= 30)
@@ -485,7 +482,7 @@ async function fetchTennisRankings() {
             return Object.assign({}, existing || {}, {
               id: `cn-${tour}-${slug}`, name: existing && existing.name || name, rank,
               points: existing && existing.points || 0, country: 'China', flag: existing && existing.flag || '',
-              headshot: existing && existing.headshot || '', zh: TENNIS_PLAYER_ZH[existing && existing.id] || '',
+              headshot: existing && existing.headshot || '', zh: tennisNameZh(existing && existing.name || name),
             })
           }).filter(x => x.id && x.name && x.rank)
           break

@@ -14,8 +14,15 @@ function normalize(raw, tour, now = Date.now()) {
   if (top.length !== 100 || new Set(top.map(r => r.rank)).size !== 100) throw new Error('正式周排名前百不完整')
   const china = rows.filter(r => r.country === 'CHN').slice(0, 10)
   const selected = new Map([...top, ...china].map(r => [r.id, r]))
+  // The same feed publishes the tour calendar and each event's official level.
+  // Keep only the compact fields needed to label tennis tournament filters/cards.
+  const tournaments = Array.isArray(raw.week) ? raw.week
+    .filter(event => event && event.tour === tour && typeof event.name === 'string'
+      && typeof event.lvl === 'string' && event.lvl.trim())
+    .map(event => ({ tour, name: event.name, city: event.city || '', level: event.lvl,
+      start: event.d0 || '', end: event.d1 || '' })) : []
   return { rankingDate, fetchedAt: new Date(now).toISOString(), source: 'rank.tennis 周榜镜像',
-    rows: [...selected.values()].sort((a, b) => a.rank - b.rank) }
+    rows: [...selected.values()].sort((a, b) => a.rank - b.rank), tournaments }
 }
 
 async function refresh(previous = {}, options = {}) {

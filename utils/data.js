@@ -373,6 +373,11 @@ function tennisRankingBoard(tour, chinaOnly) {
   return require('./tennis-rankings').board(tennisRankings.weekly, tour, chinaOnly)
 }
 
+function tennisTournamentLevel(tour, name, date) {
+  const board = tennisRankings && tennisRankings.weekly && tennisRankings.weekly[tour]
+  return require('./tennis-rankings').eventLevel(board && board.tournaments, tour, name, date)
+}
+
 function tennisPlayers(tour) {
   const list = tennisRankings && tennisRankings.tours && tennisRankings.tours[tour]
   if (!Array.isArray(list)) return []
@@ -961,6 +966,7 @@ module.exports = {
   teamsOf,
   tennisPlayers,
   tennisRankingBoard,
+  tennisTournamentLevel,
   upcoming,
   finished,
   recentFinished,

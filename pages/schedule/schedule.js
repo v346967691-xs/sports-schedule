@@ -234,8 +234,8 @@ Page({
 
     // 阶段筛选。选项按**未筛选**的列表算，否则选完某阶段后选项本身就没了，切不回来。
     // 筛掉的阶段在 totalMatches / totalGroups 里也不出现，所以「共 N 场」跟眼睛看到的一致。
-    const tournamentChips = activeCat === 'tennis' ? tennis.tournamentChipsOf(list).map(c => ({
-      ...c, label: activeComp ? c.name : `${c.comp.toUpperCase()} · ${c.name}`,
+    const tournamentChips = activeCat === 'tennis' ? tennis.tournamentChipsOf(list, data.tennisTournamentLevel).map(c => ({
+      ...c, label: activeComp ? c.label : `${c.comp.toUpperCase()} · ${c.label}`,
     })) : []
     const selectedTournament = tournamentChips.find(c => c.key === this.data.tournamentFilter)
     const tournamentFilter = selectedTournament ? selectedTournament.key : ''
@@ -261,7 +261,7 @@ Page({
       ? bracket.buildBracket(data.query({ comps: [activeComp], team: teamFilter }), compName)
       : null
 
-    this.allGroups = view.groupByDate(list, { compOf: data.compOf })
+    this.allGroups = view.groupByDate(list, { compOf: data.compOf, tennisTournamentLevel: data.tennisTournamentLevel })
     this.setData({
       rows: this.buildRows(shownGroups),
       totalGroups: this.allGroups.length,
@@ -321,7 +321,7 @@ Page({
         time: m.time || '',
         home: view.nameOf(m.home),
         away: view.nameOf(m.away),
-        comp: tennis.isTennis(m) ? [!d.activeComp ? m.comp.toUpperCase() : '', tennis.tournamentOf(m).name, tennis.roundOf(m)].filter(Boolean).join(' · ') : (data.compOf(m.comp) || {}).name || '',
+        comp: tennis.isTennis(m) ? [!d.activeComp ? m.comp.toUpperCase() : '', tennis.tournamentLabel(m, data.tennisTournamentLevel), tennis.roundOf(m)].filter(Boolean).join(' · ') : (data.compOf(m.comp) || {}).name || '',
       })),
       accent: (d.activeComp && (data.compOf(d.activeComp) || {}).accent) || '#2E7CF6',
     })

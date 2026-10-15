@@ -128,6 +128,13 @@
   padding-top: 14rpx;
 }
 
+.filter-level-label {
+  margin-right: 16rpx;
+  color: var(--sub);
+  font-size: 23rpx;
+  flex-shrink: 0;
+}
+
 .chip.stage-chip {
   margin-right: 12rpx;
   padding: 8rpx 20rpx;

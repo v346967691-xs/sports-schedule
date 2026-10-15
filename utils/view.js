@@ -4,6 +4,7 @@
  */
 
 const fmt = require('./format')
+const tennis = require('./tennis')
 
 /**
  * 这段是不是「轮次描述」本身？
@@ -102,7 +103,9 @@ function decorate(m) {
   // 卡片小字只展示「轮次/阶段」，不重复 tag 上已经写着的赛事名。
   // 数据里的 stage 形如「全球总决赛 · 瑞士轮」「LEC · 第 4 周」——
   // 第一段是赛事名，去掉；「联赛阶段 · D1组」这种第一段本身就是阶段，保留。
-  const stageLabel = roundLabel(m.stage, comp.name)
+  const stageLabel = tennis.isTennis(m)
+    ? [tennis.tournamentOf(m).name, tennis.roundOf(m)].filter(Boolean).join(' · ')
+    : roundLabel(m.stage, comp.name)
 
   return Object.assign({}, m, {
     home: withZh(m.home),

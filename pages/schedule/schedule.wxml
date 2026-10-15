@@ -34,12 +34,23 @@
       <view class="mode {{mode === 'finished' ? 'active' : ''}}" data-mode="finished" bindtap="onModeTap">已结束</view>
     </view>
 
+    <scroll-view class="chip-row-wrap stage-row-wrap" scroll-x enable-flex wx:if="{{activeCat === 'tennis' && tournamentChips.length}}">
+      <view class="chip-row">
+        <text class="filter-level-label">分站</text>
+        <view class="chip stage-chip {{tournamentFilter === '' ? 'active' : ''}}" data-key="" bindtap="onTournamentTap">全部分站</view>
+        <view wx:for="{{tournamentChips}}" wx:key="key"
+          class="chip stage-chip {{tournamentFilter === item.key ? 'active' : ''}}"
+          data-key="{{item.key}}" bindtap="onTournamentTap">{{item.label}} {{item.count}}</view>
+      </view>
+    </scroll-view>
+
     <!-- 阶段（轮次）筛选：只在这项赛事真有多个轮次时出现。
          足球联赛 / NBA 常规赛的 stage 就是赛事名本身，只有一个取值 → stageChips.length 为 1，整条不渲染。
          有轮次的赛事（全球总决赛 / LPL 周赛 / KPL）用它把一屏几十场收敛到「入围赛」「瑞士轮」这样一段。 -->
     <scroll-view class="chip-row-wrap stage-row-wrap" scroll-x enable-flex wx:if="{{stageChips.length > 1}}">
       <view class="chip-row">
-        <view class="chip stage-chip {{stageFilter === '' ? 'active' : ''}}" data-key="" bindtap="onStageTap">全部阶段</view>
+        <text class="filter-level-label" wx:if="{{activeCat === 'tennis'}}">轮次</text>
+        <view class="chip stage-chip {{stageFilter === '' ? 'active' : ''}}" data-key="" bindtap="onStageTap">{{activeCat === 'tennis' ? '全部轮次' : '全部阶段'}}</view>
         <view
           wx:for="{{stageChips}}"
           wx:key="key"
@@ -145,7 +156,7 @@
     <view class="mc" wx:if="{{item.type === 'match'}}" data-id="{{item.match.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
         <view class="mc-tag" style="background: {{item.match._accent}}">{{item.match._compName}}</view>
-        <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+        <view class="mc-stage" wx:if="{{item.match._stageLabel}}">{{item.match._stageLabel}}</view>
         <view class="mc-status status-{{item.match.status}}">{{item.match._statusLabel}}</view>
       </view>
 

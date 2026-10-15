@@ -120,7 +120,9 @@ Page({
       matchId: row.match_id,
       compName: (map[row.comp] || {}).name || row.comp,
       accent: (map[row.comp] || {}).accent || '#6B7280',
-      title: `${row.home} vs ${row.away}`,
+      title: (row.comp === 'atp' || row.comp === 'wta')
+        ? `${require('../../utils/tennis-names').nameZh(row.home) || row.home} vs ${require('../../utils/tennis-names').nameZh(row.away) || row.away}`
+        : `${row.home} vs ${row.away}`,
       time: `${fmt.dayLabel(row.date)} ${row.time}`,
       past: row.date < fmt.todayStr(),
     }))

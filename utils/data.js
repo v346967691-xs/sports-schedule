@@ -11,6 +11,7 @@
  */
 
 const snapshot = require('./snapshot')
+const tennisNames = require('./tennis-names')
 const worldsArchive = require('./worlds-archive')
 let archiveMatches = {}
 let archiveDetails = {}
@@ -177,7 +178,7 @@ function matches() {
   if (!cache) {
     try {
       // eslint-disable-next-line
-      cache = snapshot.decodeSnapshot(require('../data/matches.js'))
+      cache = snapshot.decodeSnapshot(require('../data/matches.js')).map(tennisNames.localizeMatch)
     } catch (err) {
       console.error('[赛程助手] 赛程数据加载失败', err)
       cache = []
@@ -372,8 +373,8 @@ function tennisPlayers(tour) {
   const list = tennisRankings && tennisRankings.tours && tennisRankings.tours[tour]
   if (!Array.isArray(list)) return []
   return list.map(p => ({
-    comp: tour, id: String(p.id), name: p.name, zh: p.zh || '', abbr: p.name,
-    color: tour === 'atp' ? '#1C6B45' : '#7B3F8C', display: p.zh || p.name,
+    comp: tour, id: String(p.id), name: p.name, zh: tennisNames.nameZh(p.name) || p.zh || '', abbr: p.name,
+    color: tour === 'atp' ? '#1C6B45' : '#7B3F8C', display: tennisNames.nameZh(p.name) || p.zh || p.name,
     rank: p.rank, country: p.country === 'China' ? '中国' : p.country, headshot: p.headshot,
     rankText: `世界第 ${p.rank} 位${p.country ? ` · ${p.country === 'China' ? '中国' : p.country}` : ''}`,
   }))
@@ -668,7 +669,7 @@ function staleInfo() {
  *    但以后若改推紧凑格式，这里不该再改一次。
  */
 function applyCloudSnapshot(snapList, snapMeta) {
-  cache = snapList
+  cache = snapList.map(tennisNames.localizeMatch)
   meta = snapMeta
   if (snapMeta && snapMeta.tennisRankings) tennisRankings = snapMeta.tennisRankings
   dataSource = 'cloud'

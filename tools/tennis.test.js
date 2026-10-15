@@ -30,7 +30,7 @@ test('Chinese player follows keep name matching through mine and schedule filter
   const storage = new Map()
   const follows = load('../utils/team-follows.js', {
     wx: { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value) },
-    require: name => name === './data' ? data : { isReady: () => false },
+    require: name => name === './data' ? data : name === './tennis-names' ? require('../utils/tennis-names') : { isReady: () => false },
   }).module.exports
   follows.toggle(player)
   assert.equal(data.matchHasTeam(match, follows.asFilter()[0]), true)
@@ -249,4 +249,80 @@ test('tennis schedule shares and restores the selected station, round and status
   assert.match(all.shareHeadline().head, /WTA · 中国网球公开赛/)
   const wxml = fs.readFileSync(path.join(__dirname, '../pages/schedule/schedule.wxml'), 'utf8')
   assert.match(wxml, /item\.match\._stageLabel/)
+})
+
+test('tennis Chinese names use full identity, tolerate accents and name order, and keep unknown names untouched', () => {
+  const { nameZh, localizeMatch } = require('../utils/tennis-names')
+  assert.equal(nameZh('Zhizhen Zhang'), '张之臻')
+  assert.equal(nameZh('Zhang Zhizhen'), '张之臻')
+  assert.equal(nameZh('Félix Auger-Aliassime'), nameZh('Felix Auger Aliassime'))
+  assert.equal(nameZh('Hanyi Liu'), '刘汉屹')
+  assert.equal(nameZh('Tianhui Zhang'), '张天汇')
+  assert.equal(nameZh('Qu Yihan'), '渠依含')
+  assert.equal(nameZh('Wang Xinyu'), '王欣瑜')
+  assert.equal(nameZh('Wang Xiyu'), '王曦雨')
+  assert.equal(nameZh('Wang'), '')
+  assert.equal(nameZh('Unknown Player'), '')
+  assert.equal(nameZh('constructor'), '')
+  const original = { comp: 'atp', home: { id: '3623', name: 'Jannik Sinner', score: 2 }, away: { name: 'Unknown Player', zh: '已核实姓名', score: 0 } }
+  const localized = localizeMatch(original)
+  assert.equal(localized.home.zh, '扬尼克·辛纳')
+  assert.equal(localized.home.name, original.home.name)
+  assert.equal(localized.home.id, original.home.id)
+  assert.equal(localized.home.score, 2)
+  assert.equal(original.home.zh, undefined)
+  assert.equal(localized.away.zh, '已核实姓名')
+  const football = { ...original, comp: 'ucl' }
+  assert.equal(localizeMatch(football), football)
+})
+
+test('all currently followable tennis players have Chinese display names and retain English search fields', () => {
+  const data = require('../utils/data')
+  const rankings = require('../data/tennis-rankings')
+  for (const tour of ['atp', 'wta']) {
+    const players = data.tennisPlayers(tour)
+    assert.equal(players.length, rankings.tours[tour].length)
+    for (const player of players) {
+      assert.match(player.display, /[\u3400-\u9fff]/, player.name)
+      assert.equal(player.display, player.zh)
+      assert.equal(player.abbr, player.name)
+      assert.ok(rankings.tours[tour].some(p => String(p.id) === player.id && p.name === player.name))
+    }
+  }
+})
+
+test('old English local and cloud tennis snapshots receive the same Chinese display overlay', () => {
+  const filename = path.join(__dirname, '../utils/data.js')
+  const actual = createRequire(filename)
+  const match = { id: 'atp-old', comp: 'atp', home: { id: '3623', name: 'Jannik Sinner' }, away: { id: 'zhang', name: 'Zhizhen Zhang' } }
+  const box = load('../utils/data.js', { require: name => name === '../data/matches.js' ? [match] : actual(name) })
+  assert.equal(box.module.exports.matches()[0].away.zh, '张之臻')
+  box.applyCloudSnapshot([match], { generatedAt: new Date().toISOString(), tennisRankings: { tours: { atp: [{ id: '3623', name: 'Jannik Sinner', rank: 1 }] } } })
+  assert.equal(box.module.exports.matches()[0].home.zh, '扬尼克·辛纳')
+  assert.equal(box.module.exports.tennisPlayers('atp')[0].display, '扬尼克·辛纳')
+  assert.equal(match.home.zh, undefined)
+})
+
+test('old English player follows show Chinese without changing follow identity or schedule filtering', () => {
+  const data = require('../utils/data')
+  const names = require('../utils/tennis-names')
+  const original = { comp: 'atp', id: 'cn-atp-zhang-zhizhen', name: 'Zhizhen Zhang', abbr: 'Zhizhen Zhang', display: 'Zhizhen Zhang' }
+  const follows = load('../utils/team-follows.js', {
+    wx: { getStorageSync: () => [original] },
+    require: name => name === './data' ? data : name === './tennis-names' ? names : { isReady: () => false },
+  }).module.exports
+  assert.equal(follows.all()[0].display, '张之臻')
+  assert.equal(follows.has(original.comp, original.id), true)
+  assert.equal(follows.all()[0].name, original.name)
+  assert.equal(data.matchHasTeam({ comp: 'atp', home: { id: 'espn-id', name: 'Zhang Zhizhen' }, away: {} }, follows.asFilter()[0]), true)
+})
+
+test('tennis notification names and result summary are Chinese even with an older English cloud row', () => {
+  const { createMessage } = require('./match-notification-push')
+  const m = { id: 'wta-old', comp: 'wta', start: '2026-10-15T10:00:00Z', status: 'finished',
+    home: { name: 'Zheng Qinwen', score: 2 }, away: { name: 'Wang Xinyu', score: 0 } }
+  const message = createMessage({ owner_id: 'wx:fixture', kind: 'result' }, m,
+    { priTmplId: 'fixture', content: '参赛人员：{{thing9.DATA}}\n备注：{{thing11.DATA}}' }, 'trial')
+  assert.equal(message.data.thing9.value, '郑钦文 vs 王欣瑜')
+  assert.equal(message.data.thing11.value, '郑钦文以2-0战胜王欣瑜')
 })

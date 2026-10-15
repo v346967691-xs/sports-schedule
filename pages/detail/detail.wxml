@@ -29,7 +29,7 @@
         <view class="team-abbr">{{match.home.abbr}}</view>
         <view class="team-score {{match._homeWin ? 'win' : ''}}" wx:if="{{match._hasScore}}">{{match.home.score}}</view>
       </view>
-      <view class="vs">{{match._hasScore ? '终比分' : 'VS'}}</view>
+      <view class="vs">{{match._hasScore ? (comp.cat === 'tennis' ? '盘分' : '终比分') : 'VS'}}</view>
       <view class="team" data-side="away" bindtap="onTeamTap" hover-class="team-hover">
         <view class="team-dot" style="background: {{match.away.color}}"></view>
         <view class="team-name {{match._awayWin ? 'win' : ''}}">{{match.away.zhName}}</view>
@@ -47,18 +47,18 @@
     </view>
     <view class="q-row" wx:for="{{detail.quarters.rows}}" wx:for-item="r" wx:key="side">
       <view class="q-t">{{r.side}}</view>
-      <view class="q-n" wx:for="{{detail.tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{r.scores[index]}}</view>
+      <view class="q-n" wx:for="{{detail.quarters.cols}}" wx:for-item="c" wx:key="*this">{{r.scores[index]}}</view>
     </view>
   </view>
 
-  <view class="q-card" wx:if="{{detail.hasTennisSets}}">
+  <view class="q-card" wx:if="{{tennisSets}}">
     <view class="q-row q-head">
       <view class="q-t">选手</view>
-      <view class="q-n" wx:for="{{detail.tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{c}}</view>
+      <view class="q-n" wx:for="{{tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{c}}</view>
     </view>
-    <view class="q-row" wx:for="{{detail.tennisSets.rows}}" wx:for-item="r" wx:key="side">
+    <view class="q-row" wx:for="{{tennisSets.rows}}" wx:for-item="r" wx:key="side">
       <view class="q-t">{{r.side}}</view>
-      <view class="q-n" wx:for="{{r.scores}}" wx:for-item="v" wx:key="*this">{{v}}</view>
+      <view class="q-n" wx:for="{{tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{r.scores[index]}}</view>
     </view>
   </view>
 

@@ -131,3 +131,39 @@ test('tennis single matches use existing subscription rounds and sport-correct r
   assert.notEqual(compZh('atp'), 'atp')
   assert.notEqual(compZh('wta'), 'wta')
 })
+
+test('tennis detail displays and refreshes set scores without a generic detail payload; basketball keeps its own columns', async () => {
+  let page
+  const realRequire = createRequire(path.join(__dirname, '../pages/detail/detail.js'))
+  const comp = { name: 'ATP', full: 'ATP 男子职业网球巡回赛', cat: 'tennis', accent: '#1C6B45' }
+  const data = { compOf: () => comp, standingsOf: () => null, matchDetail: async () => null }
+  const app = { globalData: {}, isFav: () => false }
+  let destination
+  load('../pages/detail/detail.js', { Page: value => { page = value }, wx: { switchTab: value => { destination = value.url } }, require: name => {
+    if (name.endsWith('/data')) return data
+    if (name.endsWith('/app-instance')) return { appInstance: () => app }
+    return realRequire(name)
+  } })
+  page.data = { ...page.data }
+  page.setData = (values, done) => { Object.assign(page.data, values); if (done) done() }
+  page.buildShareImage = page.loadNotificationStates = page.syncLivePoll = () => {}
+  const match = { id: 'atp-view', comp: 'atp', start: '2026-10-15T12:00:00Z', date: '2026-10-15', time: '20:00', status: 'live',
+    home: { id: '1', name: 'Player A', score: 1 }, away: { id: '2', name: 'Player B', score: 0 }, sets: { h: [6, 3], a: [4, 2] } }
+  page.applyMatch(match)
+  await Promise.resolve()
+  assert.equal(page.data.detail, null)
+  assert.deepEqual(Array.from(page.data.tennisSets.rows[0].scores), ['6', '3'])
+  page.applyMatch({ ...match, sets: { h: [6, 4], a: [4, 2] } })
+  assert.deepEqual(Array.from(page.data.tennisSets.rows[0].scores), ['6', '4'])
+  page.onTeamTap({ currentTarget: { dataset: { side: 'home' } } })
+  assert.equal(destination, '/pages/schedule/schedule')
+  assert.equal(app.globalData.pendingTeam.name, 'Player A')
+  page.applyMatch({ ...match, status: 'finished' })
+  assert.equal(page.detailPollUntil, undefined)
+  assert.equal(page.finalDetailReady, true)
+  const wxml = fs.readFileSync(path.join(__dirname, '../pages/detail/detail.wxml'), 'utf8')
+  assert.match(wxml, /wx:if="\{\{tennisSets\}\}"/)
+  const quarters = wxml.slice(wxml.indexOf('wx:if="{{detail.hasQuarters}}"'), wxml.indexOf('wx:if="{{tennisSets}}"'))
+  assert.match(quarters, /wx:for="\{\{detail.quarters.cols\}\}"[^>]*>\{\{r.scores\[index\]\}\}/)
+  assert.doesNotMatch(quarters, /tennisSets\.cols/)
+})

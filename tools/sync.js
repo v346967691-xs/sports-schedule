@@ -499,7 +499,8 @@ async function fetchTennisRankings() {
       tours[tour] = top.length ? top : (previous.tours && previous.tours[tour] || [])
     }
   }
-  return { generatedAt, source: 'ESPN world top 30 + Valuebetennis China top 10', tours }
+  const weekly = await require('./tennis-rankings').refresh(previous.weekly || {})
+  return { generatedAt, source: 'ESPN world top 30 + Valuebetennis China top 10', tours, weekly }
 }
 
 function tennisNameKey(name) {

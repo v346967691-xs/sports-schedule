@@ -369,6 +369,10 @@ function teamsOf(compKey) {
   return out.sort((a, b) => zhCompare(a.display, b.display))
 }
 
+function tennisRankingBoard(tour, chinaOnly) {
+  return require('./tennis-rankings').board(tennisRankings.weekly, tour, chinaOnly)
+}
+
 function tennisPlayers(tour) {
   const list = tennisRankings && tennisRankings.tours && tennisRankings.tours[tour]
   if (!Array.isArray(list)) return []
@@ -671,7 +675,10 @@ function staleInfo() {
 function applyCloudSnapshot(snapList, snapMeta) {
   cache = snapList.map(tennisNames.localizeMatch)
   meta = snapMeta
-  if (snapMeta && snapMeta.tennisRankings) tennisRankings = snapMeta.tennisRankings
+  if (snapMeta && snapMeta.tennisRankings) {
+    const weekly = require('./tennis-rankings').merge(tennisRankings.weekly, snapMeta.tennisRankings.weekly)
+    tennisRankings = Object.assign({}, snapMeta.tennisRankings, { weekly })
+  }
   dataSource = 'cloud'
   // ⚠️ 云端大表最多落后 15 分钟，而实时小表 60 秒刷一次 ——
   //    换上新快照后必须**立刻**把实时补丁盖回去，否则比分会往回跳。
@@ -953,6 +960,7 @@ module.exports = {
   compsOfTeam,
   teamsOf,
   tennisPlayers,
+  tennisRankingBoard,
   upcoming,
   finished,
   recentFinished,

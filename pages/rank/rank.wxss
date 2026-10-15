@@ -476,3 +476,9 @@
   width: 500px;
   height: 400px;
 }
+
+.tennis-scope { display:flex; gap:16rpx; padding:12rpx 0 24rpx; }
+.tennis-scope text { padding:12rpx 24rpx; border-radius:24rpx; background:#EEF0F7; color:#697386; font-size:24rpx; }
+.tennis-scope .selected { background:#17255E; color:#fff; }
+.tennis-country { color:#818A9B; font-size:22rpx; margin-top:6rpx; }
+.tennis-warning { color:#A16E17; font-size:24rpx; margin-bottom:20rpx; }

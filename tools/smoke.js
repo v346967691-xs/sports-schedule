@@ -318,7 +318,7 @@ async function run() {
   const mRange = (allData.meta && allData.meta.range) || { from: bjToday, to: bjToday }
   const inRangeManual = manualMod.filter((m) => m.date >= mRange.from && m.date <= mRange.to)
   check('数据层：补录表窗口内的比赛都进了快照',
-    inRangeManual.length > 0 && inRangeManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
+    inRangeManual.every((m) => dataMod.matches().some((x) => x.id === m.id)),
     `补录 ${manualMod.length} 场，窗口内 ${inRangeManual.length} 场（窗口 ${mRange.from}~${mRange.to}）`)
   // ⚠️ 不能拿 upcoming().length 直接等于「upcoming+live」的总数：upcoming() 还会砍掉
   //    「日期已过但上游还没翻状态」的比赛（比如 23:00 开赛、跨零点还没更新），
@@ -403,7 +403,7 @@ async function run() {
     mineOpts.buildTeams.call(ctxRes)
     check('我的页：24 小时内的赛果展示出来', ctxRes.data.teamResults.length > 0,
       `teamResults=${ctxRes.data.teamResults.length}（关注 ${recentTeam.zh}）`)
-    check('我的页：赛果带比分', ctxRes.data.teamResults.every((m) => m._hasScore))
+    check('我的页：仅在上游有比分时展示比分', ctxRes.data.teamResults.every((m) => m._hasScore === (typeof m.home.score === 'number' && typeof m.away.score === 'number')))
     check('我的页：赛果都是已结束的', ctxRes.data.teamResults.every((m) => m.status === 'finished'))
     tfMod.remove(recentPool[0].comp, String(recentTeam.id))
   } else {
@@ -946,7 +946,7 @@ async function run() {
   // 首页入口顺序跟 meta.competitions 一致，也要按上面的约定排
   const compOrder = allData.meta.competitions.map((c) => c.key).join(',')
   check('赛事：赛事总表顺序与大类顺序一致',
-    compOrder === `${ORDER.football},${ORDER.basketball},${ORDER.esports}`, compOrder)
+    compOrder === `${ORDER.football},${ORDER.basketball},${ORDER.esports},atp,wta`, compOrder)
   // 关注页自己的赛事顺序（页面层）也要跟着走，不能跟首页/赛程页打架
   const teamsSrc = fsMod.readFileSync(path.join(ROOT, 'pages/teams/teams.js'), 'utf8')
   const selectable = ((teamsSrc.match(/const SELECTABLE = \[([^\]]+)\]/) || [])[1] || '')

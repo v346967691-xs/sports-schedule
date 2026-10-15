@@ -301,6 +301,7 @@ function matchHasTeam(m, team) {
   if (!team) return false
   const id = String(team.id)
   if (catOf(m.comp) === 'tennis' && catOf(team.comp) === 'tennis') {
+    if (m.comp !== team.comp) return false
     const nameKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).sort().join(' ')
     return [m.home, m.away].some(side => String(side.id) === id
       || [side.name, side.abbr].some(a => nameKey(a) && [team.name, team.abbr, team.display].some(b => nameKey(a) === nameKey(b))))

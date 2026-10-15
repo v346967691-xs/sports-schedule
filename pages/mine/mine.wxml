@@ -29,7 +29,7 @@
 
   <view class="section">
     <view class="section-head">
-      <view class="section-title">我关注的球队</view>
+      <view class="section-title">我关注的球队 / 选手</view>
       <view class="section-more" bindtap="goTeams">{{teams.length ? '管理' : '去选择'}} ›</view>
     </view>
 
@@ -115,14 +115,14 @@
       </view>
       <view class="empty" wx:if="{{!teamMatches.length && !teamResults.length}}">
         <view class="empty-title">近期没有已公布的比赛</view>
-        <view class="empty-desc">关注的球队正处于间歇期，有新赛程会第一时间出现在这里</view>
+        <view class="empty-desc">关注的球队或选手暂无近期赛程，新赛程公布后会出现在这里</view>
       </view>
     </block>
 
     <view class="empty" wx:else>
-      <view class="empty-title">还没有关注的球队</view>
+        <view class="empty-title">还没有关注的球队或选手</view>
       <view class="empty-desc">关注后可以在这里一眼看到他们的下一场比赛</view>
-      <view class="empty-btn" bindtap="goTeams">选择球队</view>
+      <view class="empty-btn" bindtap="goTeams">选择球队或选手</view>
     </view>
   </view>
 

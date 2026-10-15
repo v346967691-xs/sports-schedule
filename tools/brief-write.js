@@ -45,6 +45,7 @@ const COMP_ZH = {
   u17: 'U17世界杯', u17w: 'U17女足世界杯', friendly: '国际友谊赛',
   // 篮球
   nba: 'NBA', cba: 'CBA',
+  atp: '男子网球巡回赛', wta: '女子网球巡回赛',
   // 电竞
   worlds: '全球总决赛', msi: '季中冠军赛', lpl: 'LPL', lck: 'LCK', lec: 'LEC',
   demacia: '德玛西亚杯', kpl: 'KPL', agames: '亚运会电竞',
@@ -431,6 +432,7 @@ function summary(m, limit = 20) {
   const ws = Math.max(hs, as) + '-' + Math.min(hs, as);
   const score = hs + '-' + as;
   const draw = hs === as;
+  if ((m.comp === 'atp' || m.comp === 'wta') && draw) return '比赛已结束，赛果待确认';
   const win = hs > as ? h : a; const lose = hs > as ? a : h;
   const nar = draw ? (T.isFootball(m.comp) && hs === 0 ? 'goalless' : 'draw') : narrative(m).key;
   const bw = boWords(Number(m.bo) || 1);
@@ -446,7 +448,8 @@ function summary(m, limit = 20) {
     const w = nameOf(win); const l = nameOf(lose);
     if (!home || !away) continue;
     let text;
-    if (/点球/.test(m.statusText || '')) text = draw ? '双方经点球大战决出胜负' : w + '点球战胜' + l;
+    if (m.comp === 'atp' || m.comp === 'wta') text = w + '以' + ws + '战胜' + l;
+    else if (/点球/.test(m.statusText || '')) text = draw ? '双方经点球大战决出胜负' : w + '点球战胜' + l;
     else if (nar === 'goalless') text = home + '与' + away + '互交白卷';
     else if (draw) text = home + score + '战平' + away;
     else if (nar === 'thriller') text = w + '打满' + bw.boZh + '力克' + l;
@@ -459,6 +462,7 @@ function summary(m, limit = 20) {
     if (fit(text)) return text;
   }
   // 极长队名仍放在通知的「参赛人员」字段。备注保留比分和主叙事，避免硬切姓名。
+  if (m.comp === 'atp' || m.comp === 'wta') return '胜方以' + ws + '取胜';
   if (/点球/.test(m.statusText || '')) return '双方经点球大战决出胜负';
   if (nar === 'goalless') return '双方互交白卷';
   if (draw) return '双方' + score + '战平';

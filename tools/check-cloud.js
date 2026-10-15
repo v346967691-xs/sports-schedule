@@ -26,7 +26,7 @@ async function main() {
   if (process.argv.includes('--live')) {
     const { data, error } = await cloud.database.from('live_scores').select('data, generated_at').eq('id', 'latest').maybeSingle()
     const { TARGETS, LOL_KEYS } = require('./live-watch')
-    const expected = TARGETS.map(c => `espn:${c.key}:${c.league}`).concat(['cba', 'kpl'], LOL_KEYS.map(k => `lol:${k}`))
+    const expected = TARGETS.map(c => `espn:${c.key}:${c.league}`).concat(['cba', 'kpl', 'tennis:atp', 'tennis:wta'], LOL_KEYS.map(k => `lol:${k}`))
     const sources = data && data.data && data.data.sources || {}
     const issues = expected.filter(k => !sources[k] || !sources[k].ok || Date.now() - Date.parse(sources[k].checkedAt) > 10 * 60000)
     const age = data ? (Date.now() - Date.parse(data.generated_at)) / 60000 : Infinity

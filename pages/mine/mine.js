@@ -179,7 +179,7 @@ Page({
     const idx = e.currentTarget.dataset.index
     const team = this.data.teams[idx]
     if (!team) return
-    appInstance().globalData.pendingTeam = { comp: team.comp, id: team.id, display: team.display }
+    appInstance().globalData.pendingTeam = { comp: team.comp, id: team.id, name: team.name, abbr: team.abbr, display: team.display }
     wx.switchTab({ url: '/pages/schedule/schedule' })
   },
 

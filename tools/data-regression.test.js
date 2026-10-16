@@ -368,9 +368,10 @@ test('the detail fast lane supplements missing MVP candidates even when the fina
     const final = {fin:true, events:[{goal:true}]};
     return [check(final, 'nba-1', {}), check(final, 'epl-1', {}),
       check({...final,mvp:{v:1,complete:true}}, 'epl-1', {}),
-      check({...final,lol:{complete:true}}, 'lpl-1', {})];
+      check({...final,lol:{complete:true,winnerComplete:true}}, 'lpl-1', {}),
+      check({...final,lol:{complete:true,winnerComplete:false}}, 'lpl-1', {})];
   })()`, vm.createContext(box))
-  assert.deepEqual(Array.from(result), [true, true, false, false])
+  assert.deepEqual(Array.from(result), [true, true, false, false, true])
 })
 
 test('partial day-bucket updates do not reset the bulk detail clock', async () => {

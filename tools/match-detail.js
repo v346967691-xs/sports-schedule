@@ -1213,6 +1213,7 @@ function needsFetch(m, captured) {
     // 名单/比赛统计可能晚于比分结算；投票数据在 48h 内独立补抓。
     if (!isLol(m.comp) && (!prev.mvp || prev.mvp.v !== 1 || prev.mvp.complete !== true)) shell = true
     if (isLol(m.comp) && (!prev.lol || !prev.lol.complete || prev.lol.playerVersion !== 1)) shell = true
+    if (isLol(m.comp) && m.comp !== 'agames' && (!prev.lol || !prev.lol.winnerComplete)) shell = true
     if (m.comp === 'kpl') {
       // 局数完整性：已存局数 < 主队得分 + 客队得分（3:0 → 该有 3 局）。
       // **有数据 ≠ 数据完整**（见文件头事故二）。
@@ -1316,7 +1317,7 @@ async function main() {
   const failed = []
   await mapLimit(todo, 4, async (m) => {
     try {
-      const d = isLol(m.comp) ? await fetchLolDetail(m)
+      const d = isLol(m.comp) ? await fetchLolDetail(m,undefined,Date.now(),undefined,captured[m.id])
         : m.comp === 'kpl' ? await fetchKplDetail(m) : await fetchDetail(m)
       if (!d) return
       if (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive(now)) d.match = worldsArchive.matchMetadata(m)

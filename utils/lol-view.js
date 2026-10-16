@@ -9,7 +9,7 @@ const normalizeRole = role => {
 const value = n => n == null ? '—' : String(n)
 const championIcon = id => typeof id === 'string' && /^[A-Za-z0-9]+$/.test(id)
   ? `https://game.gtimg.cn/images/lol/act/img/champion/${id}.png` : ''
-function buildLol(detail, homeLabel, awayLabel) {
+function buildLol(detail, homeLabel, awayLabel, match) {
   if (!detail || !detail.lol || !Array.isArray(detail.lol.rounds) || !detail.lol.rounds.length) return null
   const side = (t, label) => ({
     label, side: t ? (t.side === 'blue' ? '蓝方' : '红方') : '',
@@ -23,8 +23,12 @@ function buildLol(detail, homeLabel, awayLabel) {
       kda: `${value(p.k)} / ${value(p.d)} / ${value(p.a)}`, cs: value(p.cs), gold: value(p.gold),
     })) : [],
   })
-  const rounds = detail.lol.rounds.map(r => {
+  const flip=match&&detail.lol.homeCode===String(match.away.id)&&detail.lol.awayCode===String(match.home.id)
+  const rounds = detail.lol.rounds.map(raw => {
+    const r=flip?{...raw,h:raw.a,a:raw.h,winner:raw.winner==='home'?'away':raw.winner==='away'?'home':undefined}:raw
     const teams = [side(r.h, homeLabel), side(r.a, awayLabel)]
+    const known=['home','away'].includes(r.winner)
+    teams.forEach((team,i)=>{team.result=known?((r.winner==='home')===(i===0)?'胜':'负'):''})
     const paired = new Set()
     const rows = ORDER.map(roleKey => ({
       key: roleKey, label: MVP_ROLES[roleKey],
@@ -43,11 +47,12 @@ function buildLol(detail, homeLabel, awayLabel) {
     }))
     return {
       n: r.n, id: r.id, complete: !!r.complete,
+      resultNote:known?`本局胜方：${r.winner==='home'?homeLabel:awayLabel}`:'胜负待确认',
       note: r.complete ? '终局数据' : r.state === 'paused' ? '数据停留在暂停时刻，尚未补齐' : '单局数据尚未补齐',
       teams, rows,
     }
   })
-  return { rounds, active: 0, complete: !!detail.lol.complete }
+  return { rounds, active: 0, complete: !!detail.lol.complete,showResult:detail.comp!=='agames',resultSource:detail.lol.winnerSource||'' }
 }
 
 function buildMvpCandidates(detail, homeLabel, awayLabel) {

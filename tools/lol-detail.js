@@ -1,4 +1,4 @@
-/** LoL 官方站点单局 feed：只保存轻量统计，不猜单局胜方。 */
+/** LoL 单局统计与有明确来源的逐局胜负。 */
 const { LOL, LOL_KEY, COMPETITIONS } = require('./sync')
 const FEED = 'https://feed.lolesports.com/livestats/v1'
 const KEYS = new Set(COMPETITIONS.filter(c => c.source === 'lol').map(c => c.key))
@@ -61,7 +61,7 @@ function pickRound(game, feed, homeId, awayId) {
   }
 }
 
-async function fetchLolDetail(m, get = request, now = Date.now()) {
+async function fetchLolDetail(m, get = request, now = Date.now(), winnerGet, previous) {
   const matchId = String(m.id).slice(m.comp.length + 1)
   const json = await get(`${LOL}/getEventDetails?hl=zh-CN&id=${matchId}`, { 'x-api-key': LOL_KEY })
   const event = json && json.data && json.data.event
@@ -89,10 +89,28 @@ async function fetchLolDetail(m, get = request, now = Date.now()) {
     }
   }
   const wanted = Number(m.home.score || 0) + Number(m.away.score || 0)
+  // 新增胜负补抓不能因统计源临时失败而丢失已有终局统计；按双方 Riot ID 校正方向。
+  for(let i=0;i<rounds.length;i++){
+    const round=rounds[i],old=previous&&previous.lol&&(previous.lol.rounds||[]).find(r=>r.id===round.id&&r.n===round.n)
+    if(!old||!old.h||!old.a)continue
+    const same=old.h.id===String(home.id)&&old.a.id===String(away.id)
+    const flip=old.h.id===String(away.id)&&old.a.id===String(home.id)
+    if(!same&&!flip)continue
+    const winner=flip?(old.winner==='home'?'away':old.winner==='away'?'home':undefined):old.winner
+    if(old.complete&&!round.complete)rounds[i]={...old,h:flip?old.a:old.h,a:flip?old.h:old.a,winner}
+    else if(['home','away'].includes(winner))round.winner=winner
+  }
+  const winnerModel=require('./lol-winners')
+  const supported=winnerModel.SUPPORTED.has(m.comp)
+  const results=supported?await winnerModel.fetchWinners({...m,home:{...m.home,code:home.code,name:home.name},
+    away:{...m.away,code:away.code,name:away.name}},games,winnerGet||(get===request?undefined:async()=>{throw Error('winner source not supplied')}),now):null
+  for(const round of rounds){const result=results&&results.winners.find(row=>row.n===round.n);if(result)round.winner=result.winner}
   return {
     id: m.id, comp: m.comp, v: 6, ts: now, fin: m.status === 'finished',
     lol: {
       source: 'lolesports', playerVersion: 1,
+      homeCode:String(m.home.id),awayCode:String(m.away.id),
+      ...(supported?{winnerVersion:1,winnerComplete:rounds.every(r=>!!r.winner),winnerSource:results&&results.provider||previous&&previous.lol&&previous.lol.winnerSource||'',winnerUrl:results&&results.source||previous&&previous.lol&&previous.lol.winnerUrl||''}:{}),
       complete: m.status === 'finished' && rounds.length >= wanted && rounds.every(r => r.complete),
       rounds,
     },

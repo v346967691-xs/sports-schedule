@@ -422,15 +422,21 @@ async function fetchTennis(comp) {
           if (!homeRaw || !awayRaw || !game.date) continue
           const state = game.status && game.status.type && game.status.type.state
           const sets = { h: (homeRaw.linescores || []).map(x => Number(x.value)), a: (awayRaw.linescores || []).map(x => Number(x.value)) }
+          const outcome = game.status && game.status.type || {}
+          const resultText = `${outcome.name || ''} ${outcome.description || ''} ${outcome.shortDetail || ''}`
+          const winner = competitors.find(player => player.winner === true)
           const match = {
             id: `${comp.key}-${game.id}`, comp: comp.key, start: game.date,
             date: beijingDay(game.date), time: beijingTime(game.date),
             status: STATE_MAP[state] || 'upcoming',
-            statusText: state === 'in' ? `第${game.status?.period || 1}盘进行中` : zhStatus(state, game.status?.type?.shortDetail),
+            statusText: state === 'in' ? `第${game.status?.period || 1}盘进行中`
+              : /retir/i.test(resultText) ? '退赛' : /walkover|walk.over/i.test(resultText) ? '不战而胜' : zhStatus(state, game.status?.type?.shortDetail),
             stage: `${event.name || comp.name}${game.round?.displayName ? ` · ${game.round.displayName}` : ''}`,
             venue: [game.venue?.fullName, game.venue?.court].filter(Boolean).join(' · '),
             bo: null, sets,
             home: tennisPlayer(homeRaw, comp.accent), away: tennisPlayer(awayRaw, comp.accent),
+            eventId: String(event.id || ''), eventStart: event.date || '', eventEnd: event.endDate || '',
+            winnerId: state === 'post' && winner ? String(winner.athlete && winner.athlete.id || winner.id) : '',
           }
           seen.set(match.id, match)
         }
@@ -972,7 +978,7 @@ function dropLegacyJson() {
 }
 
 /**
- * 把补录表并进结果：ESPN 没有的赛事（亚运会等）靠它兜底。
+ * 把补录表并进结果：上游没有覆盖的赛事可由它兜底。
  *
  * - 只保留落在抓取时间窗内的（补录表是长期文件，过期条目不该一直出现）
  * - id 撞车时以已有数据为准，避免同一场比赛出现两条
@@ -1041,10 +1047,23 @@ async function main() {
     failed.push(comp.name)
   }
 
-  // ESPN 覆盖不到的赛事（亚运会等）走补录表，详见 tools/manual-matches.js
+  // 上游覆盖不到的赛事走补录表，详见 tools/manual-matches.js
   const manualRows = mergeManual([...kept, ...fetched], metaRange)
 
-  const all = [...kept, ...fetched, ...manualRows].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+  let all = [...kept, ...fetched, ...manualRows].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+
+  // 国内平台逐场节目单用于精确匹配；ATP/WTA 则按官方巡回赛和赛事版权范围匹配。
+  // 来源不可用时保留上次确认值，不影响赛程同步。
+  try {
+    const broadcasts = require('./broadcast-sources')
+    const providerRows = await broadcasts.fetchAll()
+    all = broadcasts.mergeBroadcasts(all, providerRows, existing)
+    const labeled = all.filter((match) => (match.broadcast || []).length).length
+    console.log(`官方转播：已匹配 ${labeled} 场（平台逐场节目单 + ATP/WTA 赛事版权）`)
+  } catch (err) {
+    console.warn(`  ! 官方逐场转播数据暂不可用，沿用已有标注: ${err.message}`)
+    all = require('./broadcast-sources').mergeBroadcasts(all, [], existing)
+  }
 
   const metaPath = path.join(OUT_DIR, 'meta.js')
   const oldMeta = path.join(OUT_DIR, 'meta.json')
@@ -1073,6 +1092,8 @@ async function main() {
     generatedAt: meta.generatedAt,
     range: metaRange,
   })))
+  // 全站签表独立保留到赛后 30 天，避免跨月或普通赛程窗口滚动时丢失首轮。
+  require('./tennis-events').saveArchive(all.filter(m => ['atp', 'wta'].includes(m.comp)))
   dropLegacyJson()
 
   const sizeKB = Math.round(fs.statSync(existingPath).size / 1024)
@@ -1105,4 +1126,4 @@ if (require.main === module) {
 //    别让两边各写一份语义（第二处实现的老毛病）。
 // ⚠️ LOL / LOL_KEY 也导出：live-watch.js 的 LoL 快通道要打同一个上游，
 //    两处各写一份 key 迟早会漂移（当年 ESPN 域名就踩过）。
-module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus, tennisScore, WTA_TOUR_EVENT_IDS }
+module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus, tennisScore, fetchTennis, WTA_TOUR_EVENT_IDS }

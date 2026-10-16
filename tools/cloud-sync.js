@@ -590,6 +590,18 @@ async function main() {
   ghOut('pushed', 'true')
 
   // 1) 刷新本地数据（reuse 全部抓取/归一化逻辑）
+  // Runner 每次重新检出代码；先续接上次云端整站归档，跨月时也能保住早轮。
+  try {
+    const archived = await cloud.database.from('schedule_cache').select('meta').eq('id', 'latest').maybeSingle()
+    if (!archived.error && archived.data && archived.data.meta && archived.data.meta.tennisEvents) {
+      const archiveRules = require('../utils/tennis-event')
+      let bundled
+      try { bundled = require('../data/tennis-events') } catch (err) { /* 首次生成 */ }
+      const merged = archiveRules.buildArchive(archiveRules.archiveRows(archived.data.meta.tennisEvents), bundled)
+      require('fs').writeFileSync(path.join(__dirname, '../data/tennis-events.js'),
+        `module.exports = ${JSON.stringify(merged)}\n`)
+    }
+  } catch (err) { console.warn('[cloud-sync] 整站归档续接失败，沿用包内归档') }
   log(`刷新本地赛程数据（回看 ${DAYS_BACK} 天，前瞻 ${DAYS_FORWARD} 天）…`)
   await withRetry('抓取数据源', () => {
     execFileSync(
@@ -669,6 +681,10 @@ async function main() {
   delete require.cache[require.resolve('../data/meta.js')]
   const matches = decodeSnapshot(require('../data/matches.js'))
   const meta = require('../data/meta.js')
+  try {
+    delete require.cache[require.resolve('../data/tennis-events.js')]
+    meta.tennisEvents = require('../data/tennis-events.js')
+  } catch (err) { /* 首次生成前兼容 */ }
   try { meta.tennisRankings = require('../data/tennis-rankings.js') } catch (err) { /* 老快照兼容 */ }
   log(`本地快照：${matches.length} 场，bundle 生成时间 ${meta.generatedAt || '(空)'}`)
 

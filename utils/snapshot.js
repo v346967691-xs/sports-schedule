@@ -144,6 +144,8 @@ function encodeSnapshot(list, extra) {
     // ⚠️ 新增可选键对老解码器是安全的（只读自己认识的键），云端老格式里没有它也不影响。
     if (m.seasonid) rec.n = m.seasonid
     if (m.historical) rec.z = 1
+    if (m.eventId) rec.te = [m.eventId, m.eventStart || '', m.eventEnd || '']
+    if (m.winnerId) rec.wi = m.winnerId
     if (!byComp[m.comp]) byComp[m.comp] = []
     byComp[m.comp].push(rec)
   })
@@ -201,6 +203,8 @@ function decodeMatch(rec, comp, teams) {
   if (rec.q) m.sets = rec.q
   if (rec.n) m.seasonid = rec.n
   if (rec.z) m.historical = true
+  if (rec.te) { m.eventId = rec.te[0]; m.eventStart = rec.te[1]; m.eventEnd = rec.te[2] }
+  if (rec.wi) m.winnerId = rec.wi
   return m
 }
 

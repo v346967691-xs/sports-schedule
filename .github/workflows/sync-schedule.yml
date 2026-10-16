@@ -58,6 +58,13 @@ jobs:
       - name: 验证数据链路回归
         run: npm run test:data
 
+      - name: 验证网球积分与参赛判断
+        run: node --test tools/tennis-insights.test.js
+
+      - name: 刷新网球实时积分与官方参赛资料
+        continue-on-error: true
+        run: node tools/tennis-insights.js
+
       - name: 刷新并推送赛程快照到云端
         id: sync
         # 🔴 内部自带节流闸（默认 90 分钟一次）：被触发不等于会写，见文件头注释。
@@ -158,7 +165,7 @@ jobs:
           WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
         run: |
           if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
-          node tools/live-watch.js --minutes=14 --every=60 --notify
+          node tools/live-watch.js --minutes=14 --every=60 --notify --tennis-insights
 
       # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
       - name: 校验实时比分新鲜度

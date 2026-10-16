@@ -256,4 +256,4 @@ function localizeMatch(match) {
   })
   return result
 }
-module.exports = { nameZh, localizeMatch }
+module.exports = { nameZh, nameKey, localizeMatch }

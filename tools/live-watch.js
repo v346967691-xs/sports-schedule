@@ -85,6 +85,7 @@ const everySec = Number(arg('every', 60))
 const once = process.argv.includes('--once')
 const dry = process.argv.includes('--dry')
 const notify = process.argv.includes('--notify') && !dry
+const tennisInsightsOn = process.argv.includes('--tennis-insights') && tennisOn && !dry
 
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -660,6 +661,13 @@ async function main() {
           }
         } else writeFailed = true
       }
+    }
+    // 小型独立积分缓存内部每5分钟节流；资料/积分源故障不阻断比分或通知。
+    if (tennisInsightsOn) {
+      try {
+        const result = await require('./tennis-insights').main(cloud, { enrich: false })
+        if (result.some(row => row.error)) console.warn('[tennis-insights:live]', JSON.stringify(result))
+      } catch (err) { console.warn('[tennis-insights:live]', err.message) }
     }
     // 先完成实时状态写入，再领取到期通知；内容未变也检查赛前时间窗口。
     // 使用原有原子领取/回写接口，并发班次不会重复领取同一份授权。

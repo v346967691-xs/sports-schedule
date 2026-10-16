@@ -1088,7 +1088,11 @@ async function main() {
   // ⚠️ 快照用**紧凑格式**写（utils/snapshot.js 的 encodeSnapshot）：
   //    球队抽成共享字典、date/time 由 start 推、空值不写，实测 790KB → 230KB。
   //    读回来一律走 utils/snapshot.js 的 decodeSnapshot，运行时拿到的还是原来那个扁平数组。
-  fs.writeFileSync(existingPath, toModule(encodeSnapshot(all, {
+  // 整站日期/身份已在分站归档中存一次；主包不再按每场重复这些长字段。
+  const bundleMatches = all.map(match => match.eventId ? Object.assign({}, match, {
+    eventId: undefined, eventStart: undefined, eventEnd: undefined,
+  }) : match)
+  fs.writeFileSync(existingPath, toModule(encodeSnapshot(bundleMatches, {
     generatedAt: meta.generatedAt,
     range: metaRange,
   })))

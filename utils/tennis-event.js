@@ -14,6 +14,16 @@ function courtOf(match) {
   return { key: raw || 'unassigned', name: COURTS[raw] || (numbered ? `${numbered[1]}号球场` : raw) || '球场待定' }
 }
 
+function compareCourts(a, b) {
+  const featured = ['Capital Group Diamond', 'Stadium Court', 'Dongfeng Voyah Center Court', 'Lotus', 'HSBC Moon', 'Brad Drewett']
+  const rank = court => {
+    const known = featured.indexOf(court.key)
+    const number = court.key.match(/^(?:Show )?Court\s+(\d+)$/i)
+    return known >= 0 ? known : number ? 100 + Number(number[1]) : court.key === 'unassigned' ? 999 : 500
+  }
+  return rank(a) - rank(b) || a.name.localeCompare(b.name, 'zh')
+}
+
 function identity(match) {
   if (!tennis.isTennis(match)) return null
   const station = tennis.tournamentOf(match)
@@ -120,4 +130,4 @@ function buildArchive(incoming, previous, now = Date.now()) {
   return { version: 3, generatedAt: new Date(now).toISOString(), events, venues, rounds, teams: packed.teams, matches }
 }
 
-module.exports = { courtOf, identity, mergeRows, eventsOf, archiveRows, buildArchive }
+module.exports = { courtOf, compareCourts, identity, mergeRows, eventsOf, archiveRows, buildArchive }

@@ -593,6 +593,16 @@ async function main() {
   // Runner 每次重新检出代码；先续接上次云端整站归档，跨月时也能保住早轮。
   try {
     const archived = await cloud.database.from('schedule_cache').select('meta').eq('id', 'latest').maybeSingle()
+    // Runner 是干净 checkout；先续接云端已取得的分站等级，避免滚动周历淘汰历史站。
+    const oldWeekly=archived.data && archived.data.meta && archived.data.meta.tennisRankings && archived.data.meta.tennisRankings.weekly
+    if(!archived.error && oldWeekly){
+      const rankFile=path.join(__dirname,'../data/tennis-rankings.js')
+      const bundled=require(rankFile)
+      for(const tour of ['atp','wta'])if(bundled.weekly && bundled.weekly[tour]){
+        bundled.weekly[tour].tournaments=require('../utils/tennis-levels').mergeCalendar(oldWeekly[tour] && oldWeekly[tour].tournaments,bundled.weekly[tour].tournaments)
+      }
+      require('fs').writeFileSync(rankFile,`module.exports = ${JSON.stringify(bundled)}\n`)
+    }
     if (!archived.error && archived.data && archived.data.meta && archived.data.meta.tennisEvents) {
       const archiveRules = require('../utils/tennis-event')
       let bundled
@@ -685,7 +695,10 @@ async function main() {
     delete require.cache[require.resolve('../data/tennis-events.js')]
     meta.tennisEvents = require('../data/tennis-events.js')
   } catch (err) { /* 首次生成前兼容 */ }
-  try { meta.tennisRankings = require('../data/tennis-rankings.js') } catch (err) { /* 老快照兼容 */ }
+  try {
+    delete require.cache[require.resolve('../data/tennis-rankings.js')]
+    meta.tennisRankings = require('../data/tennis-rankings.js')
+  } catch (err) { /* 老快照兼容 */ }
   log(`本地快照：${matches.length} 场，bundle 生成时间 ${meta.generatedAt || '(空)'}`)
 
   if (!Array.isArray(matches) || matches.length === 0) {

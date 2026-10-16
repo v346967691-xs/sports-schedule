@@ -35,6 +35,7 @@ async function refresh(previous = {}, options = {}) {
       if (!response.ok) throw new Error('HTTP ' + response.status)
       const next = normalize(await response.json(), tour, now)
       if (previous[tour] && next.rankingDate < previous[tour].rankingDate) throw new Error('来源返回较旧周榜')
+      next.tournaments=require('../utils/tennis-levels').mergeCalendar(previous[tour] && previous[tour].tournaments,next.tournaments)
       result[tour] = next
     } catch (error) {
       // Never advance the date or sync time of the retained successful board.

@@ -25,8 +25,8 @@
 
 const V = 2
 
-const STATUS_ENC = { upcoming: 'u', live: 'l', finished: 'f' }
-const STATUS_DEC = { u: 'upcoming', l: 'live', f: 'finished' }
+const STATUS_ENC = { upcoming: 'u', live: 'l', finished: 'f', canceled:'c' }
+const STATUS_DEC = { u: 'upcoming', l: 'live', f: 'finished', c:'canceled' }
 
 const p2 = (n) => String(n).padStart(2, '0')
 

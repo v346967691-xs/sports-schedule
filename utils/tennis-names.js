@@ -5,7 +5,7 @@
  * 刘汉屹 https://www.sport.gov.cn/wqzx/n5341/c961183/content.html
  * 张天汇 https://www.sport.gov.cn/n14471/n14487/n14524/c30096575/content.html
  * Exact full-name tokens only; unknown names retain the upstream spelling.
- * 展示口径：西式姓名保留完整“名·姓”；姓氏采用大陆赛事报道常用译法。
+ * 完整档案译名：西式姓名保留完整“名·姓”；姓氏采用大陆赛事报道常用译法。
  * 修正姓氏不得删去名字，也不按末尾单词全局替换姓氏；中文/东亚原生姓名保留惯用顺序。
  */
 // Additional names: Chinese Tennis Association youth report (渠依含、林禹君、邵羽杉):
@@ -250,7 +250,25 @@ function nameKey(name) {
 const INDEX = Object.create(null)
 Object.keys(NAMES).forEach(name => { INDEX[nameKey(name)] = NAMES[name] })
 function nameZh(name) { return INDEX[nameKey(name)] || '' }
+// 完整译名用于身份/个人页；紧凑展示独立处理，不删改完整姓名。
+const SHORT_OVERRIDES={ [nameKey('Felix Auger Aliassime')]:'阿利亚西姆',
+  [nameKey('Alejandro Davidovich Fokina')]:'福基纳' }
+const AMBIGUOUS=new Set(['安德烈耶娃','库德梅托娃','弗鲁维托瓦'])
+const SURNAMES={}
+Object.keys(NAMES).forEach(name=>{
+  const zh=NAMES[name];if(!zh.includes('·'))return
+  const surname=SHORT_OVERRIDES[nameKey(name)]||zh.split('·').slice(-1)[0]
+  if(!SURNAMES[surname])SURNAMES[surname]=new Set()
+  SURNAMES[surname].add(zh)
+})
+function displayName(name,fallback) {
+  const full=nameZh(name)||fallback||name||''
+  if(!full.includes('·'))return full
+  const surname=SHORT_OVERRIDES[nameKey(name)]||full.split('·').slice(-1)[0]
+  return AMBIGUOUS.has(surname)||(SURNAMES[surname]&&SURNAMES[surname].size>1)?full:surname
+}
 function localizeMatch(match) {
+  match=require('./match-status').normalize(match)
   if (!match || (match.comp !== 'atp' && match.comp !== 'wta')) return match
   const result = Object.assign({}, match)
   ;['home', 'away'].forEach(side => {
@@ -258,4 +276,4 @@ function localizeMatch(match) {
   })
   return result
 }
-module.exports = { nameZh, nameKey, localizeMatch }
+module.exports = { nameZh, nameKey, displayName, localizeMatch }

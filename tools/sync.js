@@ -257,7 +257,7 @@ function normTeam(raw, fallbackName, fallbackColor, cat) {
   }
 }
 
-const STATE_MAP = { pre: 'upcoming', in: 'live', post: 'finished' }
+const matchStatus = require('../utils/match-status')
 
 /**
  * 篮球赛季类型 → 中文
@@ -279,7 +279,8 @@ const SEASON_TYPE_ZH = {
 function zhStatus(state, shortDetail) {
   if (state === 'in') return shortDetail || '进行中'
   if (state === 'post') {
-    if (/postpon|cancel/i.test(shortDetail || '')) return '已延期'
+    if (/cancel/i.test(shortDetail || '')) return '已取消'
+    if (/postpon/i.test(shortDetail || '')) return '已延期'
     if (/pen/i.test(shortDetail || '')) return '点球大战'
     if (/aet|extra/i.test(shortDetail || '')) return '加时赛'
     return '已结束'
@@ -345,8 +346,8 @@ async function fetchEspn(comp) {
           start: kickoff,
           date: beijingDay(kickoff),
           time: beijingTime(kickoff),
-          status: STATE_MAP[ev.status?.type?.state] || 'upcoming',
-          statusText: zhStatus(ev.status?.type?.state, ev.status?.type?.shortDetail),
+          status: matchStatus.fromEspn(ev.status?.type).status,
+          statusText: matchStatus.fromEspn(ev.status?.type).statusText || zhStatus(ev.status?.type?.state, ev.status?.type?.shortDetail),
           stage,
           venue: competition.venue?.fullName || '',
           broadcast: (competition.broadcasts || [])
@@ -424,14 +425,12 @@ async function fetchTennis(comp) {
           const state = game.status && game.status.type && game.status.type.state
           const sets = { h: (homeRaw.linescores || []).map(x => Number(x.value)), a: (awayRaw.linescores || []).map(x => Number(x.value)) }
           const outcome = game.status && game.status.type || {}
-          const resultText = `${outcome.name || ''} ${outcome.description || ''} ${outcome.shortDetail || ''}`
           const winner = competitors.find(player => player.winner === true)
           const match = {
             id: `${comp.key}-${game.id}`, comp: comp.key, start: game.date,
             date: beijingDay(game.date), time: beijingTime(game.date),
-            status: STATE_MAP[state] || 'upcoming',
-            statusText: state === 'in' ? `第${game.status?.period || 1}盘进行中`
-              : /retir/i.test(resultText) ? '退赛' : /walkover|walk.over/i.test(resultText) ? '不战而胜' : zhStatus(state, game.status?.type?.shortDetail),
+            status: matchStatus.fromEspn(outcome).status,
+            statusText: matchStatus.fromEspn(outcome).statusText || (state === 'in' ? `第${game.status?.period || 1}盘进行中` : zhStatus(state, game.status?.type?.shortDetail)),
             stage: `${event.name || comp.name}${game.round?.displayName ? ` · ${game.round.displayName}` : ''}`,
             venue: [game.venue?.fullName, game.venue?.court].filter(Boolean).join(' · '),
             bo: null, sets,

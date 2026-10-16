@@ -40,12 +40,12 @@ function mergeRows(previous, incoming) {
   const byId = new Map()
   ;(previous || []).concat(incoming || []).filter(tennis.isTennis).forEach(match => {
     const old = byId.get(match.id)
-    const next = Object.assign({}, old || {}, match)
+    const next = require('./match-status').normalize(Object.assign({}, old || {}, match))
     ;['eventId', 'eventStart', 'eventEnd', 'winnerId'].forEach(key => {
       if (!next[key] && old && old[key]) next[key] = old[key]
     })
     if ((!Array.isArray(next.broadcast) || !next.broadcast.length) && old && Array.isArray(old.broadcast)) next.broadcast = old.broadcast
-    if (match.status !== 'finished') delete next.winnerId
+    if (next.status !== 'finished') delete next.winnerId
     if (next.winnerId && ![next.home, next.away].some(side => side && String(side.id) === String(next.winnerId))) delete next.winnerId
     byId.set(match.id, next)
   })

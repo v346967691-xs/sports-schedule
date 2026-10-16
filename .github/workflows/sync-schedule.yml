@@ -65,6 +65,13 @@ jobs:
         continue-on-error: true
         run: node tools/tennis-insights.js
 
+      - name: 验证网球单场统计
+        run: node --test tools/tennis-stats.test.js
+
+      - name: 刷新可获取的网球单场统计
+        continue-on-error: true
+        run: node tools/tennis-stats.js
+
       - name: 刷新并推送赛程快照到云端
         id: sync
         # 🔴 内部自带节流闸（默认 90 分钟一次）：被触发不等于会写，见文件头注释。

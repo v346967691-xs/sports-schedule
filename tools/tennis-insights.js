@@ -92,21 +92,6 @@ async function enrich(payload, previous, now) {
         source: finalUrls[payload.tour], checkedAt: new Date(now).toISOString() }
     } catch (err) { console.warn('[tennis-insights] 官方总决赛名单暂不可用', payload.tour, err.message) }
   }
-  if (payload.tour === 'wta') {
-    for (const item of payload.calendar.filter(row => row.start >= new Date(now).toISOString().slice(0,10) && Date.parse(row.start) - now < 30 * DAY)) {
-      const known = WTA_EVENTS[String(item.city).toLowerCase()]
-      if (!known) continue
-      const old = payload.entryLists.find(row => row.name === item.name && row.start === item.start)
-      if (old && now - Date.parse(old.checkedAt) < 6 * 3600000) continue
-      const url = `https://www.wtatennis.com/tournaments/${known[0]}/${known[1]}/${new Date(now).getUTCFullYear()}/player-list`
-      try {
-        const html = await readUrl(url, false), entries = parseWtaEntries(html)
-        if (!entries.length || !html.includes(`data-year="${new Date(now).getUTCFullYear()}"`)) continue
-        payload.entryLists = payload.entryLists.filter(row => !(row.name === item.name && row.start === item.start))
-          .concat([{ name: item.name, start: item.start, source: url, checkedAt: new Date(now).toISOString(), entries }])
-      } catch (err) { console.warn('[tennis-insights] WTA 名单暂不可用', item.name) }
-    }
-  }
   const todo = payload.players.filter(row => row.espnId && (!payload.profiles[row.key]
     || now - Date.parse(payload.profiles[row.key].fetchedAt) > 7 * DAY))
   let cursor = 0
@@ -131,7 +116,11 @@ function knownPlayers(tour) {
   return known
 }
 function signature(payload) {
-  return JSON.stringify({ ...payload, asOf: undefined, checkedAt: undefined })
+  const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'
+    ?Object.fromEntries(Object.keys(value).filter(key=>value[key]!==undefined).sort().map(key=>[key,stable(value[key])])):value
+  return JSON.stringify(stable({ ...payload, asOf: undefined, checkedAt: undefined, entryCheckedAt:undefined,withdrawalArticles:undefined,
+    entryLists:payload.entryLists&&payload.entryLists.map(row=>({...row,checkedAt:undefined})),
+    withdrawals:payload.withdrawals&&payload.withdrawals.map(row=>({...row,checkedAt:undefined})) }))
 }
 async function main(cloud, options = {}) {
   const now = options.now == null ? Date.now() : options.now
@@ -146,13 +135,16 @@ async function main(cloud, options = {}) {
     if (old.error) throw new Error(`巡回赛缓存读取失败：${old.error.message}`)
     const previous = decode(old.data && old.data.payload) || {}
     const enrichmentDue=options.enrich!==false&&(!previous.enrichedAt||now-Date.parse(previous.enrichedAt)>6*3600000)
-    if (!options.force && !enrichmentDue && now - Date.parse(previous.checkedAt || '') < 5 * 60000) return { tour, skipped: 'fresh' }
+    const entryDue=tour==='wta'&&options.enrich!==false&&(options.force||!previous.entryCheckedAt||now-Date.parse(previous.entryCheckedAt)>=15*60000)
+    if (!options.force && !enrichmentDue && !entryDue && now - Date.parse(previous.checkedAt || '') < 5 * 60000) return { tour, skipped: 'fresh' }
     try {
       const payload = normalize(await readUrl(`https://www.rank.tennis/data/${tour}.json`), tour, knownPlayers(tour), now)
       if (previous.asOf && payload.asOf < previous.asOf) throw new Error('拒绝较旧实时积分')
       payload.profiles = previous.profiles || {}; payload.entryLists = previous.entryLists || []; payload.finals = previous.finals || null
       if(previous.enrichedAt)payload.enrichedAt=previous.enrichedAt
+      for(const field of ['entryCheckedAt','withdrawals','withdrawalArticles'])if(previous[field])payload[field]=previous[field]
       if (enrichmentDue) { await enrich(payload, previous, now);payload.enrichedAt=new Date(now).toISOString() }
+      if (entryDue) await require('./tennis-participation').refresh(payload,previous,now,{readUrl,parseEntries:parseWtaEntries,eventIds:WTA_EVENTS})
       if (signature(previous) === signature(payload) && now - Date.parse(old.data.generated_at) < 60 * 60000) return { tour, skipped: 'unchanged' }
       const row = { id: IDS[index], comp: tour, team_id: 'tennis-live', payload:encode(payload),
         generated_at: new Date(now).toISOString(), updated_at: new Date(now).toISOString() }

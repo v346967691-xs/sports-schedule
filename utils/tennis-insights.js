@@ -80,8 +80,11 @@ function participation(payload, player, matches, now = Date.now()) {
     const list = (payload && payload.entryLists || []).find(item => item.name === event.name && item.start === event.start
       && now - Date.parse(item.checkedAt) <= 2 * 86400000)
     const entry = list && list.entries.find(entry => entry.key === nameKey(player.name))
-    let title = '待报名名单确认', tone = 'pending', reason = '仅凭当前实时积分，不能确认已截止报名的参赛资格。'
-    if (entry && /withdraw/i.test(entry.status)) { title = '官方名单标注退赛'; reason = '以赛事最新名单为准。'; tone = 'withdrawn' }
+    const phase=event.start>today?'upcoming':event.end>=today?'live':'finished'
+    const phaseLabel=phase==='upcoming'?'赛事未开始':phase==='live'?'赛事进行中':'赛事已结束'
+    let title = phase==='upcoming'?'待报名名单确认':'本站参赛状态待核实', tone = 'pending', reason = phase==='upcoming'
+      ?'仅凭当前实时积分，不能确认已截止报名的参赛资格。':'赛事已开赛，尚未取得该选手的有效参赛记录；不代表比赛尚未开始。'
+    if (entry && /withdraw/i.test(entry.status)) { title = entry.source?'官方已确认退赛':'官方名单标注退赛'; reason = entry.reason||'以赛事最新名单为准。'; tone = 'withdrawn' }
     else if (event.matchId) {
       title = event.status === 'live' ? '本站正在参赛' : event.status === 'finished' ? '已参加本站比赛' : '已公布本站正赛对阵'
       reason = '已有本站单打对阵或赛果记录；后续轮次以晋级与抽签结果为准。'; tone = 'confirmed'
@@ -89,13 +92,13 @@ function participation(payload, player, matches, now = Date.now()) {
     else if (entry && /playing|eliminated/.test(entry.status)) {
       title = entry.role === 'qualifying' ? '官方资格赛名单列名' : '官方正赛参赛名单列名'
       reason = '报名名单可能随退赛、替补和抽签调整。'; tone = 'confirmed'
-    } else if (list) { title = '未见于当前公布名单'; reason = '尚不能据此排除资格赛、外卡或候补机会。' }
-    return { ...event, title, tone, reason, source: list && list.source || '', checkedAt: list && list.checkedAt || '' }
+    } else if (list && list.complete!==false) { title = '未见于当前公布名单'; reason = phase==='upcoming'?'尚不能据此排除资格赛、外卡或候补机会。':'赛事已开赛，当前名单未见该选手；尚未取得明确的退赛或参赛记录。' }
+    return { ...event, phase,phaseLabel,title, tone, reason, source: entry && entry.source || list && list.source || '', checkedAt: list && list.checkedAt || '' }
   })
 }
 function pointsDetails(player) {
-  return { gains: (player.gains || []).map(row => ({ ...row, roundLabel: roundLabels[row.round] || row.round })),
-    drops: (player.drops || []).map(row => ({ ...row, roundLabel: roundLabels[row.round] || row.round })),
+  return { gains: (player.gains || []).filter(row=>row.points>0).map(row => ({ ...row, roundLabel: roundLabels[row.round] || row.round })),
+    drops: (player.drops || []).filter(row=>row.points>0).map(row => ({ ...row, roundLabel: roundLabels[row.round] || row.round })),
     delta: Number.isFinite(player.points) && Number.isFinite(player.officialPoints) ? player.points - player.officialPoints : null }
 }
 function profileUrl(tour, player) {

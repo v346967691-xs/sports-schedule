@@ -163,8 +163,8 @@ const NAMES = {
   "Donna Vekic": "唐娜·维基克", // Q648854
   "Ann Li": "李安", // Q39074494
   "Jelena Ostapenko": "叶莲娜·奥斯塔朋科", // Q5551564
-  "Iga Swiatek": "伊加·斯维亚特克", // Q26840238
-  "Elina Svitolina": "叶林娜·斯维托林纳", // Q270249
+  "Iga Swiatek": "斯瓦泰克", // 大陆体育报道常用译名，优先于百科直译
+  "Elina Svitolina": "斯维托丽娜", // 大陆体育报道常用译名，优先于百科直译
   "Leylah Fernandez": "莱拉·费尔南德斯", // Q50329570
   "Anna Kalinskaya": "安娜·卡琳斯卡娅", // Q20088944
   "Belinda Bencic": "贝琳达·本西奇", // Q509903

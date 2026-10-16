@@ -5,6 +5,8 @@
  * 刘汉屹 https://www.sport.gov.cn/wqzx/n5341/c961183/content.html
  * 张天汇 https://www.sport.gov.cn/n14471/n14487/n14524/c30096575/content.html
  * Exact full-name tokens only; unknown names retain the upstream spelling.
+ * 展示口径：西式姓名保留完整“名·姓”；姓氏采用大陆赛事报道常用译法。
+ * 修正姓氏不得删去名字，也不按末尾单词全局替换姓氏；中文/东亚原生姓名保留惯用顺序。
  */
 // Additional names: Chinese Tennis Association youth report (渠依含、林禹君、邵羽杉):
 // https://www.sport.org.cn/shouye/jjty/2026/0922/708986.html
@@ -67,7 +69,7 @@ const NAMES = {
   "Novak Djokovic": "诺瓦克·德约科维奇", // Q5812
   "Elsa Jacquemot": "艾尔莎·雅克莫特", // Q64008826
   "Magdalena Frech": "玛格达莱娜·弗雷赫", // Q10636559
-  "Anna Bondar": "邦达尔·安娜", // Q19281715
+  "Anna Bondar": "安娜·邦达尔", // 按巡回赛注册名统一为名·姓
   "Renata Zarazua": "雷娜塔·扎拉祖亚", // Q18636254
   "Jaime Faria": "雅伊梅·法里亚", // Q125249050
   "Arthur Fery": "亚瑟·费利", // Q107406917
@@ -132,7 +134,7 @@ const NAMES = {
   "Adolfo Daniel Vallejo": "阿道尔夫·丹尼尔·瓦莱约", // Q107493222
   "Rafael Jodar": "拉斐尔·霍达尔", // Q130255645
   "Lanlana Tararudee": "兰拉娜·塔拉路堤", // Q113162452
-  "Camila Osorio": "塞拉诺", // Q29052147
+  "Camila Osorio": "卡米拉·奥索里奥", // 保留注册名 Camila Osorio，不只取第二姓
   "Eva Lys": "伊娃·利斯", // Q86838090
   "Learner Tien": "勒纳·钱", // Q113548256
   "Hubert Hurkacz": "胡贝特·胡尔卡奇", // Q18927958
@@ -163,8 +165,8 @@ const NAMES = {
   "Donna Vekic": "唐娜·维基克", // Q648854
   "Ann Li": "李安", // Q39074494
   "Jelena Ostapenko": "叶莲娜·奥斯塔朋科", // Q5551564
-  "Iga Swiatek": "斯瓦泰克", // 大陆体育报道常用译名，优先于百科直译
-  "Elina Svitolina": "斯维托丽娜", // 大陆体育报道常用译名，优先于百科直译
+  "Iga Swiatek": "伊加·斯瓦泰克", // 保留名字；姓氏采用大陆赛事报道常用译法
+  "Elina Svitolina": "伊莉娜·斯维托丽娜", // 保留名字；姓氏采用大陆赛事报道常用译法
   "Leylah Fernandez": "莱拉·费尔南德斯", // Q50329570
   "Anna Kalinskaya": "安娜·卡琳斯卡娅", // Q20088944
   "Belinda Bencic": "贝琳达·本西奇", // Q509903
@@ -199,7 +201,7 @@ const NAMES = {
   "Hamad Medjedovic": "哈马德·梅杰多维奇", // Q106962940
   "Valentin Royer": "瓦朗坦·鲁瓦耶", // Q126011326
   "Marcos Giron": "马科斯·吉龙", // Q17478053
-  "Fabian Marozsan": "毛罗然·法比安", // Q109771291
+  "Fabian Marozsan": "法比安·马洛桑", // ATP 杭州站官方中文用名，按名·姓展示
   "Zachary Svajda": "扎卡里·斯瓦达", // Q66391780
   "Nicolas Mejia": "尼古拉斯·梅希亚", // Q56728052
   "Daniel Merida": "丹尼尔·梅里达", // Q132459405

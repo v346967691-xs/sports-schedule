@@ -40,12 +40,19 @@ test('a tournament already under way never falls back to a pre-tournament regist
   assert.equal(view.participation(partial,players[0],[],now)[0].title,'本站参赛状态待核实')
   assert.equal(view.pointsDetails({gains:[{event:'WUHAN',points:0}],drops:[]}).gains.length,0,'zero-point placeholders do not masquerade as newly earned points')
 })
-test('mainland customary names override older Wikipedia translations across accents and name order',()=>{
+test('full given name and customary surname override older translations without changing athlete identity',()=>{
   const names=require('../utils/tennis-names')
-  assert.equal(names.nameZh('Elina Svitolina'),'斯维托丽娜')
-  assert.equal(names.nameZh('Iga Świątek'),'斯瓦泰克')
+  assert.equal(names.nameZh('Elina Svitolina'),'伊莉娜·斯维托丽娜')
+  assert.equal(names.nameZh('Iga Świątek'),'伊加·斯瓦泰克')
   const match=names.localizeMatch({comp:'wta',home:{name:'Swiatek Iga',zh:'伊加·斯维亚特克'},away:{name:'Elina Svitolina',zh:'叶林娜·斯维托林纳'}})
-  assert.equal(match.home.zh,'斯瓦泰克');assert.equal(match.away.zh,'斯维托丽娜')
+  assert.equal(match.home.zh,'伊加·斯瓦泰克');assert.equal(match.away.zh,'伊莉娜·斯维托丽娜')
+  assert.equal(match.home.name,'Swiatek Iga');assert.equal(match.away.name,'Elina Svitolina')
+  assert.equal(names.nameZh('Swiatek'),'','surname alone must not identify an athlete')
+  assert.equal(names.nameZh('Qinwen Zheng'),'郑钦文','native Chinese names keep their customary order')
+  assert.equal(names.nameZh('Camila Osorio'),'卡米拉·奥索里奥','use the registered full name rather than only a second surname')
+  assert.equal(names.nameZh('Anna Bondar'),'安娜·邦达尔','western display order is given name then surname')
+  assert.equal(names.nameZh('Fábián Marozsán'),'法比安·马洛桑')
+  assert.equal(names.nameZh('Unknown Player'),'','unknown full names are left to the upstream fallback')
 })
 test('cache signatures ignore JSONB key order and verification clocks but never ignore an actual withdrawal',()=>{
   const {signature}=require('./tennis-insights')

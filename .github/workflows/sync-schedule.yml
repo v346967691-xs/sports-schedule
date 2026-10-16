@@ -59,7 +59,7 @@ jobs:
         run: npm run test:data
 
       - name: 验证网球积分与参赛判断
-        run: node --test tools/tennis-insights.test.js tools/tennis-participation.test.js
+        run: node --test tools/tennis-insights.test.js tools/tennis-participation.test.js tools/tennis-live-result.test.js tools/tennis-seed-rank-source.test.js
 
       - name: 刷新网球实时积分与官方参赛资料
         continue-on-error: true

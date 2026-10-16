@@ -394,6 +394,7 @@ function tennisPlayer(competitor, accent) {
     id: String(athlete.id || competitor.id || name), name, zh: tennisNameZh(name), abbr: athlete.shortName || name,
     color: accent,
     score: tennisScore(competitor),
+    seed: Number.isInteger(competitor.curatedRank?.current) && competitor.curatedRank.current > 0 ? competitor.curatedRank.current : null,
     country: flag.alt || '', portrait: athlete.headshot && athlete.headshot.href || '',
   }
 }

@@ -9,7 +9,7 @@ function normalize(raw, tour, now = Date.now()) {
   const rows = raw.s.filter(r => typeof r.n === 'string' && r.n.trim()
     && Number.isInteger(r.or) && r.or > 0 && typeof r.op === 'number' && Number.isFinite(r.op) && r.op >= 0)
     .map(r => ({ id: 'rank-' + tour + '-' + r.n.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      name: r.n, country: r.c || '', rank: r.or, points: r.op })).sort((a, b) => a.rank - b.rank)
+      name: r.n, country: r.c || '', rank: r.or, points: r.op, previousRank: Number.isInteger(r.pr) && r.pr > 0 ? r.pr : null })).sort((a, b) => a.rank - b.rank)
   const top = rows.filter(r => r.rank <= 100)
   if (top.length !== 100 || new Set(top.map(r => r.rank)).size !== 100) throw new Error('正式周排名前百不完整')
   const china = rows.filter(r => r.country === 'CHN').slice(0, 10)

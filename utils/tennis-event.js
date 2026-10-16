@@ -73,7 +73,7 @@ function archiveRows(payload) {
     const matches = {}
     Object.keys(payload.matches || {}).forEach(comp => {
       matches[comp] = payload.matches[comp].map(row => ({ e: row[0], s: row[1], t: row[2], h: row[3], a: row[4],
-        g: payload.rounds[row[5]], ev: row[6], cv: row[7], q: row[8], wi: row[9], x: row[10] }))
+        g: payload.rounds[row[5]], ev: row[6], cv: row[7], q: row[8], wi: row[9], x: row[10], sd: row[11] }))
     })
     packed = { v: 2, teams: payload.teams, matches }
   }
@@ -122,7 +122,7 @@ function buildArchive(incoming, previous, now = Date.now()) {
     matches[comp] = packed.matches[comp].map(record => {
       const sets = record.q && ((record.q.h || []).length || (record.q.a || []).length) ? record.q : null
       const row = [record.e, record.s, record.t, record.h, record.a, rounds.indexOf(record.g || ''), record.ev, record.cv,
-        sets, record.wi || null, record.x && record.x !== '已结束' ? record.x : null]
+        sets, record.wi || null, record.x && record.x !== '已结束' ? record.x : null, record.sd || null]
       while (row.length > 8 && row[row.length - 1] == null) row.pop()
       return row
     })

@@ -263,12 +263,19 @@ async function scanTennis() {
             if (!h || !a) continue
             const number = x => x == null || x === '' || !Number.isFinite(Number(x)) ? null : Number(x)
             const ls = { h: (h.linescores || []).map(x => number(x.value)), a: (a.linescores || []).map(x => number(x.value)) }
+            const outcome=game.status&&game.status.type||{}
+            const outcomeText=`${outcome.name||''} ${outcome.description||''} ${outcome.shortDetail||''}`
+            const winner=players.find(player=>player.winner===true)
             const row = {
               id: `${tour}-${game.id}`, st: state === 'in' ? 'live' : 'finished',
-              stt: state === 'in' ? `第${game.status?.period || 1}盘进行中` : '已结束',
+              stt: state === 'in' ? `第${game.status?.period || 1}盘进行中`
+                : /retir|withdraw/i.test(outcomeText)?'退赛':/walk.?over/i.test(outcomeText)?'不战而胜':'已结束',
               hs: tennisScore(h),
               as: tennisScore(a),
             }
+            const seed=side=>Number.isInteger(side.curatedRank?.current)&&side.curatedRank.current>0?side.curatedRank.current:null
+            if(seed(h)||seed(a))row.sd=[seed(h),seed(a)]
+            if(state==='post'&&winner)row.wi=String(winner.athlete&&winner.athlete.id||winner.id)
             if (ls.h.length || ls.a.length) row.ls = ls
             rows.set(row.id, row)
           }

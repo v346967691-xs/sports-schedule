@@ -262,8 +262,8 @@ Object.keys(NAMES).forEach(name=>{
   SURNAMES[surname].add(zh)
 })
 function displayName(name,fallback) {
-  const full=nameZh(name)||fallback||name||''
-  if(!full.includes('·'))return full
+  const translated=nameZh(name),full=translated||fallback||name||''
+  if(!translated||!full.includes('·'))return full
   const surname=SHORT_OVERRIDES[nameKey(name)]||full.split('·').slice(-1)[0]
   return AMBIGUOUS.has(surname)||(SURNAMES[surname]&&SURNAMES[surname].size>1)?full:surname
 }

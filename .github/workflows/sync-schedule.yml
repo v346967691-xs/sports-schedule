@@ -136,6 +136,7 @@ jobs:
         run: node tools/brief-push.js
 
       - name: 生成 S 赛晨报（09 点首发、14 点更新，失败自动重试）
+        id: worldsbrief
         continue-on-error: true
         if: always() && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1')
         run: node tools/worlds-brief-push.js
@@ -188,6 +189,12 @@ jobs:
         if: always() && steps.notifications.outcome == 'failure'
         run: |
           echo '::error::订阅通知未完成，请查看通知步骤日志（比分盯场仍已执行）'
+          exit 1
+
+      - name: 检查 S 赛日报执行结果
+        if: always() && steps.worldsbrief.outcome == 'failure'
+        run: |
+          echo '::error::S 赛日报未成功保存，请查看日报步骤日志（比分刷新仍已执行）'
           exit 1
 
 # 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），

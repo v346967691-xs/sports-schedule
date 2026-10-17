@@ -71,3 +71,18 @@ test('scheduled collectors use the current cloud WTA archive even when checkout 
   const read=async url=>url.includes('/stats')?[stat]:url.includes('/matches')?{matches:[official]}:{content:[event]}
   assert.equal((await box.module.exports.main(cloud,{now,read})).fetched,1)
 })
+
+test('live statistics survive sparse final responses and a completed record never regresses to live',()=>{
+  const p=source.normalize([stat,{...stat,setnum:1}],match,{...official,MatchState:'P'},false,now)
+  const sparse=source.normalize([{...stat,dblflta:undefined}],match,official,false,now+60000)
+  const merged=source.mergeStats(p,sparse)
+  assert.equal(merged.sections.length,2)
+  assert.deepEqual(merged.sections[0].rows.find(r=>r[0]==='双误'),['双误',0,3])
+  assert.equal(merged.complete,false)
+  const final=source.normalize([stat,{...stat,setnum:1}],match,official,false,now+120000)
+  assert.equal(source.mergeStats(merged,final).complete,true)
+  assert.equal(source.mergeStats(final,p),final)
+  assert.equal(source.mergeStats(final,sparse),final)
+  const different={...sparse,h:'different'}
+  assert.equal(source.mergeStats(p,different),different)
+})

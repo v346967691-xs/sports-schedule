@@ -63,6 +63,24 @@ function normalize(raw, match, official, flip, now = Date.now()) {
     sourceAt:official.LastUpdated || '',complete:official.MatchState === 'F',
     source:'WTA 官方',url:`https://www.wtatennis.com/tournaments/${official.EventID}/event/${official.EventYear}/scores/${official.MatchID}`,sections }
 }
+/** 同场统计短暂缺盘/缺项时保留最后有效值，并明确标为尚未补齐。 */
+function mergeStats(previous, next) {
+  if(!previous || previous.h!==next.h || previous.a!==next.a)return next
+  if(previous.complete && !next.complete)return previous
+  let retained=false
+  const sections=new Map((next.sections||[]).map(s=>[s.n,{...s,rows:s.rows.map(r=>r.slice())}]))
+  for(const old of previous.sections||[]){
+    const section=sections.get(old.n)
+    if(!section){sections.set(old.n,old);retained=true;continue}
+    for(const row of old.rows){
+      const current=section.rows.find(r=>r[0]===row[0])
+      if(!current){section.rows.push(row.slice());retained=true;continue}
+      for(const side of [1,2])if(current[side]===null && row[side]!==null){current[side]=row[side];retained=true}
+    }
+  }
+  if(previous.complete && retained)return previous
+  return {...next,sections:[...sections.values()].sort((a,b)=>a.n-b.n),complete:next.complete && !retained}
+}
 async function main(cloud, options = {}) {
   const now = options.now ?? Date.now(), request = options.read || read
   if (!cloud) cloud = require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(require('../utils/cloud-config'))
@@ -112,7 +130,7 @@ async function main(cloud, options = {}) {
         const raw=await request(`${API}/tournaments/${id}/matches/${found.row.MatchID}/stats`)
         const p=normalize(raw,m,found.row,found.flip,now);if(!p)continue
         const key='wta:tennis-stats:'+dayKey(m.start),bucket=buckets.get(key)||{v:1,matches:{}}
-        bucket.matches[m.id]=p;buckets.set(key,bucket);changed.add(key);fetched++
+        bucket.matches[m.id]=mergeStats(bucket.matches[m.id],p);buckets.set(key,bucket);changed.add(key);fetched++
       }catch(e){failed++;console.warn('[tennis-stats] 单场统计暂不可用',m.id,e.message)}
     }
   }))
@@ -124,4 +142,4 @@ async function main(cloud, options = {}) {
   return {matches:rows.length,matched:pending.length,fetched,failed,writes:changed.size}
 }
 if(require.main===module)main().then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(e.message);process.exitCode=1})
-module.exports={findEvent,findMatch,normalize,main,dayKey}
+module.exports={findEvent,findMatch,normalize,mergeStats,main,dayKey}

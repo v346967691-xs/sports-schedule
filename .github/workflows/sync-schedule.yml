@@ -68,10 +68,10 @@ jobs:
         continue-on-error: true
         run: node tools/tennis-insights.js
 
-      - name: 验证网球单场统计
-        run: node --test tools/tennis-stats.test.js tools/match-status.test.js tools/tennis-levels.test.js
+      - name: 验证 ATP/WTA 单场统计
+        run: node --test tools/tennis-stats.test.js tools/live-tennis-stats.test.js tools/match-status.test.js tools/tennis-levels.test.js
 
-      - name: 刷新可获取的网球单场统计
+      - name: 刷新 ATP/WTA 单场统计（官方优先、缺项补齐）
         continue-on-error: true
         run: node tools/tennis-stats.js
 

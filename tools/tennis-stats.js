@@ -1,7 +1,8 @@
-/** WTA 官方单场统计增强。只写独立公共日桶，不改赛程、比分或其他赛事详情。 */
+/** ATP/WTA 单场统计：WTA 官方优先，Live-tennis 提供 ATP 与 WTA 补缺。 */
 const { nameKey } = require('../utils/tennis-names')
 const { decodeSnapshot } = require('../utils/snapshot')
 const archive = require('../utils/tennis-event')
+const relay = require('./live-tennis-stats')
 const DAY = 86400000
 const API = 'https://api.wtatennis.com/tennis'
 const textKey = s => nameKey(String(s || '')).replace(/[^a-z0-9]/g, '')
@@ -54,6 +55,9 @@ function normalize(raw, match, official, flip, now = Date.now()) {
         row('破发点挽救率',s=>{const other=s==='a'?'b':'a';return fraction(sub(value('breakptsplayed',other),value('breakptsconv',other)),value('breakptsplayed',other))}),
         row('发球得分率',s=>fraction(value('ptstotwonserv',s),value('totservplayed',s))),
         row('接发得分率',s=>{const other=s==='a'?'b':'a';return fraction(sub(value('totservplayed',other),value('ptstotwonserv',other)),value('totservplayed',other))}),
+        row('接一发得分率',s=>{const o=s==='a'?'b':'a';return fraction(sub(value('ptsplayed1stserv',o),value('ptswon1stserv',o)),value('ptsplayed1stserv',o))}),
+        row('接二发得分率',s=>{const o=s==='a'?'b':'a';return fraction(sub(sub(value('totservplayed',o),value('ptsplayed1stserv',o)),sub(value('ptstotwonserv',o),value('ptswon1stserv',o))),sub(value('totservplayed',o),value('ptsplayed1stserv',o)))}),
+        row('保发率',s=>{const o=s==='a'?'b':'a';return fraction(sub(value('servgamesplayed',s),value('breakptsconv',o)),value('servgamesplayed',s))}),
         row('发球局数',s=>value('servgamesplayed',s)),row('总得分',s=>value('totptswon',s)),
       ].filter(r=>r[1] !== null || r[2] !== null)
       return rows.length ? { n:r.setnum, rows } : null
@@ -61,7 +65,7 @@ function normalize(raw, match, official, flip, now = Date.now()) {
   if (!sections.length || new Set(sections.map(s=>s.n)).size !== sections.length) return null
   return { v:1,h:String(match.home.id),a:String(match.away.id),ts:new Date(now).toISOString(),
     sourceAt:official.LastUpdated || '',complete:official.MatchState === 'F',
-    source:'WTA 官方',url:`https://www.wtatennis.com/tournaments/${official.EventID}/event/${official.EventYear}/scores/${official.MatchID}`,sections }
+    provider:'wta',schema:2,source:'WTA 官方',url:`https://www.wtatennis.com/tournaments/${official.EventID}/event/${official.EventYear}/scores/${official.MatchID}`,sections }
 }
 /** 同场统计短暂缺盘/缺项时保留最后有效值，并明确标为尚未补齐。 */
 function mergeStats(previous, next) {
@@ -79,24 +83,13 @@ function mergeStats(previous, next) {
     }
   }
   if(previous.complete && retained)return previous
-  return {...next,sections:[...sections.values()].sort((a,b)=>a.n-b.n),complete:next.complete && !retained}
+  const source=retained && previous.source!==next.source ? [...new Set([next.source,previous.source].flatMap(s=>String(s||'').split(' + ')).filter(Boolean))].join(' + ') : next.source
+  return {...next,source,sections:[...sections.values()].sort((a,b)=>a.n-b.n),complete:next.complete && !retained}
 }
-async function main(cloud, options = {}) {
+async function collectOfficial(cloud, options = {}) {
   const now = options.now ?? Date.now(), request = options.read || read
   if (!cloud) cloud = require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(require('../utils/cloud-config'))
-  let rows = options.matches
-  if (!rows) {
-    rows = decodeSnapshot(require('../data/matches'))
-    try { rows = archive.mergeRows(rows,archive.archiveRows(require('../data/tennis-events'))) } catch (_) { /* 首次归档未生成 */ }
-    // Actions 的 checkout 快照可能已旧；只读云端网球归档的 WTA 分区，不下载整张赛程。
-    const fields=['version','events','teams','rounds','venues'].map(k=>`${k}:meta->tennisEvents->${k}`)
-      .concat('wta:meta->tennisEvents->matches->wta').join(',')
-    const current=await cloud.database.from('schedule_cache').select(fields).eq('id','latest').maybeSingle()
-    if(current.error)console.warn('[tennis-stats] 最新分站归档暂不可用，保留本地赛程',current.error.message)
-    else if(current.data?.version===3 && Array.isArray(current.data.wta)){
-      rows=archive.mergeRows(rows,archive.archiveRows({...current.data,matches:{wta:current.data.wta}}))
-    }
-  }
+  let rows = options.matches || []
   rows = rows.filter(m=>m.comp==='wta' && ['live','finished','upcoming'].includes(m.status) && Date.parse(m.start)<=now+3*3600000 && Date.parse(m.start)>=now-30*DAY)
   if (!rows.length) return {matches:0,writes:0}
   const keys=[...new Set(rows.map(m=>'wta:tennis-stats:'+dayKey(m.start)))]
@@ -106,10 +99,11 @@ async function main(cloud, options = {}) {
   const due=rows.filter(m=>{
     const bucket=buckets.get('wta:tennis-stats:'+dayKey(m.start)),p=bucket?.matches?.[m.id]
     const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?10*60000:6*3600000
-    if(now-Date.parse(bucket?.attempts?.[m.id]||'')<wait)return false
-    return !p || p.h!==String(m.home.id)||p.a!==String(m.away.id)
+    if(!options.force&&now-Date.parse(bucket?.attempts?.[m.id]||'')<wait)return false
+    if(options.force)return true
+    return !p || p.provider==='live-tennis' || p.schema!==2 || p.h!==String(m.home.id)||p.a!==String(m.away.id)
       || (!p.complete && now-Date.parse(p.ts)>wait) || (p.complete && now-Date.parse(p.ts)>6*3600000 && now-Date.parse(m.start)<2*DAY)
-  })
+  }).sort((a,b)=>(a.status==='live'?0:1)-(b.status==='live'?0:1)||Date.parse(b.start)-Date.parse(a.start)).slice(0,options.maxOfficialMatches??40)
   if(!due.length)return {matches:rows.length,fetched:0,writes:0}
   const from=new Date(now-31*DAY).toISOString().slice(0,10),to=new Date(now+DAY).toISOString().slice(0,10)
   const calendar=await request(`${API}/tournaments/?from=${from}&to=${to}&pageSize=100`)
@@ -141,5 +135,113 @@ async function main(cloud, options = {}) {
   for(const id of changed){const out=await cloud.database.from('team_roster').upsert({id,comp:'wta',team_id:id.slice(4),payload:buckets.get(id),generated_at:new Date(now).toISOString(),updated_at:new Date(now).toISOString()},{onConflict:'id'});if(out.error)throw Error(out.error.message || '统计缓存写入失败')}
   return {matches:rows.length,matched:pending.length,fetched,failed,writes:changed.size}
 }
+async function loadMatches(cloud) {
+  let rows = null
+  if (!rows) {
+    rows = decodeSnapshot(require('../data/matches'))
+    try { rows = archive.mergeRows(rows,archive.archiveRows(require('../data/tennis-events'))) } catch (_) { /* 首次归档未生成 */ }
+    // 同时读取 ATP/WTA 独立归档，避免 checkout 赛程陈旧。
+    const fields=['version','events','teams','rounds','venues'].map(k=>`${k}:meta->tennisEvents->${k}`)
+      .concat('atp:meta->tennisEvents->matches->atp','wta:meta->tennisEvents->matches->wta').join(',')
+    const current=await cloud.database.from('schedule_cache').select(fields).eq('id','latest').maybeSingle()
+    if(current.error)console.warn('[tennis-stats] 最新分站归档暂不可用，保留本地赛程',current.error.message)
+    else if(current.data?.version===3 && (Array.isArray(current.data.wta)||Array.isArray(current.data.atp))){
+      rows=archive.mergeRows(rows,archive.archiveRows({...current.data,matches:{atp:current.data.atp||[],wta:current.data.wta||[]}}))
+    }
+  }
+  return rows
+}
+const bucketKey = m => `${m.comp}:tennis-stats:${dayKey(m.start)}`
+function hasCore(p) {
+  const rows=p?.sections?.find(s=>s.n===0)?.rows||[]
+  return ['ACE','双误','总得分'].every(label=>{const r=rows.find(r=>r[0]===label);return r&&r[1]!==null&&r[2]!==null})
+}
+/** 官方已有值优先；补充源只填空，不把较少字段的页面覆盖到官方统计上。 */
+function supplement(primary,secondary) {
+  const sections=primary.sections.map(s=>({...s,rows:s.rows.map(r=>r.slice())}))
+  let added=false
+  for(const s of secondary.sections){
+    let target=sections.find(p=>p.n===s.n)
+    if(!target){sections.push(s);added=true;continue}
+    for(const row of s.rows){
+      const old=target.rows.find(r=>r[0]===row[0])
+      if(!old){target.rows.push(row.slice());added=true;continue}
+      for(const side of [1,2])if(old[side]===null&&row[side]!==null){old[side]=row[side];added=true}
+    }
+  }
+  return added?{...primary,ts:secondary.ts,source:'WTA 官方 + Live-tennis',sections:sections.sort((a,b)=>a.n-b.n),complete:primary.complete&&secondary.complete}:primary
+}
+async function collectRelay(cloud, options) {
+  const now=options.now, rows=options.matches, request=options.readHtml || relay.read
+  if(!rows.length)return {matches:0,fetched:0,writes:0}
+  const keys=[...new Set(rows.map(bucketKey))]
+  const old=await cloud.database.from('team_roster').select('id,payload').in('id',keys)
+  if(old.error)throw Error(old.error.message || '统计缓存读取失败')
+  const buckets=new Map((old.data||[]).map(row=>[row.id,row.payload])),changed=new Set()
+  const due=rows.filter(m=>{
+    const bucket=buckets.get(bucketKey(m)),p=bucket?.matches?.[m.id]
+    const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?10*60000:6*3600000
+    if(!options.force&&now-Date.parse(bucket?.relayAttempts?.[m.id]||'')<wait)return false
+    const same=p&&p.h===String(m.home.id)&&p.a===String(m.away.id)
+    // WTA 已有新鲜官方统计时，不额外请求第三方，更不把官方数据换成少字段版本。
+    if(m.comp==='wta'&&same&&(p.provider==='wta'||p.source==='WTA 官方')&&(p.complete||now-Date.parse(p.ts)<wait)&&hasCore(p))return false
+    if(m.comp==='wta'&&same&&!hasCore(p))return true
+    if(options.force)return true
+    return !same||!p.complete&&now-Date.parse(p.ts)>wait
+      ||p.complete&&now-Date.parse(p.ts)>6*3600000&&now-Date.parse(m.start)<2*DAY
+  }).sort((a,b)=>(a.status==='live'?0:1)-(b.status==='live'?0:1)||Date.parse(b.start)-Date.parse(a.start))
+    .slice(0,options.maxRelayMatches??40)
+  if(!due.length)return {matches:rows.length,fetched:0,writes:0}
+  const pages=new Map()
+  async function entries(date) {
+    if(!pages.has(date))pages.set(date,request(relay.BASE+'/zh/result/'+date).then(html=>relay.parseSchedule(html,date)))
+    return pages.get(date)
+  }
+  const deadline=Date.now()+(options.budgetMs??90000)
+  let cursor=0,fetched=0,matched=0,failed=0
+  await Promise.all(Array.from({length:Math.min(2,due.length)},async()=>{
+    while(cursor<due.length){
+      if(Date.now()>=deadline)break
+      const m=due[cursor++],key=bucketKey(m)
+      try{
+        const date=m.date||new Date(Date.parse(m.start)+8*3600000).toISOString().slice(0,10)
+        const found=relay.findMatch(m,await entries(date))
+        if(found&&[1,2].includes(found.entry.status)){
+          matched++
+          const p=relay.normalize(await request(relay.queryUrl(found.entry)),m,found,now)
+          if(p){
+            const bucket=buckets.get(key)||{v:1,matches:{}},previous=bucket.matches[m.id]
+            const primary=previous&&previous.h===p.h&&previous.a===p.a&&(previous.provider==='wta'||previous.source==='WTA 官方')
+              &&(previous.complete||now-Date.parse(previous.ts)<10*60000)
+            bucket.matches[m.id]=primary?supplement(previous,p):mergeStats(previous,p)
+            buckets.set(key,bucket);fetched++
+          }
+        }
+      }catch(e){failed++;console.warn('[tennis-stats] Live-tennis 暂不可用',m.id,e.message)}
+      const bucket=buckets.get(key)||{v:1,matches:{}}
+      bucket.relayAttempts={...bucket.relayAttempts,[m.id]:new Date(now).toISOString()};buckets.set(key,bucket);changed.add(key)
+    }
+  }))
+  for(const id of changed){
+    const comp=id.split(':')[0]
+    const out=await cloud.database.from('team_roster').upsert({id,comp,team_id:id.slice(comp.length+1),payload:buckets.get(id),generated_at:new Date(now).toISOString(),updated_at:new Date(now).toISOString()},{onConflict:'id'})
+    if(out.error)throw Error(out.error.message || '统计缓存写入失败')
+  }
+  return {matches:rows.length,matched,fetched,failed,writes:changed.size}
+}
+async function main(cloud, options = {}) {
+  if(!cloud)cloud=require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(require('../utils/cloud-config'))
+  const now=options.now??Date.now()
+  const rows=(options.matches||await loadMatches(cloud)).filter(m=>['atp','wta'].includes(m.comp)
+    &&['live','finished','upcoming'].includes(m.status)&&Date.parse(m.start)<=now+3*3600000&&Date.parse(m.start)>=now-30*DAY)
+    .filter(m=>m.home?.name&&m.away?.name&&!/^(?:TBD|待定)$/i.test(m.home.name)&&!/^(?:TBD|待定)$/i.test(m.away.name))
+  if(!rows.length)return {matches:0,writes:0}
+  let official={matches:0,fetched:0,writes:0}
+  try{official=await collectOfficial(cloud,{...options,now,matches:rows.filter(m=>m.comp==='wta')})}
+  catch(e){if(options.relay===false)throw e;console.warn('[tennis-stats] WTA 官方暂不可用，尝试补缺来源',e.message);official.error=e.message}
+  const fallback=options.relay===false?{fetched:0,writes:0}:await collectRelay(cloud,{...options,now,matches:rows})
+  return {matches:rows.length,matched:(official.matched||0)+(fallback.matched||0),fetched:(official.fetched||0)+(fallback.fetched||0),
+    failed:(official.failed||0)+(fallback.failed||0),writes:official.writes+fallback.writes,sources:{official,liveTennis:fallback}}
+}
 if(require.main===module)main().then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(e.message);process.exitCode=1})
-module.exports={findEvent,findMatch,normalize,mergeStats,main,dayKey}
+module.exports={findEvent,findMatch,normalize,mergeStats,main,collectRelay,dayKey}

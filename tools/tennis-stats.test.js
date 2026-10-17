@@ -38,26 +38,26 @@ function mockCloud(initial=[]) {
 test('collector writes only the tennis statistics day bucket, skips completed cached data and retains it on empty/error responses',async()=>{
   const cloud=mockCloud(),urls=[]
   const read=async url=>{urls.push(url);return url.includes('/stats')?[stat]:url.includes('/matches')?{matches:[official]}:{content:[event]}}
-  const result=await source.main(cloud,{now,matches:[match],read})
+  const result=await source.main(cloud,{now,relay:false,matches:[match],read})
   assert.equal(result.fetched,1);assert.equal(cloud.writes.length,1);assert.equal(cloud.writes[0].id,'wta:tennis-stats:20261012')
   const p=cloud.stored.get(cloud.writes[0].id).payload.matches[match.id]
-  urls.length=0;assert.equal((await source.main(cloud,{now:now+60000,matches:[match],read})).writes,0);assert.equal(urls.length,0)
+  urls.length=0;assert.equal((await source.main(cloud,{relay:false,now:now+60000,matches:[match],read})).writes,0);assert.equal(urls.length,0)
   const live={...match,status:'live',start:'2026-10-16T06:00Z'}
   const latest={...official,MatchState:'P',MatchTimeStamp:live.start}
-  await source.main(cloud,{now,matches:[live],read:async url=>url.includes('/stats')?[stat]:url.includes('/matches')?{matches:[latest]}:{content:[event]}})
+  await source.main(cloud,{now,relay:false,matches:[live],read:async url=>url.includes('/stats')?[stat]:url.includes('/matches')?{matches:[latest]}:{content:[event]}})
   const liveKey='wta:tennis-stats:20261016',before=structuredClone(cloud.stored.get(liveKey).payload.matches[live.id])
   const empty=async url=>url.includes('/stats')?[]:url.includes('/matches')?{matches:[latest]}:{content:[event]}
-  await source.main(cloud,{now:now+15*60000,matches:[live],read:empty})
+  await source.main(cloud,{relay:false,now:now+15*60000,matches:[live],read:empty})
   assert.deepEqual(cloud.stored.get(liveKey).payload.matches[live.id],before)
-  await assert.rejects(source.main(cloud,{now:now+30*60000,matches:[live],read:async()=>{throw Error('offline')}}),/offline/)
+  await assert.rejects(source.main(cloud,{relay:false,now:now+30*60000,matches:[live],read:async()=>{throw Error('offline')}}),/offline/)
   assert.deepEqual(cloud.stored.get(liveKey).payload.matches[live.id],before)
   assert.equal(p.sections[0].rows.find(r=>r[0]==='ACE')[1],0)
 })
 test('unmatched or unavailable old statistics are negatively cached instead of fetched every cycle',async()=>{
   const cloud=mockCloud();let requests=0
   const read=async()=>{requests++;return {content:[]}}
-  await source.main(cloud,{now,matches:[match],read})
-  await source.main(cloud,{now:now+15*60000,matches:[match],read})
+  await source.main(cloud,{now,relay:false,matches:[match],read})
+  await source.main(cloud,{relay:false,now:now+15*60000,matches:[match],read})
   assert.equal(requests,1);assert.equal(cloud.writes.length,1)
 })
 test('scheduled collectors use the current cloud WTA archive even when checkout snapshots contain no matches',async()=>{
@@ -69,7 +69,7 @@ test('scheduled collectors use the current cloud WTA archive even when checkout 
   const box={module:{exports:{}},console,Date,require:n=>n==='../data/matches'?[]:n==='../data/tennis-events'?null:actual(n)}
   vm.runInNewContext(fs.readFileSync(filename,'utf8'),box,{filename})
   const read=async url=>url.includes('/stats')?[stat]:url.includes('/matches')?{matches:[official]}:{content:[event]}
-  assert.equal((await box.module.exports.main(cloud,{now,read})).fetched,1)
+  assert.equal((await box.module.exports.main(cloud,{now,relay:false,read})).fetched,1)
 })
 
 test('live statistics survive sparse final responses and a completed record never regresses to live',()=>{

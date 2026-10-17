@@ -6,7 +6,7 @@
   <view class="report-loading" wx:elif="{{error}}">{{error}}</view>
   <block wx:elif="{{report}}">
     <view class="report-stale" wx:if="{{stale}}">数据暂未更新，请下拉刷新。以下为最后可用战况。</view>
-    <view class="report-draft" wx:if="{{report.isDraft}}">晨报北京时间 09:00 首发 · 当前为即时前瞻</view>
+    <view class="report-draft" wx:if="{{report.isDraft}}">北京时间 09:00 首发，14:00 更新 · 当前为即时前瞻</view>
     <view class="report-body">
       <view class="report-headline">{{report.title}}</view><view class="report-lead">{{report.lead}}</view>
       <view class="report-section" wx:for="{{sections}}" wx:for-item="section" wx:for-index="sectionIndex" wx:key="key">
@@ -22,7 +22,7 @@
           </view>
         </block>
       </view>
-      <view class="report-note"><view>整理于 {{updatedText}} 北京时间</view><view>{{report.note}}</view></view>
+      <view class="report-note"><view>{{report.editionLabel}} · 整理于 {{updatedText}} 北京时间</view><view>{{report.note}}</view></view>
       <view class="report-actions"><button class="report-action-primary" open-type="share">分享好友</button><button class="report-action-secondary" bindtap="generatePoster" loading="{{exporting}}" disabled="{{exporting}}">生成长图</button></view>
     </view>
   </block>

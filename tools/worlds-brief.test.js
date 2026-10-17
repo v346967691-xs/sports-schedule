@@ -164,3 +164,74 @@ test('morning report keeps its share canvas offscreen and exposes two clear post
   assert.match(wxss, /\.report-team\.away\s*\{[^}]*text-align:\s*left/s)
   assert.doesNotMatch(wxss, /\.report-footer/)
 })
+
+test('09:00 keeps the latest available score of an 08:00 series; 14:00 replaces it with its final result', async () => {
+  const day='2026-10-24'
+  const series=match('worlds-late',day,'08:00','upcoming',team('BLG',0),team('T1',0))
+  series.bo=5
+  const at9=Date.parse(`${day}T09:00:00+08:00`)
+  const first=fakeCloud({snapshot:[series],live:{generatedAt:`${day}T08:59:00+08:00`,rows:[{id:series.id,st:'live',stt:'第3局进行中',hs:1,as:1}]}})
+  await push.main(first.cloud,at9)
+  const morning=first.writes[0].payload
+  assert.equal(morning.editionHour,9)
+  assert.equal(morning.live[0].score,'1 : 1')
+  assert.equal(morning.live[0].statusText,'第3局进行中')
+  assert.equal(morning.finished.length,0)
+  let scanned=0
+  const repeated=fakeCloud({snapshot:[series],previous:morning})
+  assert.deepEqual(await push.main(repeated.cloud,at9+15*60000,false,async()=>{scanned++;return []}),{skipped:'unchanged'})
+  assert.equal(repeated.writes.length,0)
+  assert.equal(scanned,0)
+  const afternoon=fakeCloud({snapshot:[series],previous:morning})
+  await push.main(afternoon.cloud,Date.parse(`${day}T14:00:00+08:00`),false,async()=>[{id:series.id,st:'finished',hs:3,as:2}])
+  const refreshed=afternoon.writes[0].payload
+  assert.equal(refreshed.id,morning.id)
+  assert.equal(refreshed.editionHour,14)
+  assert.equal(refreshed.finished[0].score,'3 : 2')
+  assert.equal(refreshed.live.length,0)
+})
+
+test('14:00 refresh is saved even if scores are unchanged and never guesses a late final result', async () => {
+  const at14=Date.parse('2026-10-24T14:00:00+08:00')
+  const first=model.build(fixture(),'2026-10-24',publishAt)
+  assert.equal(model.editionHour('2026-10-24',at14-1),9)
+  assert.equal(model.editionHour('2026-10-24',at14),14)
+  const cloud=fakeCloud({previous:first})
+  await push.main(cloud.cloud,at14)
+  assert.equal(cloud.writes.length,1)
+  const report=cloud.writes[0].payload
+  assert.equal(report.editionHour,14)
+  assert.equal(report.live[0].score,'1 : 0')
+  assert.equal(report.live[0].homeWin,false)
+  const later=fakeCloud({previous:report})
+  assert.deepEqual(await push.main(later.cloud,at14+3600000),{skipped:'unchanged'})
+})
+
+test('the page displays the persisted 09/14 edition instead of silently rebuilding another snapshot', async () => {
+  const vm=require('vm')
+  let definition
+  let stored=model.build(fixture(),'2026-10-24',publishAt)
+  const day='2026-10-24'
+  const box={Page(value){definition=value},require(file){
+    if(file.endsWith('/data'))return {refresh:async()=>{},loadWorldsArchive:async()=>[],refreshLive:async()=>{},matches:()=>[],staleInfo:()=>({stale:false})}
+    if(file.endsWith('/worlds'))return {beijingDay:()=>day}
+    if(file.endsWith('/worlds-report'))return model
+    if(file.endsWith('/worlds-brief'))return {fetch:async()=>stored}
+    return {}
+  },Date,console}
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../pages/worlds-brief/worlds-brief.js'),'utf8'),box)
+  const page={...definition,date:day,data:{},setData(patch,cb){Object.assign(this.data,patch);if(cb)cb()},buildCard(){}}
+  await page.load()
+  assert.equal(page.data.report,stored)
+  stored=model.build(fixture(),day,Date.parse(day+'T14:00:00+08:00'))
+  await page.load()
+  assert.equal(page.data.report.editionHour,14)
+})
+
+test('a failed save is reported as a failure and a later attempt can publish the edition', async()=>{
+  const failed=fakeCloud({writeError:true})
+  await assert.rejects(push.main(failed.cloud,publishAt),/推送未确认成功/)
+  const retry=fakeCloud()
+  assert.equal((await push.main(retry.cloud,publishAt+15*60000)).published,'worlds-morning-2026-10-24')
+  assert.equal(retry.writes[0].payload.editionHour,9)
+})

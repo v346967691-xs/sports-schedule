@@ -58,6 +58,9 @@ jobs:
       - name: 验证数据链路回归
         run: npm run test:data
 
+      - name: 验证 S 赛双时段日报与保存规则
+        run: node --test tools/worlds-brief.test.js tools/worlds-brief-db.test.js
+
       - name: 验证网球积分与参赛判断
         run: node --test tools/tennis-insights.test.js tools/tennis-participation.test.js tools/tennis-live-result.test.js tools/tennis-seed-rank-source.test.js
 
@@ -114,14 +117,16 @@ jobs:
       #    这样 06:00 与 21:00 的期次一定在 15 分钟内落库，其余时间不再空转。
       - name: 判断是否处于出报窗口
         id: briefwin
+        if: always()
         run: |
           H=$(TZ=Asia/Shanghai date +%H)
           case "$H" in
             06|07|21|22) echo "due=1" >> "$GITHUB_OUTPUT" ;;
             *)           echo "due=0" >> "$GITHUB_OUTPUT" ;;
           esac
+          # S赛：09/14 点分别出报，下一小时作为队列延迟和失败重试窗口。
           case "$H" in
-            09|10|11|12) echo "worlds_due=1" >> "$GITHUB_OUTPUT" ;;
+            09|10|14|15) echo "worlds_due=1" >> "$GITHUB_OUTPUT" ;;
             *) echo "worlds_due=0" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -130,9 +135,9 @@ jobs:
         if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1'
         run: node tools/brief-push.js
 
-      - name: 生成 S 赛晨报（09 点首发，随赛况同步更新）
+      - name: 生成 S 赛晨报（09 点首发、14 点更新，失败自动重试）
         continue-on-error: true
-        if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1'
+        if: always() && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1')
         run: node tools/worlds-brief-push.js
 
       # 订阅提醒只发送用户已同意的消息。失败留到盯场之后统一报红，保证比分刷新仍执行。

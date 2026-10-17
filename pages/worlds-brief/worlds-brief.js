@@ -26,7 +26,7 @@ Page({
       const byId = {}
       results[1].forEach(m => { byId[m.id] = m })
       data.matches().forEach(m => { byId[m.id] = m })
-      const report = historical ? stored : data.source() === 'cloud' || !stored ? model.build(Object.keys(byId).map(id => byId[id]), date) : stored
+      const report = stored || model.build(Object.keys(byId).map(id => byId[id]), date)
       const sections = [
         { key: 'lpl', title: 'LPL 昨夜表现', rows: report.lpl },
         { key: 'results', title: report.lpl.length ? '其他已结束比赛' : '完整赛果', rows: report.otherFinished || report.finished },

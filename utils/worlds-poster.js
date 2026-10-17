@@ -63,7 +63,7 @@ function layout(ctx, report, draw, qr) {
     y += text('官方对阵公布后，这里将呈现昨夜战况与下一比赛日安排。', 42, y, 25, MUTED, 400, 666) + 30
   }
   const stamp = new Date(Date.parse(r.updatedAt) + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
-  y += text(`整理于 ${stamp} 北京时间\n${r.note}`, 42, y, 18, MUTED, 400, 666) + 24
+  y += text(`${r.editionLabel || ''} · 整理于 ${stamp} 北京时间\n${r.note}`, 42, y, 18, MUTED, 400, 666) + 24
   rect(0, y, WIDTH, 255, BLUE)
   if (draw && qr) ctx.drawImage(qr, 48, y + 43, 168, 168)
   text('长按识别 · 闪现赛程助手', 246, y + 70, 27, '#ffffff', 700, 455)

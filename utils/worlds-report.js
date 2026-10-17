@@ -3,6 +3,11 @@ const worlds = require('./worlds')
 const bracket = require('./bracket')
 const view = require('./view')
 const PUBLISH_HOUR = 9
+const REFRESH_HOUR = 14
+function editionHour(date, now) {
+  if (now < Date.parse(date + 'T09:00:00+08:00')) return null
+  return now < Date.parse(date + 'T14:00:00+08:00') ? PUBLISH_HOUR : REFRESH_HOUR
+}
 const name = team => team && (team.zhName || team.zh || team.name || team.abbr || team.id) || '待定'
 function lplTeamIds(list) {
   const ids = new Set()
@@ -33,7 +38,7 @@ function build(list, date, now, opt) {
       bestOf: Number(m.bo) || 0,
       homeWin: m.status === 'finished' && scored && m.home.score > m.away.score,
       awayWin: m.status === 'finished' && scored && m.away.score > m.home.score,
-      status: m.status, statusText: m.status === 'finished' ? '已结束' : m.status === 'live' ? '进行中' : '等待开赛',
+      status: m.status, statusText: m.status === 'finished' ? '已结束' : m.status === 'live' ? (m.statusText || '进行中') : '等待开赛',
       stage: view.roundLabel(m.stage, '全球总决赛'),
       time: worlds.timeLabel(m, at), isLpl: isLpl(m),
     }
@@ -82,12 +87,14 @@ function build(list, date, now, opt) {
     version: 1, id: `worlds-morning-${day}`, date: day,
     pubAt: new Date(midnight + PUBLISH_HOUR * 3600000).toISOString(),
     updatedAt: new Date(at).toISOString(),
+    editionHour: editionHour(day, at),
+    editionLabel: editionHour(day, at) === REFRESH_HOUR ? '14:00 更新版' : '09:00 首版',
     title, lead, finished, live, waiting, next, nextDay,
     lpl: lplResults, otherFinished, qualification,
     finishedCount: finished.length, liveCount: live.length,
     phase: (focus || live[0] || next[0] || {}).stage || '2026 全球总决赛',
     isDraft: at < midnight + PUBLISH_HOUR * 3600000,
-    note: '赛果与战绩来自官方赛事数据；晨间未结束的比赛列为进行中。',
+    note: '北京时间 09:00 首发，14:00 更新；已结束显示赛果，进行中显示最新可用局分。',
   }
 }
-module.exports = { build, lplTeamIds, validDate, PUBLISH_HOUR }
+module.exports = { build, lplTeamIds, validDate, PUBLISH_HOUR, REFRESH_HOUR, editionHour }

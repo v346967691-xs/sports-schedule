@@ -589,7 +589,12 @@ async function scorersFastLane(cloud,rows){
  */
 async function worldsFastLane(cloud) {
   try {
-    const result = await require('./worlds-refresh').refresh(cloud, { cacheFile: process.env.WORLDS_CACHE })
+    const result = await require('./worlds-refresh').refresh(cloud, {
+      cacheFile: process.env.WORLDS_CACHE,
+      // 🔴 窗口必须跟本班全量重建用的是同一组天数，否则会加出下一班会被裁掉的场次。
+      back: DAYS_BACK,
+      forward: DAYS_FORWARD,
+    })
     log(`[worlds] ${JSON.stringify(result)}`)
     return result
   } catch (error) {

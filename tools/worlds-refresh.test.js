@@ -342,6 +342,15 @@ test('record stores the pending flag and the official signature the next shift c
   assert.equal(blank.worldsSig, '')
 })
 
+test('the fast lane window matches the full rebuild window, so it cannot add rows the next push prunes', () => {
+  const cloudSync = require('./cloud-sync')
+  const win = worlds.windowOf()
+  assert.equal(win.back, cloudSync.DAYS_BACK * 86400000)
+  // 前瞻曾经按 45 天写：比全量重建的 21 天宽，加进去的场次下一班全量就会被裁掉，来回抖。
+  assert.equal(win.forward, cloudSync.DAYS_FORWARD * 86400000)
+  assert.equal(cloudSync.DAYS_FORWARD, 21)
+})
+
 test('the batch stays serialised and the signature is recorded after the local write', () => {
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/sync-schedule.yml'), 'utf8')
   // 局部写和全量 push 写的是同一行：并发会让后写者用旧快照盖掉前写者。

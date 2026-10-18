@@ -18,9 +18,11 @@ const crypto = require('node:crypto')
 
 const WORLD_KEY = 'worlds'
 const ID_PREFIX = `${WORLD_KEY}-`
-// 官方接口回看 180 天；云端快照只持有最近 14 天 + 未来 45 天，合并时按同一窗口裁剪。
-const WINDOW_BACK_MS = 14 * 86400000
-const WINDOW_FORWARD_MS = 45 * 86400000
+// 🔴 必须与 cloud-sync 的 DAYS_BACK / DAYS_FORWARD 默认值一致（14 / **21**，不是 45）。
+//    窗口比全量 push 宽，就会把下一班全量重建时会被裁掉的场次反复加回来 → 每次全量后都来回抖。
+//    官方接口那边 `fetchLol` 自己会向后抓 45 天，这里只做收窄，不会漏。
+const DEFAULT_BACK_DAYS = 14
+const DEFAULT_FORWARD_DAYS = 21
 
 /** 官方与云端两侧一致的「队伍未知」判定。上游用字面量 `TBD`，中文名是「待定」。 */
 function isTbd(team) {
@@ -56,21 +58,29 @@ function signature(rows) {
   return crypto.createHash('sha256').update(items.join('\n')).digest('hex').slice(0, 32)
 }
 
-function relevant(m, now) {
+function relevant(m, now, win) {
   const t = Date.parse(m && m.start)
-  return Number.isFinite(t) && t >= now - WINDOW_BACK_MS && t <= now + WINDOW_FORWARD_MS
+  return Number.isFinite(t) && t >= now - win.back && t <= now + win.forward
+}
+
+/** 把「回看 / 前瞻天数」换成毫秒窗口，缺省就用云端快照同一口径。 */
+function windowOf(options = {}) {
+  const back = Number(options.back) || DEFAULT_BACK_DAYS
+  const forward = Number(options.forward) || DEFAULT_FORWARD_DAYS
+  return { back: back * 86400000, forward: forward * 86400000 }
 }
 
 /**
  * 取官方 Worlds 赛程（时间窗内）。
  * ⚠️ `fetchLol` 自己会向后再抓 45 天并做全局流兜底，这里只做窗口裁剪，不重复实现。
  */
-async function collect(now = Date.now()) {
+async function collect(now = Date.now(), options = {}) {
   const { COMPETITIONS, fetchLol } = require('./sync')
   const comp = COMPETITIONS.find(c => c.key === WORLD_KEY)
   if (!comp) throw Error('COMPETITIONS 里没有 worlds 赛事')
+  const win = windowOf(options)
   const rows = await fetchLol(comp)
-  return (rows || []).filter(m => relevant(m, now))
+  return (rows || []).filter(m => relevant(m, now, win))
 }
 
 /** 快照里是否还留着「未来 Worlds 比赛、但双方没定」—— 闲时入口据此保留每班检查。 */
@@ -124,7 +134,7 @@ async function refresh(cloud, options = {}) {
   const now = options.now || Date.now()
   const cacheFile = options.cacheFile
 
-  const official = await (options.collect || collect)(now)
+  const official = await (options.collect || (t => collect(t, options)))(now)
   if (!official.length) {
     // 官方没给任何数据：保留线上原样，绝不据此清空对阵。
     return { checked: true, changed: 0, wrote: false, reason: 'no-official-rows' }
@@ -227,7 +237,7 @@ async function refresh(cloud, options = {}) {
   return { checked: true, changed, wrote: true, reason: 'worlds-fixtures-updated', total: out.length }
 }
 
-module.exports = { refresh, signature, collect, hasPending, relevant, keyOf, isTbd, WORLD_KEY, ID_PREFIX }
+module.exports = { refresh, signature, collect, hasPending, relevant, windowOf, keyOf, isTbd, WORLD_KEY, ID_PREFIX }
 
 if (require.main === module) {
   const cloud = require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(require('../utils/cloud-config'))

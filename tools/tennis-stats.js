@@ -3,6 +3,7 @@ const { nameKey } = require('../utils/tennis-names')
 const { decodeSnapshot } = require('../utils/snapshot')
 const archive = require('../utils/tennis-event')
 const relay = require('./live-tennis-stats')
+const cadence = require('../utils/tennis-refresh')
 const DAY = 86400000
 const API = 'https://api.wtatennis.com/tennis'
 const textKey = s => nameKey(String(s || '')).replace(/[^a-z0-9]/g, '')
@@ -98,11 +99,11 @@ async function collectOfficial(cloud, options = {}) {
   const buckets=new Map((old.data||[]).map(row=>[row.id,row.payload])), changed=new Set()
   const due=rows.filter(m=>{
     const bucket=buckets.get('wta:tennis-stats:'+dayKey(m.start)),p=bucket?.matches?.[m.id]
-    const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?10*60000:6*3600000
+    const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?cadence.LIVE_STATS_MS:6*3600000
     if(!options.force&&now-Date.parse(bucket?.attempts?.[m.id]||'')<wait)return false
     if(options.force)return true
     return !p || p.provider==='live-tennis' || p.schema!==2 || p.h!==String(m.home.id)||p.a!==String(m.away.id)
-      || (!p.complete && now-Date.parse(p.ts)>wait) || (p.complete && now-Date.parse(p.ts)>6*3600000 && now-Date.parse(m.start)<2*DAY)
+      || (!p.complete && now-Date.parse(p.ts)>=wait) || (p.complete && now-Date.parse(p.ts)>=cadence.FINAL_STATS_MS && now-Date.parse(m.start)<2*DAY)
   }).sort((a,b)=>(a.status==='live'?0:1)-(b.status==='live'?0:1)||Date.parse(b.start)-Date.parse(a.start)).slice(0,options.maxOfficialMatches??40)
   if(!due.length)return {matches:rows.length,fetched:0,writes:0}
   const from=new Date(now-31*DAY).toISOString().slice(0,10),to=new Date(now+DAY).toISOString().slice(0,10)
@@ -180,15 +181,15 @@ async function collectRelay(cloud, options) {
   const buckets=new Map((old.data||[]).map(row=>[row.id,row.payload])),changed=new Set()
   const due=rows.filter(m=>{
     const bucket=buckets.get(bucketKey(m)),p=bucket?.matches?.[m.id]
-    const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?10*60000:6*3600000
+    const wait=m.status==='live'||now-Date.parse(m.start)<2*DAY?cadence.LIVE_STATS_MS:6*3600000
     if(!options.force&&now-Date.parse(bucket?.relayAttempts?.[m.id]||'')<wait)return false
     const same=p&&p.h===String(m.home.id)&&p.a===String(m.away.id)
     // WTA 已有新鲜官方统计时，不额外请求第三方，更不把官方数据换成少字段版本。
     if(m.comp==='wta'&&same&&(p.provider==='wta'||p.source==='WTA 官方')&&(p.complete||now-Date.parse(p.ts)<wait)&&hasCore(p))return false
     if(m.comp==='wta'&&same&&!hasCore(p))return true
     if(options.force)return true
-    return !same||!p.complete&&now-Date.parse(p.ts)>wait
-      ||p.complete&&now-Date.parse(p.ts)>6*3600000&&now-Date.parse(m.start)<2*DAY
+    return !same||!p.complete&&now-Date.parse(p.ts)>=wait
+      ||p.complete&&now-Date.parse(p.ts)>=cadence.FINAL_STATS_MS&&now-Date.parse(m.start)<2*DAY
   }).sort((a,b)=>(a.status==='live'?0:1)-(b.status==='live'?0:1)||Date.parse(b.start)-Date.parse(a.start))
     .slice(0,options.maxRelayMatches??40)
   if(!due.length)return {matches:rows.length,fetched:0,writes:0}

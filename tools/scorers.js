@@ -97,7 +97,7 @@ function statOf(athlete, name) {
  * ⚠️ 字段名故意用单字母：这个文件进代码包，525 个球员 × 3 个字段省下来的就是几十 KB。
  *    （与 utils/snapshot.js 的快照字典化同一思路。）
  */
-function rowOf(l, players) {
+function rowOf(l, players, metric) {
   const a = l.athlete || {}
   const t = a.team || {}
   const id = String(a.id || '')
@@ -122,7 +122,9 @@ function rowOf(l, players) {
     g: statOf(a, 'totalGoals'),
     a: statOf(a, 'goalAssists'),
   }
-  // 进球/助攻上游一定有；场次缺了就不显示，不留 0 假装有数据
+  const value = Number(l.value)
+  if (metric && l.value != null && Number.isFinite(value) && value >= 0) rec[metric] = value
+  // 优先采用所属榜的权威值；场次或交叉统计缺了就不显示。
   if (rec.g == null && rec.a == null) return null
   players.push(rec)
   return rec
@@ -137,22 +139,45 @@ function buildTable(json) {
 
   const players = []
   const seen = {}
-  const add = (leaders) => {
+  const add = (leaders,metric) => {
     ;(leaders || []).forEach((l) => {
-      const rec = rowOf(l, [])
-      if (!rec || seen[rec.i]) return
-      seen[rec.i] = true
+      const rec = rowOf(l, [], metric)
+      if (!rec) return
+      if(seen[rec.i]){seen[rec.i][metric]=rec[metric];return}
+      seen[rec.i] = rec
       players.push(rec)
     })
   }
-  add(goals && goals.leaders)
-  add(assists && assists.leaders)
+  add(goals && goals.leaders,'g')
+  add(assists && assists.leaders,'a')
   if (!players.length) return null
 
   return {
     season: (json.season && (json.season.displayName || json.season.year)) || '',
     players,
   }
+}
+
+/** Refresh selected competitions; failed sources retain their own original timestamp. */
+async function collectFootball(previous, options = {}) {
+  const now=options.now??Date.now(),read=options.read||getJSON
+  const tables={...(previous?.tables||{})},failed=[],available=[]
+  for(const target of TARGETS.filter(t=>!options.only||options.only.includes(t.key))){
+    const source=`${ESPN}/soccer/${target.espn}/statistics`
+    let json=null
+    try{json=await read(source)}catch(_){/* Retain this competition, not an empty replacement. */}
+    const table=buildTable(json)
+    if(!table){
+      failed.push(`${target.name}(${target.key})`)
+      if(tables[target.key])tables[target.key]={...tables[target.key],
+        fetchedAt:tables[target.key].fetchedAt||previous.generatedAt||'',checkedAt:new Date(now).toISOString(),stale:true}
+      continue
+    }
+    tables[target.key]={...table,source,seasonYear:json.season?.year??null,
+      fetchedAt:new Date(now).toISOString(),checkedAt:new Date(now).toISOString(),stale:false}
+    available.push(`${target.name} ${table.players.length}人`)
+  }
+  return {tables,failed,available}
 }
 
 /* ------------------------------------------------ 篮球赛季数据榜（NBA） ------------------------------------------------
@@ -266,9 +291,9 @@ async function fetchBasketLeaders(league, thisYear, limit) {
 
 /* ------------------------------------------------------------------ 主流程 */
 
-async function main() {
+async function main(options = {}) {
   const available = []
-  const tables = {}
+  let tables = {}
   const failed = []
   let totalPlayers = 0
 
@@ -276,37 +301,32 @@ async function main() {
   let prev = null
   try {
     // eslint-disable-next-line global-require
-    prev = require(OUT_FILE)
+    prev = options.previous || require(OUT_FILE)
   } catch (err) {
     prev = null
   }
 
-  for (const t of TARGETS) {
-    const url = `${ESPN}/soccer/${t.espn}/statistics`
-    const json = await getJSON(url)
-    const table = buildTable(json)
-    if (!table) {
-      failed.push(`${t.name}(${t.key})`)
-      continue
-    }
-    tables[t.key] = table
-    totalPlayers += table.players.length
-    available.push(`${t.name} ${table.players.length}人`)
-  }
+  const football=await collectFootball(prev,options)
+  tables=football.tables;failed.push(...football.failed);available.push(...football.available)
+  totalPlayers=Object.values(tables).reduce((n,t)=>n+(t.players?.length||0),0)
 
   // 篮球赛季数据榜（目前只有 NBA；CBA 不是 ESPN 数据源，上游没有这类榜）
   const prevNba = prev && prev.tables ? prev.tables.nba : null
-  const prevAge = prev && prev.generatedAt ? Date.now() - Date.parse(prev.generatedAt) : Infinity
+  const prevAge = prevNba?.fetchedAt || prev?.generatedAt ? Date.now() - Date.parse(prevNba?.fetchedAt || prev.generatedAt) : Infinity
+  if(options.only && !options.only.includes('nba')) {
+    // A football final never refetches unrelated NBA boards.
+  } else
   if (prevNba && prevNba.boards && prevNba.boards.length && Number.isFinite(prevAge) && prevAge < LEADERS_TTL_MS) {
-    tables.nba = prevNba
+    tables.nba = {...prevNba,fetchedAt:prevNba.fetchedAt||prev.generatedAt}
     available.push(`NBA 数据榜 ${prevNba.boards.length} 榜（距上次 ${Math.round(prevAge / 60000)} 分钟，未重抓）`)
   } else {
     const nba = await fetchBasketLeaders('nba', new Date().getUTCFullYear() + 1, 20)
     if (nba && nba.boards.length) {
-      tables.nba = nba
+      tables.nba = {...nba,fetchedAt:new Date().toISOString()}
       available.push(`NBA 数据榜 ${nba.boards.length} 榜 / ${nba.season}`)
     } else {
       failed.push('NBA 数据榜')
+      if(prevNba)tables.nba={...prevNba,stale:true}
     }
   }
 
@@ -343,9 +363,11 @@ async function main() {
   missing.slice(0, 40).forEach((m) => console.log(`      '${m.id}': '',   // ${m.s} · ${m.tz} · ${m.g || 0} 球`))
   if (missing.length > 40) console.log(`      …还有 ${missing.length - 40} 人`)
   console.log('')
+  return payload
 }
 
-main().catch((err) => {
+if(require.main===module)main().catch((err) => {
   console.error('[scorers] 未预期错误：', err && err.stack ? err.stack : err)
   process.exit(1)
 })
+module.exports={TARGETS,buildTable,collectFootball,main}

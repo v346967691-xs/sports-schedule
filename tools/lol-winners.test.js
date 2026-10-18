@@ -2,6 +2,27 @@ const test=require('node:test'),assert=require('node:assert/strict')
 const w=require('./lol-winners'),view=require('../utils/lol-view')
 const m={id:'lck-one',comp:'lck',start:'2026-09-13T05:00:00Z',status:'finished',home:{id:'GEN',name:'Gen.G',score:1},away:{id:'HLE',name:'Hanwha Life Esports',score:1}}
 const games=[{number:1,id:'g1',state:'completed'},{number:2,id:'g2',state:'completed'}]
+
+test('OP.GG explicitly verifies latest Worlds maps by league/year/date/teams and final series score',async()=>{
+  const rows=require('./fixtures/health-20261018/opgg-matches.json').data.matches
+  const raw=require('./fixtures/health-20261018/opgg-games.json').data
+  const match={id:'worlds-115660588583171798',comp:'worlds',start:'2026-10-17T18:00Z',status:'finished',home:{id:'MVK',name:'MVK Esports',score:3},away:{id:'FUR',name:'FURIA',score:1}}
+  const played=Array.from({length:4},(_,i)=>({id:'g'+i,number:i+1,state:'completed'}))
+  const found=w.opggMatch(rows,match)
+  assert.equal(found.id,'32716')
+  assert.deepEqual(w.opggRows(raw,found,match,played).map(r=>r.winner),['home','home','away','home'])
+  assert.equal(w.opggMatch(rows,{...match,home:{...match.home,id:'MKOI',name:'Movistar KOI'}}),null)
+  assert.equal(w.opggMatch(rows,{...match,start:'2026-10-15T18:00Z'}),null)
+  assert.equal(w.opggMatch(rows,{...match,comp:'lpl'}),null)
+  assert.equal(w.opggMatch([...rows,...rows],match),null)
+  assert.deepEqual(w.opggRows({...raw,g3:{...raw.g3,winner:{id:'unknown'}}},found,match,played),[])
+  assert.deepEqual(w.opggRows({...raw,g3:{...raw.g3,set:4}},found,match,played),[])
+  const result=await w.fetchWinners(match,played,async(url,options)=>{
+    assert.ok(url.includes('esports.op.gg'))
+    return JSON.stringify(JSON.parse(options.body).query.includes('ListMatches')?{data:{matches:rows}}:{data:raw})
+  })
+  assert.equal(result.provider,'OP.GG Esports')
+})
 const list="<table class='table_list'><tr><td><a href='../game/stats/1/page-summary/'>GEN vs HLE</a></td><td>Gen.G</td><td>1 - 1</td><td>Hanwha Life Esports</td><td>ROUND1</td><td>16.16</td><td>2026-09-13</td></tr></table>"
 const summary="<a href='../game/stats/1/page-game/' title='test'>Game 1</a><a href='../game/stats/2/page-game/' title='test'>Game 2</a><!-- game by game --><h1><a href='x'>Hanwha Life Esports</a></h1><h1><a href='x'>Gen.G</a></h1><div class='row pb-1'><h1 class='text_victory'>WIN</h1><h1 class='text_defeat'>LOSS</h1></div><div class='row pb-1'><h1 class='text_defeat'>LOSS</h1><h1 class='text_victory'>WIN</h1></div>"
 test('explicit WIN/LOSS is mapped across reversed series order, never by score-box or economy',()=>{

@@ -531,7 +531,8 @@ Page({
       totalTeams: cur.totalTeams,
       swiss: cur.swiss || [],
       swissTeams: cur.swissTeams || 0,
-      updatedAt: timeLabel(cur.tennis ? cur.tennis.fetchedAt : pickUpdatedAt(tier)),
+      updatedAt: timeLabel(cur.tennis ? cur.tennis.fetchedAt : ['scorer','leader'].includes(this.tierKindOf(this.data.activeComp,tier))
+        ? data.scorersGeneratedAt(this.data.activeComp) : pickUpdatedAt(tier)),
       source: data.source() === 'cloud' ? '云端' : '本地',
     }, () => {
       this.buildShareImage()

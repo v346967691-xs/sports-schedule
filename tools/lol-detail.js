@@ -102,7 +102,8 @@ async function fetchLolDetail(m, get = request, now = Date.now(), winnerGet, pre
   }
   const winnerModel=require('./lol-winners')
   const supported=winnerModel.SUPPORTED.has(m.comp)
-  const results=supported?await winnerModel.fetchWinners({...m,home:{...m.home,code:home.code,name:home.name},
+  const known=rounds.map(r=>({n:r.n,winner:r.winner}))
+  const results=supported&&!winnerModel.validWinners(known,m,games)?await winnerModel.fetchWinners({...m,home:{...m.home,code:home.code,name:home.name},
     away:{...m.away,code:away.code,name:away.name}},games,winnerGet||(get===request?undefined:async()=>{throw Error('winner source not supplied')}),now):null
   for(const round of rounds){const result=results&&results.winners.find(row=>row.n===round.n);if(result)round.winner=result.winner}
   return {

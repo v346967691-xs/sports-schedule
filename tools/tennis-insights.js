@@ -5,6 +5,7 @@ const { nameKey } = require('../utils/tennis-names')
 const { decodeSnapshot } = require('../utils/snapshot')
 const archive = require('../utils/tennis-event')
 const {encode,decode} = require('../utils/tennis-insights')
+const cadence = require('../utils/tennis-refresh')
 const DAY = 86400000
 const IDS = ['atp:tennis-live', 'wta:tennis-live']
 const WTA_EVENTS = { ningbo: [2092, 'ningbo'], guangzhou: [1023, 'guangzhou'], osaka: [405, 'osaka'],
@@ -129,14 +130,14 @@ async function main(cloud, options = {}) {
     cloud = require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(config)
   }
   const results = await Promise.all(['atp','wta'].map(async (tour,index) => {
-    if (!options.force && now - (lastAttempt[tour] || 0) < 5 * 60000) return { tour, skipped: 'local-throttle' }
+    if (!options.force && now - (lastAttempt[tour] || 0) < cadence.POINTS_MS) return { tour, skipped: 'local-throttle' }
     lastAttempt[tour] = now
     const old = await cloud.database.from('team_roster').select('payload,generated_at').eq('id', IDS[index]).maybeSingle()
     if (old.error) throw new Error(`巡回赛缓存读取失败：${old.error.message}`)
     const previous = decode(old.data && old.data.payload) || {}
-    const enrichmentDue=options.enrich!==false&&(!previous.enrichedAt||now-Date.parse(previous.enrichedAt)>6*3600000)
-    const entryDue=tour==='wta'&&options.enrich!==false&&(options.force||!previous.entryCheckedAt||now-Date.parse(previous.entryCheckedAt)>=15*60000)
-    if (!options.force && !enrichmentDue && !entryDue && now - Date.parse(previous.checkedAt || '') < 5 * 60000) return { tour, skipped: 'fresh' }
+    const enrichmentDue=options.enrich!==false&&(!previous.enrichedAt||now-Date.parse(previous.enrichedAt)>=cadence.PROFILES_MS)
+    const entryDue=tour==='wta'&&options.enrich!==false&&(options.force||!previous.entryCheckedAt||now-Date.parse(previous.entryCheckedAt)>=cadence.ENTRIES_MS)
+    if (!options.force && !enrichmentDue && !entryDue && now - Date.parse(previous.checkedAt || '') < cadence.POINTS_MS) return { tour, skipped: 'fresh' }
     try {
       const payload = normalize(await readUrl(`https://www.rank.tennis/data/${tour}.json`), tour, knownPlayers(tour), now)
       if (previous.asOf && payload.asOf < previous.asOf) throw new Error('拒绝较旧实时积分')

@@ -520,8 +520,8 @@ function scorersKeys() {
 }
 
 /** 当前生效的射手榜生成时间（云端优先，回落本地包） */
-function scorersGeneratedAt() {
-  return (scorersData && scorersData.generatedAt) || ''
+function scorersGeneratedAt(compKey) {
+  return scorersOf(compKey)?.fetchedAt || (scorersData && scorersData.generatedAt) || ''
 }
 
 /**

@@ -544,6 +544,37 @@ async function standingsFastLane(cloud, rows) {
   }
 }
 
+function scorersDueKeys(rows,startById,tables,generatedAt){
+  const supported=new Set(require('./scorers').TARGETS.map(t=>t.key)),due=new Set()
+  for(const row of rows||[]){
+    const comp=String(row.id||'').split('-')[0]
+    if(row.st!=='finished'||!supported.has(comp))continue
+    const start=Date.parse(startById.get(row.id)||'')
+    const at=Date.parse(tables?.[comp]?.fetchedAt||generatedAt||'')
+    if(Number.isFinite(start)&&Number.isFinite(at)&&at<start+SETTLED_MIN*60000)due.add(comp)
+  }
+  return [...due]
+}
+async function scorersFastLane(cloud,rows){
+  const collector=require('./scorers')
+  const supported=new Set(collector.TARGETS.map(t=>t.key))
+  if(!(rows||[]).some(r=>r.st==='finished'&&supported.has(String(r.id).split('-')[0])))return
+  try{
+    const current=await cloud.database.from('scorers_cache').select('data,generated_at').eq('id','latest').maybeSingle()
+    if(current.error||!current.data?.data)return
+    const previous=current.data.data
+    const starts=new Map(decodeSnapshot(require('../data/matches')).map(m=>[m.id,m.start]))
+    const only=scorersDueKeys(rows,starts,previous.tables,previous.generatedAt||current.data.generated_at)
+    if(!only.length)return
+    const result=await collector.collectFootball(previous,{only})
+    if(!result.available.length)return
+    const at=new Date().toISOString()
+    const pushed=await pushRow(cloud,'scorers_cache',{id:'latest',data:{...previous,tables:result.tables,generatedAt:at},generated_at:at})
+    if(!pushed.ok)throw Error(pushed.problem)
+    log(`射手/助攻榜终场补齐：${only.join(', ')}；其他赛事和NBA不重抓`)
+  }catch(error){console.warn('[cloud-sync] 射手榜补齐失败，保留现有榜：',error.message)}
+}
+
 /**
  * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
  * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
@@ -586,6 +617,7 @@ async function main() {
     const liveRows = await readLiveRows(cloud)
     await detailFastLane(cloud, liveRows)
     await standingsFastLane(cloud, liveRows)
+    await scorersFastLane(cloud, liveRows)
     return
   }
   ghOut('pushed', 'true')
@@ -673,9 +705,9 @@ async function main() {
   //        未收录的新球员回落英文短名（预期行为）。
   let scorers = null
   try {
-    execFileSync(process.execPath, [path.join(__dirname, 'scorers.js')], { stdio: 'inherit' })
-    delete require.cache[require.resolve('../data/scorers.js')]
-    scorers = require('../data/scorers.js')
+    const saved=await cloud.database.from('scorers_cache').select('data').eq('id','latest').maybeSingle()
+    if(saved.error)throw Error('无法读取上一份榜单，停止覆盖以保留赛事数据')
+    scorers = await require('./scorers').main({previous:saved.data?.data})
   } catch (err) {
     console.warn('[cloud-sync] ⚠ 射手榜抓取失败，本次跳过推送：', (err && err.message) || err)
   }
@@ -858,7 +890,7 @@ module.exports = {
   cleanupDetailBuckets,
   gate, MIN_INTERVAL_MIN, DAYS_BACK, DAYS_FORWARD,
   // 积分榜快通道的纯判定 —— 导出只为 smoke 能打桩测它（见 tools/smoke.js）
-  standingsDueIds, SETTLED_MIN,
+  standingsDueIds, SETTLED_MIN, scorersDueKeys,
 }
 
 if (require.main === module) {

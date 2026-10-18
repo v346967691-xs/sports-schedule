@@ -72,9 +72,20 @@ test('collector saves ATP in its own bucket, reuses one date page, skips repeats
  const cached=structuredClone(c.stored.get('atp:tennis-stats:20261017').payload.matches[atp.id])
  assert.equal(cached.complete,true);assert.equal(c.writes[0].comp,'atp')
  await collector.main(c,{matches:[atp],now:now+60000,readHtml});assert.equal(calls,2)
- const fail=await collector.main(c,{matches:[atp],now:now+7*3600000,readHtml:async()=>{throw Error('offline')}})
+ const fail=await collector.main(c,{matches:[atp],now:now+25*3600000,readHtml:async()=>{throw Error('offline')}})
  assert.equal(fail.fetched,0)
  assert.deepEqual(c.stored.get('atp:tennis-stats:20261017').payload.matches[atp.id],cached)
+})
+
+test('completed ATP statistics stop frequent refetches but allow a daily correction',async()=>{
+ const c=cloud(),readHtml=async url=>url.includes('/stat/query')?atpHtml:schedule
+ await collector.main(c,{matches:[atp],now,readHtml})
+ let requests=0
+ const counted=async url=>{requests++;return readHtml(url)}
+ await collector.main(c,{matches:[atp],now:now+7*3600000,readHtml:counted})
+ assert.equal(requests,0)
+ await collector.main(c,{matches:[atp],now:now+25*3600000,readHtml:counted})
+ assert.equal(requests,2)
 })
 
 test('WTA keeps fresh official statistics without relay requests, falls back on an outage and returns to official after recovery',async()=>{

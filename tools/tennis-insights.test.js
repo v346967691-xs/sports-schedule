@@ -97,3 +97,29 @@ test('publisher skips unchanged caches and preserves the last successful row whe
   const failed=await box.module.exports.main(cloud,{force:true,enrich:false,now})
   assert.ok(failed.every(row=>row.error));assert.equal(writes,0)
 })
+
+test('publisher separates 15-minute points, hourly entries and daily enrichment without minute-loop reads',async()=>{
+  const fs=require('fs'),vm=require('vm'),path=require('path'),{createRequire}=require('module')
+  const filename=path.join(__dirname,'tennis-insights.js'),actual=createRequire(filename)
+  const rows=new Map(['atp','wta'].map(tour=>{
+    const p=source.normalize(feed(),tour,new Map(),now)
+    Object.assign(p,{profiles:{},entryLists:[],finals:{names:[],checkedAt:new Date(now).toISOString()},
+      enrichedAt:new Date(now).toISOString(),entryCheckedAt:new Date(now).toISOString()})
+    return [tour,{payload:view.encode(p),generated_at:new Date(now).toISOString()}]
+  }))
+  let reads=0,rankRequests=0,entries=0,time=now,otherRequests=0
+  const cloud={database:{from:()=>({select(){return this},eq(_,id){this.tour=id.split(':')[0];return this},
+    async maybeSingle(){reads++;return {data:rows.get(this.tour)}},
+    async upsert(row){rows.set(row.comp,row);return {}}})}}
+  const box={module:{exports:{}},__dirname,console:{warn(){}},Date,URL,Buffer,AbortSignal,process:{argv:[],env:{}},
+    require:name=>name==='./tennis-participation'?{refresh:async(p,_,at)=>{entries++;p.entryCheckedAt=new Date(at).toISOString()}}:actual(name),
+    fetch:async url=>{if(url.includes('rank.tennis'))rankRequests++;else otherRequests++
+      return {ok:true,json:async()=>({...feed(),asof_calc:new Date(time).toISOString()}),text:async()=>''}}}
+  vm.runInNewContext(fs.readFileSync(filename,'utf8'),box,{filename})
+  const run=async offset=>{time=now+offset;return box.module.exports.main(cloud,{now:time})}
+  await run(0);assert.equal(reads,2);assert.equal(rankRequests,0)
+  await run(10*60000);assert.equal(reads,2)
+  await run(15*60000);assert.equal(reads,4);assert.equal(rankRequests,2);assert.equal(entries,0)
+  await run(60*60000);assert.equal(entries,1);assert.equal(otherRequests,0)
+  await run(24*3600000);assert.equal(entries,2);assert.ok(otherRequests>=2)
+})

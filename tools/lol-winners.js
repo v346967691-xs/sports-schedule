@@ -3,7 +3,7 @@ const SUPPORTED=new Set(['worlds','lpl','lck','lec','msi','demacia'])
 const memo=new Map()
 const clean=s=>String(s||'').replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').trim()
 const key=s=>clean(s).toLowerCase().replace(/[^a-z0-9]/g,'')
-const aliases={mvk:'movistarkoi',mkoi:'movistarkoi',gen:'geng',hle:'hanwhalifeesports',kc:'karminecorp',c9:'cloud9',g2:'g2esports',t1:'t1',dk:'dpluskia',bds:'teambds',vit:'teamvitality',th:'teamheretics',fnc:'fnatic',navi:'natusvincere',sk:'skgaming',blg:'bilibiligaming',ig:'invictusgaming',jdg:'jdgaming',tes:'topesports',al:'anyoneslegend',we:'teamwe',wbg:'weibogaming',lng:'lngesports',fur:'furia'}
+const aliases={mvk:'mvkesports',mkoi:'movistarkoi',gen:'geng',hle:'hanwhalifeesports',kc:'karminecorp',c9:'cloud9',g2:'g2esports',t1:'t1',dk:'dpluskia',bds:'teambds',vit:'teamvitality',th:'teamheretics',fnc:'fnatic',navi:'natusvincere',sk:'skgaming',blg:'bilibiligaming',ig:'invictusgaming',jdg:'jdgaming',tes:'topesports',al:'anyoneslegend',we:'teamwe',wbg:'weibogaming',lng:'lngesports',fur:'furia',furiaesports:'furia'}
 const canonical=s=>aliases[key(s)]||key(s)
 const same=(name,team)=>[team.id,team.code,team.name].filter(Boolean).some(s=>canonical(s)===canonical(name))
 async function request(url,options={}){
@@ -92,9 +92,44 @@ async function gol(m,games,get){
   const winners=parseSummary(await get(source),m,games)
   return winners.length?{winners,source,provider:'Games of Legends'}:null
 }
+const OPGG='https://esports.op.gg/matches/graphql'
+const LEAGUES={worlds:'worlds',lpl:'lpl',lck:'lck',lec:'lec',msi:'msi',demacia:'demacia'}
+function opggMatch(rows,m){
+  const year=new Date(m.start).getUTCFullYear()
+  const found=(rows||[]).filter(row=>{
+    const serie=row.tournament?.serie,league=String(serie?.league?.shortName||'').toLowerCase()
+    const flip=pair(row.homeTeam?.acronym||row.homeTeam?.name,row.awayTeam?.acronym||row.awayTeam?.name,m.home,m.away)
+    return serie?.year===year && league===LEAGUES[m.comp] && flip!==null && row.homeTeamId!==row.awayTeamId
+      && Number.isFinite(Date.parse(row.scheduledAt)) && Math.abs(Date.parse(row.scheduledAt)-Date.parse(m.start))<=2*3600000
+      && (m.status!=='finished'||row.status==='finished'&&(flip?row.awayScore:row.homeScore)===m.home.score&&(flip?row.homeScore:row.awayScore)===m.away.score)
+  })
+  return found.length===1?found[0]:null
+}
+function opggRows(data,match,m,games){
+  const flip=pair(match.homeTeam?.acronym||match.homeTeam?.name,match.awayTeam?.acronym||match.awayTeam?.name,m.home,m.away)
+  if(flip===null)return []
+  const rows=games.filter(g=>g.state==='completed').map(g=>{
+    const row=data?.['g'+g.number],id=String(row?.winner?.id||'')
+    if(!row||row.set!==g.number||row.status!=='finished'||![String(match.homeTeamId),String(match.awayTeamId)].includes(id))return null
+    return {n:row.set,winner:(id===String(match.homeTeamId))!==flip?'home':'away'}
+  })
+  return rows.every(Boolean)&&validWinners(rows,m,games)?rows:[]
+}
+async function opgg(m,games,get){
+  const day=new Date(m.start).toISOString().slice(0,10),next=new Date(Date.parse(day)+86400000).toISOString().slice(0,10)
+  const query='query ListMatches($from: Date,$to: Date){matches(from:$from,to:$to){id scheduledAt status homeTeamId awayTeamId homeTeam{id name acronym} awayTeam{id name acronym} homeScore awayScore tournament{serie{year league{shortName}}}}}'
+  const request=async(query,variables)=>JSON.parse(await get(OPGG,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,variables})}))
+  const listed=await request(query,{from:day,to:next}),match=opggMatch(listed.data?.matches,m)
+  if(!match)return null
+  const completed=games.filter(g=>g.state==='completed'&&Number.isInteger(g.number)&&g.number>0&&g.number<=7)
+  if(!completed.length)return null
+  const result=await request('query($matchId:ID!){'+completed.map(g=>`g${g.number}:gameByMatch(matchId:$matchId,set:${g.number}){id set status winner{id}}`).join(' ')+'}',{matchId:match.id})
+  const winners=opggRows(result.data,match,m,games)
+  return winners.length?{winners,source:'https://esports.op.gg/matches/'+match.id,provider:'OP.GG Esports'}:null
+}
 async function fetchWinners(m,games,get=request,now=Date.now()){
   if(!SUPPORTED.has(m.comp)||!Number.isFinite(Date.parse(m.start)))return null
-  for(const source of [tencent,gol])try{const result=await source(m,games,get,now);if(result)return result}catch(e){console.warn('[lol-winners]',m.id,source.name,e.message)}
+  for(const source of [opgg,tencent,gol])try{const result=await source(m,games,get,now);if(result)return result}catch(e){console.warn('[lol-winners]',m.id,source.name,e.message)}
   return null
 }
-module.exports={SUPPORTED,fetchWinners,tencentRows,parseMatchList,parseSummary,tournamentFor,validWinners}
+module.exports={SUPPORTED,fetchWinners,tencentRows,parseMatchList,parseSummary,tournamentFor,validWinners,opggMatch,opggRows}

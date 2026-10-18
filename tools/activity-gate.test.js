@@ -18,6 +18,7 @@ test('missing, old, different-code, malformed and future plans always run withou
     assert.equal((await activity.gate(plan,{now,sha,discover:()=>{throw Error('must not discover')}})).run,true)
   }
   assert.equal(activity.decide(make(),{now:now+HOUR,sha}).reason,'maintenance-due')
+  assert.equal(activity.decide(make(),{now:now+50*MIN,sha}).reason,'maintenance-due')
   assert.equal(activity.decide(make(),{now,sha,force:true}).reason,'forced')
 })
 test('90-minute reminder guard, long live games and overdue starts all force normal work',()=>{

@@ -17,7 +17,8 @@ function decide(plan,{now=Date.now(),sha,force=false}={}){
   if(reportWindow(now))return run('report-window')
   if(!plan||plan.version!==VERSION||plan.sha!==sha||plan.ready!==true)return run('no-trusted-idle-plan')
   const at=Date.parse(plan.createdAt),due=Date.parse(plan.maintenanceAt)
-  if(!Number.isFinite(at)||at>now||now-at>=HOUR||!Number.isFinite(due)||due>at+HOUR||now>=due)return run('maintenance-due')
+  // Wake before the next 15-minute trigger could cross a maintenance deadline.
+  if(!Number.isFinite(at)||at>now||now-at>=HOUR||!Number.isFinite(due)||due>at+HOUR||now+15*MIN>=due)return run('maintenance-due')
   if(!Array.isArray(plan.matches)||!plan.matches.length||!plan.finals||typeof plan.finals!=='object')return run('invalid-plan')
   if(plan.matches.some(m=>!m||typeof m.id!=='string'||typeof m.status!=='string'||!Number.isFinite(Date.parse(m.start))))return run('invalid-plan')
   if(matchActivity(plan.matches,now))return run('match-or-reminder-window')

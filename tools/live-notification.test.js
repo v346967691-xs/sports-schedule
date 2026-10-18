@@ -45,7 +45,8 @@ test('summary shortens complete sentences without cutting names or guessing miss
   assert.equal(writer.summary(match('ucl', 1, 1, { statusText: '点球大战' })), '双方经点球大战决出胜负')
 })
 
-async function liveLoop({ flags = ['--notify'], rounds = 1, pushFails = false, notifyFails = false } = {}) {
+async function liveLoop({ flags = ['--notify'], rounds = 1, pushFails = false, notifyFails = false,
+  only = 'ucl', windowMinutes = 1, nearKeys = ['ucl'], kplRows = [], lolRows = [], cbaRows = [], cbaNear = false } = {}) {
   const filename = path.join(__dirname, 'live-watch.js')
   const requireActual = createRequire(filename)
   const events = [], logs = []
@@ -57,7 +58,7 @@ async function liveLoop({ flags = ['--notify'], rounds = 1, pushFails = false, n
   } } }
   const box = {
     module: { exports: {} }, __dirname, __filename: filename,
-    process: { argv: ['node', filename, '--only=ucl', '--every=60', '--minutes=1',
+    process: { argv: ['node', filename, `--only=${only}`, '--every=60', `--minutes=${windowMinutes}`,
       ...(rounds === 1 ? ['--once'] : []), ...flags], env: {} },
     console: { log: (...args) => logs.push(args), warn: (...args) => logs.push(args), error: (...args) => logs.push(args) },
     Date: Clock, AbortSignal, AbortController,
@@ -71,13 +72,14 @@ async function liveLoop({ flags = ['--notify'], rounds = 1, pushFails = false, n
       } }
       return requireActual(name)
     },
-    scanStub: async () => { scans++; return { rows: [{ id: 'ucl-123', st: 'finished', hs: 1, as: 4 }], liveComps: ['ucl'] } },
-    cbaStub: async () => ({ rows: [], near: false }),
+    scanStub: async () => { scans++; return { rows: [{ id: 'ucl-123', st: 'finished', hs: 1, as: 4 }], liveComps: nearKeys } },
+    cbaStub: async () => ({ rows: cbaRows, near: cbaNear }),
+    kplStub: async () => kplRows, lolStub: async () => lolRows,
     pushStub: async () => { events.push('publish'); return !pushFails },
   }
   vm.createContext(box)
   vm.runInContext(fs.readFileSync(filename, 'utf8'), box, { filename })
-  vm.runInContext('scan = scanStub; scanCba = cbaStub; push = pushStub', box)
+  vm.runInContext('scan = scanStub; scanCba = cbaStub; scanKpl = kplStub; scanLol = lolStub; push = pushStub', box)
   await box.module.exports.main()
   return { events, logs, scans, exitCode: box.process.exitCode }
 }
@@ -103,4 +105,41 @@ test('dry/default scans never consume consent, and failed score publication prev
   const failed = await liveLoop({ pushFails: true })
   assert.deepEqual(failed.events, ['publish'])
   assert.equal(failed.exitCode, 2)
+})
+
+test('finished KPL, LoL and CBA scores remain published but do not keep an idle loop running', async () => {
+  for (const options of [
+    { only: 'kpl', kplRows: [{ id: 'kpl-1', st: 'finished', hs: 3, as: 2 }] },
+    { only: 'worlds', lolRows: [{ id: 'worlds-1', st: 'finished', hs: 3, as: 1 }] },
+    { only: 'cba', cbaRows: [{ id: 'cba-1', st: 'finished', hs: 100, as: 90 }] },
+  ]) {
+    const result = await liveLoop({ ...options, rounds: 99, windowMinutes: 14, nearKeys: [] })
+    assert.equal(result.scans, 3, options.only)
+    assert.equal(result.events[0], 'publish')
+    assert.equal(result.events.filter(e => e === 'notify').length, 3)
+  }
+})
+
+test('ongoing KPL and LoL series and a near-start fixture retain minute-by-minute checks', async () => {
+  for (const options of [
+    { only: 'kpl', kplRows: [{ id: 'kpl-1', st: 'live', hs: 2, as: 2 }], nearKeys: [] },
+    { only: 'worlds', lolRows: [{ id: 'worlds-1', st: 'live', hs: 1, as: 1 }], nearKeys: [] },
+    { nearKeys: ['ucl'] },
+    { cbaNear: true, nearKeys: [] },
+  ]) {
+    const result = await liveLoop({ ...options, rounds: 99, windowMinutes: 5 })
+    assert.ok(result.scans > 3)
+    assert.equal(result.events.filter(e => e === 'notify').length, result.scans)
+  }
+})
+
+test('near-start protection covers the pre-60 reminder before the next trigger, excludes old/far fixtures', () => {
+  const {nearStart}=require('./live-watch')
+  const now=Date.parse('2026-10-18T00:00Z')
+  const at=minutes=>new Date(now+minutes*60000).toISOString()
+  assert.equal(nearStart(at(74),now),true)
+  assert.equal(nearStart(at(15),now),true)
+  assert.equal(nearStart(at(-20),now),true)
+  assert.equal(nearStart(at(76),now),false)
+  assert.equal(nearStart(at(-31),now),false)
 })

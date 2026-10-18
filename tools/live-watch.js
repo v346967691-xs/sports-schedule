@@ -56,6 +56,16 @@ const IDLE_EXIT_ROUNDS = 3 // 连续 N 轮没有 live 比赛就退出（省 Acti
 // 内容一直没变时，至少每隔 N 轮还是要写一次（=60s×5≈5 分钟一次心跳）。
 // 目的：客户端要能区分「比分确实没变」和「同步挂了」这两种情况。
 const HEARTBEAT_ROUNDS = 5
+const nearStarts = new Set()
+function nearStart(iso, now = Date.now()) {
+  const start = Date.parse(iso || '')
+  // Keep scheduled matches shortly after their expected start too: upstream may be late.
+  // Cover the pre-60 reminder that may become due before the next 15-minute trigger.
+  return Number.isFinite(start) && start >= now - 30 * 60000 && start <= now + 75 * 60000
+}
+function trackStart(key, iso, status) {
+  if (status === 'upcoming' && nearStart(iso)) nearStarts.add(key)
+}
 const sourceHealth = {}
 function sourceResult(key, error) {
   const previous = sourceHealth[key] || {}
@@ -178,12 +188,9 @@ async function scan(comps) {
   //    一个赛事今天第一场还没开打时，如果因为「没有 live」就被收敛掉，
   //    那这场开赛最多要等下一次全量发现（5 轮 = 5 分钟）才被扫到 ——
   //    用户会看到「比赛已经开打 4 分钟了，比分还是 0-0 未开始」。
-  //    所以「3 小时内开赛 / 2 小时内结束」的赛事都要留在候选里。
+  //    赛前75分钟保护覆盖1小时提醒及下一班15分钟间隔。
+  //    已结束比赛仍保留比分，但不把赛后时间窗当作继续盯场的依据。
   const now = Date.now()
-  const near = (iso) => {
-    const t = Date.parse(iso || '')
-    return Number.isFinite(t) && t > now - 2 * 3600000 && t < now + 3 * 3600000
-  }
 
   let cursor = 0
   const worker = async () => { while (cursor < comps.length) {
@@ -204,7 +211,8 @@ async function scan(comps) {
         const st = ev.status && ev.status.type && ev.status.type.state
         const comp = (ev.competitions && ev.competitions[0]) || null
         // 只保留时间窗内的赛事做候选（不论它现在是未开始/进行中/已结束）
-        if (comp && near(comp.date || ev.date)) found[c.key] = 1
+        if (comp && st === 'pre' && matchStatus.fromEspn(ev.status && ev.status.type).status === 'upcoming'
+          && nearStart(comp.date || ev.date, now)) found[c.key] = 1
         if (st !== 'in' && st !== 'post') continue
         if (st === 'in') found[c.key] = 1
         if (!comp) continue
@@ -257,6 +265,7 @@ async function scanTennis() {
             if (/qualif/i.test(game.round && game.round.displayName || '')) continue
             const state = game.status && game.status.type && game.status.type.state
             const start = Date.parse(game.date || '')
+            trackStart(tour, game.date, matchStatus.fromEspn(game.status && game.status.type).status)
             if (!Number.isFinite(start) || (state !== 'in' && !(state === 'post' && start >= now - 12 * 3600000))) continue
             const players = game.competitors || []
             const h = players.find(x => x.homeAway === 'home') || players[0]
@@ -315,7 +324,6 @@ async function scanCba() {
   const arr = Object.values((j && j.data) || {})
   const now = Date.now()
   const num = (v) => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null)
-  const lo = now - 2 * 3600000
   const hi = now + 3 * 3600000
   // 🔴 「窗口内有 CBA 比赛」（**含还没开打的**）—— 决定下一轮要不要继续扫 CBA。
   //    若只按「已开打」当收敛条件，一场 20 分钟后开打的比赛不会被看见，
@@ -325,11 +333,11 @@ async function scanCba() {
   const rows = []
   arr.forEach((ev) => {
     const start = Date.parse(`${ev.dates}T${ev.time || '00:00'}:00+08:00`)
-    if (Number.isFinite(start) && start >= lo && start <= hi) near = true
     if (!Number.isFinite(start) || start > hi) return
     const hs = num(ev.HomeTeamScore)
     const as = num(ev.VisitingTeamScore)
     const st = cbaStatus(ev, hs != null || as != null, start, now)
+    if (st === 'upcoming' && nearStart(new Date(start).toISOString(), now)) near = true
     if (st === 'upcoming') return
     // 进行中的比赛不受两小时窗口限制，末节/加时也必须持续跟踪。
     if (st === 'finished' && start < now - 12 * 3600000) return
@@ -409,9 +417,10 @@ async function scanKpl() {
   for (const ev of list) {
     if (Number(ev.schedule_status) === KPL_CANCELED) continue
     const ts = Number(ev.start_timestamp)
-    if (!ts) continue
+    if (!Number.isFinite(ts) || ts <= 0) continue
     const start = ts * 1000
     const st = kplEffectiveStatus(ev)
+    trackStart('kpl', new Date(start).toISOString(), st)
     if (st === 'upcoming') continue
     // 🔴 时间窗不能用「开赛 ≤2 小时」这种窄口径：BO5 打满能超过 3 小时，
     //    窄窗口会把**正在进行的比赛漏掉**（实测 17:00 开赛、19:30 仍在打）。
@@ -509,6 +518,7 @@ async function scanLol() {
       if (seenIds.has(ev.match.id)) continue
       seenIds.add(ev.match.id)
       const st = lolStatus(ev)
+      trackStart(lg.key, ev.startTime, st.status)
       if (st.status === 'upcoming') continue
       const t = Date.parse(ev.startTime)
       if (st.status === 'finished' && Number.isFinite(t) && t < now - LOL_FINISH_KEEP_MS) continue
@@ -585,6 +595,7 @@ async function main() {
     // 每 DISCOVER_EVERY 轮全量发现一次，防止漏掉「刚开赛、上一轮还是 upcoming」的联赛
     const useAll = round === 1 || round % DISCOVER_EVERY === 1
     const t0 = Date.now()
+    nearStarts.clear()
     const { rows, liveComps } = await scan(useAll ? TARGETS : comps)
     // CBA 不在 TARGETS 里（它不走 ESPN），单独一路。收敛条件 = 「上一轮有 row
     // **或**窗口内有比赛（含未开打）」—— 后者是关键：只看已开打的话，
@@ -600,9 +611,9 @@ async function main() {
       const cbaRows = cba.rows
       if (cbaRows.length) {
         rows.push(...cbaRows)
-        liveComps.push('cba')
+        if (cbaRows.some(row => row.st === 'live')) liveComps.push('cba')
       }
-      cbaActive = cbaRows.length > 0 || cba.near
+      cbaActive = cbaRows.some(row => row.st === 'live') || cba.near
     }
     // KPL 同样走官方接口单独一路，**每轮都扫、不做收敛** ——
     // 一次 POST 返回整赛季（仅 1 个请求、22KB），比 CBA 便宜一个量级。
@@ -610,7 +621,7 @@ async function main() {
       const kplRows = await scanKpl()
       if (kplRows.length) {
         rows.push(...kplRows)
-        liveComps.push('kpl')
+        if (kplRows.some(row => row.st === 'live')) liveComps.push('kpl')
       }
     }
     // LoL 系（7 个联赛）：每轮都扫。它与 CBA 不同 —— CBA 是 active 收敛（扫到过才继续扫），
@@ -622,7 +633,7 @@ async function main() {
         rows.push(...lolRows)
         lolRows.forEach((r) => {
           const k = r.id.slice(0, r.id.indexOf('-'))
-          if (liveComps.indexOf(k) === -1) liveComps.push(k)
+          if (r.st === 'live' && liveComps.indexOf(k) === -1) liveComps.push(k)
         })
       }
       const failedLolKeys = LOL_KEYS.filter(key => sourceHealth[`lol:${key}`] && !sourceHealth[`lol:${key}`].ok)
@@ -668,7 +679,7 @@ async function main() {
         } else writeFailed = true
       }
     }
-    // 小型独立积分缓存内部每5分钟节流；资料/积分源故障不阻断比分或通知。
+    // 手动启用时仍遵守15分钟节流；生产工作流已把积分任务移出逐分钟循环。
     if (tennisInsightsOn) {
       try {
         const result = await require('./tennis-insights').main(cloud, { enrich: false })
@@ -690,7 +701,7 @@ async function main() {
     roundsSinceWrite += 1
     total += rows.length
 
-    if (live || liveComps.length || cbaActive) {
+    if (live || liveComps.length || cbaActive || nearStarts.size) {
       idle = 0
       comps = TARGETS.filter((c) => liveComps.indexOf(c.key) > -1)
       if (!comps.length) comps = TARGETS
@@ -726,4 +737,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows }
+module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows, nearStart }

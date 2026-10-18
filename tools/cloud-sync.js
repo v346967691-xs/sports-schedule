@@ -92,6 +92,7 @@ async function pushRow(cloud, table, row) {
     if (result) {
       if (result.error) {
         problem = `云端返回错误：${JSON.stringify(result.error)}`
+        if (isOutage(result.error)) return { ok: false, code: 3, problem }
       } else if (!Array.isArray(result.data) || result.data.length === 0) {
         // RLS 拦截：这两张表的写入策略都只允许 id='latest'
         return { ok: false, code: 4, problem: `云端写入被拦截（返回 0 行），请检查 ${table} 的写入策略` }
@@ -565,16 +566,15 @@ async function main() {
   })
 
   // 0) 一次极轻量的云端探测，同时完成两件事：
-  //    ① 环境级故障（隔离 / 停服）→ **立刻收工**，退出码 0。
-  //       否则每 15 分钟一班都要先跑满 2 分钟抓取再失败，既白烧 Actions 分钟数，
-  //       又会让 GitHub 一天给你发 96 封失败邮件。详见 tools/cloud-outage.js。
+  //    ① 环境级故障（隔离 / 停服）→ 立刻收工，退出码 3，不能报为同步成功。
   //    ② 正常 → 用同一个返回值做节流判断（顺带省下一次请求）。
   const verdict = await gate(cloud)
   if (verdict.outage) {
-    log('⛔ 云环境当前整体不可用（隔离 / 停服），本班不重试、不算失败。')
+    log('⛔ 云环境当前整体不可用（隔离 / 停服），本班停止，不重试。')
     log(`   原因：${verdict.detail}`)
     log('   这是环境问题不是代码问题：恢复后下一班会自动照常同步，无需改代码、无需发版。')
     ghOut('pushed', 'false')
+    process.exitCode = 3
     return
   }
   log(`节流闸：${verdict.reason}`)
@@ -716,10 +716,11 @@ async function main() {
     generated_at: new Date().toISOString(),
   })
   if (!pushed.ok) {
-    // 探测阶段还好、推送时才撞上隔离，也按「环境问题」处理，不飘红。
+    // 探测后才发生隔离，也必须报告不可用。
     if (isOutage(pushed.problem)) {
-      log('⛔ 推送时撞上云环境不可用，本班不重试、不算失败。')
+      log('⛔ 推送时撞上云环境不可用，本班停止。')
       ghOut('pushed', 'false')
+      process.exitCode = 3
       return
     }
     console.error('[cloud-sync] 推送云端失败：', pushed.problem)

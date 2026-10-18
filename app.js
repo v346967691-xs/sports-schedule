@@ -19,7 +19,14 @@ App({
   },
 
   /** 检查会话并加载关注列表，页面可在 onShow 里调用 */
-  async refreshAuth() {
+  refreshAuth() {
+    // Merge simultaneous launch/page refreshes; always check the current session on a later call.
+    if (this._authRefresh) return this._authRefresh
+    this._authRefresh = this.loadAuth().finally(() => { this._authRefresh = null })
+    return this._authRefresh
+  },
+
+  async loadAuth() {
     if (!isReady()) {
       this.globalData.authState = 'unavailable'
       this.globalData.favIds = []
@@ -37,10 +44,13 @@ App({
     return this.globalData.authState
   },
 
-  async refreshFavorites() {
-    const res = await favorites.favoritesByMatch()
-    if (res.data) this.globalData.favIds = Object.keys(res.data)
-    return this.globalData.favIds
+  refreshFavorites() {
+    if (this._favoritesRefresh) return this._favoritesRefresh
+    this._favoritesRefresh = favorites.favoritesByMatch().then((res) => {
+      if (res.data) this.globalData.favIds = Object.keys(res.data)
+      return this.globalData.favIds
+    }).finally(() => { this._favoritesRefresh = null })
+    return this._favoritesRefresh
   },
 
   isFav(matchId) {

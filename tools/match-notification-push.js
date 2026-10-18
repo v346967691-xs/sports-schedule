@@ -141,8 +141,24 @@ async function main(cloud, env = process.env, now = Date.now(), options = {}) {
     const found = await templates(token)
     return { checked: true, templates: Object.keys(found).length, sent: 0 }
   }
+  // Runner-local negative cache only. No extra cloud SELECT, no cached recipients or tokens.
+  // Bounded at 45s: the normal 60s loop still checks each round; failed/nonempty claims are never cached.
+  const cacheFile = env.NOTIFICATION_EMPTY_CACHE
+  const fs = require('node:fs')
+  if (cacheFile && !options.force) {
+    try {
+      const stamp = Number(fs.readFileSync(cacheFile, 'utf8'))
+      if (stamp > 0 && now >= stamp && now - stamp < 45000) return { processed: 0, sent: 0, emptyCache: true }
+    } catch (_) { /* Missing or invalid state means claim normally. */ }
+  }
+  if (cacheFile) { try { fs.unlinkSync(cacheFile) } catch (_) { /* Optional local state. */ } }
   const rows = await claim(cloud, env.NOTIFY_TOKEN, now)
-  if (!rows.length) return { processed: 0, sent: 0 }
+  if (!rows.length) {
+    if (cacheFile) {
+      try { fs.writeFileSync(cacheFile, String(now)) } catch (_) { /* Never block delivery on diagnostics. */ }
+    }
+    return { processed: 0, sent: 0 }
+  }
   const token = await accessToken(env.WECHAT_APP_ID, env.WECHAT_APP_SECRET)
   const templateById = await templates(token)
   const state = ['developer', 'trial', 'formal'].includes(env.WECHAT_MINIPROGRAM_STATE) ? env.WECHAT_MINIPROGRAM_STATE : 'formal'

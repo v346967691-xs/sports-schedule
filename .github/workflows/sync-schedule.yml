@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     # ⚠️ 留出实时比分盯场（最长 14 分钟）、前序同步和最终云端新鲜度校验的余量。
     timeout-minutes: 20
+    env:
+      CLOUD_USAGE_DIR: '${{ runner.temp }}/sports-cloud-usage'
+      NOTIFICATION_EMPTY_CACHE: '${{ runner.temp }}/sports-notification-empty'
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -64,18 +67,25 @@ jobs:
       - name: 验证网球积分与参赛判断
         run: node --test tools/tennis-insights.test.js tools/tennis-participation.test.js tools/tennis-live-result.test.js tools/tennis-seed-rank-source.test.js
 
+      - name: 云环境可用性入口检查
+        id: cloudhealth
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/cloud-health.js
+
       - name: 刷新网球实时积分与官方参赛资料
+        if: steps.cloudhealth.outputs.available == 'true'
         continue-on-error: true
-        run: node tools/tennis-insights.js
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/tennis-insights.js
 
       - name: 验证 ATP/WTA 单场统计
         run: node --test tools/tennis-stats.test.js tools/live-tennis-stats.test.js tools/match-status.test.js tools/tennis-levels.test.js
 
       - name: 刷新 ATP/WTA 单场统计（官方优先、缺项补齐）
+        if: steps.cloudhealth.outputs.available == 'true'
         continue-on-error: true
-        run: node tools/tennis-stats.js
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/tennis-stats.js
 
       - name: 刷新并推送赛程快照到云端
+        if: steps.cloudhealth.outputs.available == 'true'
         id: sync
         # 🔴 内部自带节流闸（默认 90 分钟一次）：被触发不等于会写，见文件头注释。
         #    跳过走退出码 0（正常路径），并把 pushed=false 写给后面的 step 判断。
@@ -93,10 +103,13 @@ jobs:
           #    真正被拉长的只有历史日桶的批量校正频率。
           # ⚠️ 改这个值前先读 tools/cloud-sync.js 里 DETAIL_MIN_INTERVAL_MIN 上方的注释。
           SYNC_DETAIL_INTERVAL_MIN: '180'
-        run: node tools/cloud-sync.js
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/cloud-sync.js
 
       - name: 校验云端快照是否真的新鲜
-        run: node tools/check-cloud.js
+        id: snapshothealth
+        continue-on-error: true
+        if: steps.cloudhealth.outputs.available == 'true'
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/check-cloud.js
 
       # 生成日报并推送到 daily_brief。为什么每次同步都跑，而不是卡出报时刻：
       #   ① 幂等 —— 每次都重算最近 2 天的全部期次，跑几次结果都一样；
@@ -132,17 +145,18 @@ jobs:
 
       - name: 生成日报并推送到云端
         continue-on-error: true
-        if: steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1'
-        run: node tools/brief-push.js
+        if: steps.cloudhealth.outputs.available == 'true' && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1')
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/brief-push.js
 
       - name: 生成 S 赛晨报（09 点首发、14 点更新，失败自动重试）
         id: worldsbrief
         continue-on-error: true
-        if: always() && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1')
-        run: node tools/worlds-brief-push.js
+        if: always() && steps.cloudhealth.outputs.available == 'true' && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.worlds_due == '1')
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/worlds-brief-push.js
 
       # 订阅提醒只发送用户已同意的消息。失败留到盯场之后统一报红，保证比分刷新仍执行。
       - name: 发送全赛事赛前与赛果订阅通知
+        if: steps.cloudhealth.outputs.available == 'true'
         id: notifications
         continue-on-error: true
         env:
@@ -152,7 +166,7 @@ jobs:
           WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
         run: |
           if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
-          node tools/match-notification-push.js
+          NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/match-notification-push.js
 
       # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。
       #
@@ -170,6 +184,7 @@ jobs:
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
       # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
       - name: 盯进行中的比赛（实时比分）
+        if: steps.cloudhealth.outputs.available == 'true'
         # 复用每分钟盯场循环检查赛前/赛果通知，避免只在每班开始时发送一次。
         env:
           NOTIFY_TOKEN: ${{ secrets.NOTIFY_TOKEN }}
@@ -178,12 +193,12 @@ jobs:
           WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
         run: |
           if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
-          node tools/live-watch.js --minutes=14 --every=60 --notify --tennis-insights
+          NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/live-watch.js --minutes=14 --every=60 --notify
 
       # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
       - name: 校验实时比分新鲜度
-        if: always()
-        run: node tools/check-cloud.js --live
+        if: always() && steps.cloudhealth.outputs.available == 'true'
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/check-cloud.js --live
 
       - name: 检查订阅通知执行结果
         if: always() && steps.notifications.outcome == 'failure'
@@ -197,5 +212,22 @@ jobs:
           echo '::error::S 赛日报未成功保存，请查看日报步骤日志（比分刷新仍已执行）'
           exit 1
 
-# 每周心跳另开一个工作流（见 .github/workflows/keepalive.yml），
-# 避免它跟着这里每 15 分钟白跑一次检出。
+
+      - name: 统一报告云环境与快照故障
+        if: always() && (steps.cloudhealth.outputs.available != 'true' || steps.snapshothealth.outcome == 'failure')
+        run: |
+          echo '::error::云环境不可用或快照陈旧，请检查入口检查与快照校验日志；本班不能标为健康。'
+          exit 1
+
+      - name: 汇总云请求诊断
+        if: always()
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/cloud-usage-summary.js
+
+      - name: 保存本班云请求诊断（供七日对账）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-usage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sports-cloud-usage
+          retention-days: 14
+          if-no-files-found: ignore

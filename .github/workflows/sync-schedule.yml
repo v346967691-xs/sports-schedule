@@ -68,7 +68,10 @@ jobs:
         uses: actions/cache/restore@v4
         continue-on-error: true
         with:
-          path: .workbuddy/activity-plan.json
+          # 两份都是纯公开元数据：上一班的闲时判断依据 + Worlds 官方赛程签名。
+          path: |
+            .workbuddy/activity-plan.json
+            .workbuddy/worlds-refresh.json
           key: activity-plan-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: activity-plan-v1-${{ github.sha }}-
 
@@ -128,6 +131,10 @@ jobs:
           #    真正被拉长的只有历史日桶的批量校正频率。
           # ⚠️ 改这个值前先读 tools/cloud-sync.js 里 DETAIL_MIN_INTERVAL_MIN 上方的注释。
           SYNC_DETAIL_INTERVAL_MIN: '180'
+          # Worlds 对阵定向刷新（tools/worlds-refresh.js）的签名缓存。
+          # 命中就一个云端请求都不发；丢了最多多读一次 meta，不影响正确性。
+          # ⚠️ 必须放 step 级或写 ${{ github.workspace }}：job 级 env 里没有 runner context。
+          WORLDS_CACHE: ${{ github.workspace }}/.workbuddy/worlds-refresh.json
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/cloud-sync.js
 
       - name: 校验云端快照是否真的新鲜
@@ -259,7 +266,9 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: .workbuddy/activity-plan.json
+          path: |
+            .workbuddy/activity-plan.json
+            .workbuddy/worlds-refresh.json
           key: activity-plan-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 汇总云请求诊断

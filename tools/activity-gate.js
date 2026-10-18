@@ -27,6 +27,8 @@ function decide(plan,{now=Date.now(),sha,force=false}={}){
 async function gate(plan,options={}){
   const local=decide(plan,options)
   if(local.run)return local
+  const worlds=await worldsProbe(plan,options)
+  if(worlds)return worlds
   try{
     const result=await (options.discover||discover)()
     const after=decide(plan,{...options,now:options.now??Date.now()})
@@ -38,18 +40,46 @@ async function gate(plan,options={}){
     return {run:false,reason:'verified-idle',sources:result.sources,maintenanceAt:plan.maintenanceAt,workbuddyRequests:0}
   }catch(_){return {run:true,reason:'upstream-probe-failed'}}
 }
+/**
+ * Official Worlds schedule signature. Public HTTP only; never touches WorkBuddy.
+ * Returns '' when the feed is unusable, so a flaky upstream can never force a run.
+ */
+async function worldsSignature(now){
+  try{
+    const worlds=require('./worlds-refresh')
+    const rows=await worlds.collect(now)
+    return rows.length?worlds.signature(rows):''
+  }catch(_){return ''}
+}
+/**
+ * Draw-pending window. Only evaluated while the cloud snapshot still holds future
+ * Worlds fixtures with an undecided side; once the bracket is complete this returns
+ * null forever (until the next round is drawn) and the idle savings resume untouched.
+ */
+async function worldsProbe(plan,options={}){
+  if(!plan||plan.worldsPending!==true)return null
+  const now=options.now??Date.now()
+  let sig
+  try{sig=await (options.worldsSignature||worldsSignature)(now)}catch(_){return null}
+  if(!sig||plan.worldsSig===sig)return null
+  return {run:true,reason:'worlds-fixtures-published'}
+}
 async function discover(){
   // Isolate and bound all retries together. A hung source cannot delay the normal job indefinitely.
   const execute=require('node:util').promisify(require('node:child_process').execFile)
   const {stdout}=await execute(process.execPath,[__filename,'--discover'],{timeout:45000,maxBuffer:1024*1024})
   return JSON.parse(stdout.trim())
 }
-function makePlan({matches,snapshotAt,sources,details={},stats={},now=Date.now(),sha,expected=[],healthy=true}){
+function makePlan({matches,snapshotAt,sources,details={},stats={},now=Date.now(),sha,expected=[],healthy=true,worldsSig=''}){
   const snapshotTime=Date.parse(snapshotAt)
   const base={version:VERSION,sha,createdAt:new Date(now).toISOString(),ready:false,
     maintenanceAt:new Date(Number.isFinite(snapshotTime)?Math.min(now+HOUR,snapshotTime+90*MIN):now).toISOString(),
     matches:matches.map(m=>({id:m.id,status:m.status,start:m.start})),
-    finals:Object.fromEntries(matches.filter(m=>m.status==='finished').map(m=>[m.id,score({hs:m.home?.score,as:m.away?.score})]))}
+    finals:Object.fromEntries(matches.filter(m=>m.status==='finished').map(m=>[m.id,score({hs:m.home?.score,as:m.away?.score})])),
+    // Draw-pending memory: the plan only keeps {id,status,start}, so the TBD sides have to
+    // be summarised here or the idle gate would be blind to the bracket landing.
+    worldsPending:require('./worlds-refresh').hasPending(matches,now),
+    worldsSig}
   if(!healthy)return {...base,reason:'previous-job-failed'}
   if(!matches.length||!expected.length||expected.some(k=>!sources?.[k]?.ok||!Number.isFinite(Date.parse(sources[k].checkedAt))
     ||now-Date.parse(sources[k].checkedAt)>10*MIN||Date.parse(sources[k].checkedAt)>now))return {...base,reason:'unhealthy-or-missing-sources'}
@@ -70,12 +100,15 @@ function makePlan({matches,snapshotAt,sources,details={},stats={},now=Date.now()
   }
   return {...base,ready:true,reason:'healthy-idle-certificate'}
 }
-async function record(cloud,{now=Date.now(),sha,healthy=true}={}){
+async function record(cloud,{now=Date.now(),sha,healthy=true,worldsSignature:readWorldsSig=worldsSignature}={}){
   if(!healthy)return {version:VERSION,sha,createdAt:new Date(now).toISOString(),ready:false,reason:'previous-job-failed'}
   const read=async(table,fields,configure=q=>q.eq('id','latest').single())=>{
     const r=await configure(cloud.database.from(table).select(fields));if(r.error||!r.data)throw Error('Unable to read '+table);return r.data
   }
-  const [snapshot,live]=await Promise.all([read('schedule_cache','data,meta,generated_at'),read('live_scores','data,generated_at')])
+  // The Worlds signature costs one public HTTP request and is what lets the idle gate tell
+  // "nothing changed since last shift" from "the draw just landed". A failed fetch yields ''
+  // and simply makes the next check re-run instead of guessing.
+  const [snapshot,live,worldsSig]=await Promise.all([read('schedule_cache','data,meta,generated_at'),read('live_scores','data,generated_at'),readWorldsSig(now)])
   let matches=require('../utils/snapshot').decodeSnapshot(snapshot.data).map(m=>({...m,home:{...m.home},away:{...m.away}}))
   const archive=require('../utils/tennis-event')
   if(snapshot.meta?.tennisEvents?.version===3)matches=archive.mergeRows(matches,archive.archiveRows(snapshot.meta.tennisEvents))
@@ -89,7 +122,7 @@ async function record(cloud,{now=Date.now(),sha,healthy=true}={}){
     if(p.hs!=null)m.home.score=p.hs;if(p.as!=null)m.away.score=p.as
   }
   const expected=require('./live-watch').expectedSources()
-  const input={matches,snapshotAt:snapshot.generated_at,sources:live.data?.sources,now,sha,expected}
+  const input={matches,snapshotAt:snapshot.generated_at,sources:live.data?.sources,now,sha,expected,worldsSig}
   // Busy runs only need an active marker. Read recent stats solely when idle is possible.
   if(matchActivity(matches,now))return makePlan(input)
   const recent=matches.filter(m=>m.status==='finished'&&Date.parse(m.start)>=now-2*DAY&&Date.parse(m.start)<=now)
@@ -125,4 +158,4 @@ async function cli(){
     `## 闲时整班判断\n\n${result.run?'正常执行云端任务':'确认空闲，本班跳过全部 WorkBuddy 请求'}；原因：${result.reason}。${result.run?'':'仅检查外部赛事源，没有探测云数据库；不代表云数据刚刚刷新。'}\n`)
 }
 if(require.main===module)cli().catch(error=>{console.error(error.message);process.exitCode=1})
-module.exports={decide,gate,makePlan,record,reportWindow,matchActivity}
+module.exports={decide,gate,makePlan,record,reportWindow,matchActivity,worldsProbe,worldsSignature}

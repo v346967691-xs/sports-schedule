@@ -576,6 +576,29 @@ async function scorersFastLane(cloud,rows){
 }
 
 /**
+ * Worlds 对阵快通道。
+ *
+ * 抽签把 `TBD–TBD` 换成真实队伍后，全量快照还要等 90 分钟节流闸，用户最多干等一个半小时。
+ * 这里每班只花一次官方赛程请求，在**对阵真的变了**时才局部改写 schedule_cache
+ * （逐行比对逻辑见 tools/worlds-refresh.js）。
+ *
+ * 三条硬约束：
+ *   ① 绝不改 generated_at —— 局部刷新不能被当成全站刚刷新，否则会把 90 分钟主闸一直往后推。
+ *   ② 只碰 worlds 开头的行，其他赛事原样带过。
+ *   ③ 官方源失败 / 返回空 → 保留原有对阵，不用「缺失」推断取消。
+ */
+async function worldsFastLane(cloud) {
+  try {
+    const result = await require('./worlds-refresh').refresh(cloud, { cacheFile: process.env.WORLDS_CACHE })
+    log(`[worlds] ${JSON.stringify(result)}`)
+    return result
+  } catch (error) {
+    console.warn('[cloud-sync] Worlds 定向刷新失败（保留原对阵）：', error.message)
+    return { checked: false, reason: 'failed' }
+  }
+}
+
+/**
  * 往 GitHub Actions 的 step output 里写一个开关，供后续 step 判断是否值得一并执行。
  * 本地跑（没有 GITHUB_OUTPUT）时静默跳过 —— 这个文件只做增量通知，不影响主流程。
  */
@@ -618,6 +641,8 @@ async function main() {
     await detailFastLane(cloud, liveRows)
     await standingsFastLane(cloud, liveRows)
     await scorersFastLane(cloud, liveRows)
+    // 抽签 / 对阵调整走独立的定向刷新，不受 90 分钟主闸约束。
+    await worldsFastLane(cloud)
     return
   }
   ghOut('pushed', 'true')

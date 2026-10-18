@@ -1130,4 +1130,4 @@ if (require.main === module) {
 //    别让两边各写一份语义（第二处实现的老毛病）。
 // ⚠️ LOL / LOL_KEY 也导出：live-watch.js 的 LoL 快通道要打同一个上游，
 //    两处各写一份 key 迟早会漂移（当年 ESPN 域名就踩过）。
-module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus, tennisScore, fetchTennis, WTA_TOUR_EVENT_IDS }
+module.exports = { COMPETITIONS, beijingDay, beijingTime, KPL_STATE, KPL_CANCELED, LOL, LOL_KEY, cbaStatus, tennisScore, fetchTennis, WTA_TOUR_EVENT_IDS, fetchLol }

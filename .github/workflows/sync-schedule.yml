@@ -31,7 +31,12 @@ on:
     # 想要真正可靠的刷新，只能靠外部定时打 workflow_dispatch（见项目 MEMORY），
     # GitHub 自己的 cron 给不了这个精度。
     - cron: '*/15 * * * *'
-  workflow_dispatch: # 允许在 GitHub 仓库页面手动点「Run workflow」立即同步一次
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: '忽略闲时判断，强制执行本班云端任务'
+        type: boolean
+        default: false
 
 # 同一时刻只跑一个，避免上一次还没跑完又叠一次
 concurrency:
@@ -58,6 +63,15 @@ jobs:
       - name: 安装云 SDK
         run: npm install
 
+      # GitHub cache contains only public match metadata; restoring it never touches WB.
+      - name: 恢复上一班公共活动记录
+        uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: .workbuddy/activity-plan.json
+          key: activity-plan-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: activity-plan-v1-${{ github.sha }}-
+
       - name: 验证数据链路回归
         run: npm run test:data
 
@@ -67,11 +81,21 @@ jobs:
       - name: 验证网球积分与参赛判断
         run: node --test tools/tennis-insights.test.js tools/tennis-participation.test.js tools/tennis-live-result.test.js tools/tennis-seed-rank-source.test.js
 
+      - name: 判断是否可以整班免云端访问
+        id: activity
+        continue-on-error: true
+        env:
+          ACTIVITY_FORCE: ${{ inputs.force_refresh == true || vars.SYNC_IDLE_SKIP_ENABLED == 'false' }}
+        run: node tools/activity-gate.js
+
       - name: 云环境可用性入口检查
         id: cloudhealth
+        # Missing/failed gate output fails open: only an explicit false skips the cloud.
+        if: steps.activity.outputs.run != 'false'
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/cloud-health.js
 
       - name: 刷新网球实时积分与官方参赛资料
+        id: insights
         if: steps.cloudhealth.outputs.available == 'true'
         continue-on-error: true
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/tennis-insights.js
@@ -80,6 +104,7 @@ jobs:
         run: node --test tools/tennis-stats.test.js tools/live-tennis-stats.test.js tools/match-status.test.js tools/tennis-levels.test.js
 
       - name: 刷新 ATP/WTA 单场统计（官方优先、缺项补齐）
+        id: tennisstats
         if: steps.cloudhealth.outputs.available == 'true'
         continue-on-error: true
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/tennis-stats.js
@@ -144,6 +169,7 @@ jobs:
           esac
 
       - name: 生成日报并推送到云端
+        id: briefpublish
         continue-on-error: true
         if: steps.cloudhealth.outputs.available == 'true' && (steps.sync.outputs.pushed == 'true' || steps.briefwin.outputs.due == '1')
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/brief-push.js
@@ -184,6 +210,7 @@ jobs:
       # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
       # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
       - name: 盯进行中的比赛（实时比分）
+        id: livewatch
         if: steps.cloudhealth.outputs.available == 'true'
         # 复用每分钟盯场循环检查赛前/赛果通知，避免只在每班开始时发送一次。
         env:
@@ -197,6 +224,7 @@ jobs:
 
       # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
       - name: 校验实时比分新鲜度
+        id: livehealth
         if: always() && steps.cloudhealth.outputs.available == 'true'
         run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/check-cloud.js --live
 
@@ -214,10 +242,25 @@ jobs:
 
 
       - name: 统一报告云环境与快照故障
-        if: always() && (steps.cloudhealth.outputs.available != 'true' || steps.snapshothealth.outcome == 'failure')
+        if: always() && steps.activity.outputs.run != 'false' && (steps.cloudhealth.outputs.available != 'true' || steps.snapshothealth.outcome == 'failure')
         run: |
           echo '::error::云环境不可用或快照陈旧，请检查入口检查与快照校验日志；本班不能标为健康。'
           exit 1
+
+      - name: 保存本班公共活动记录
+        if: always() && steps.activity.outputs.run != 'false'
+        continue-on-error: true
+        env:
+          ACTIVITY_HEALTHY: ${{ job.status == 'success' && steps.cloudhealth.outputs.available == 'true' && steps.snapshothealth.outcome == 'success' && steps.livehealth.outcome == 'success' && steps.livewatch.outcome == 'success' && steps.insights.outcome == 'success' && steps.tennisstats.outcome == 'success' && steps.sync.outcome == 'success' && steps.notifications.outcome == 'success' && steps.worldsbrief.outcome != 'failure' && steps.briefpublish.outcome != 'failure' }}
+        run: NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/activity-gate.js --record
+
+      - name: 缓存下一班判断依据
+        if: always() && steps.activity.outputs.run != 'false'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .workbuddy/activity-plan.json
+          key: activity-plan-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 汇总云请求诊断
         if: always()

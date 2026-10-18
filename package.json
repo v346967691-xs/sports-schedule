@@ -9,7 +9,7 @@
     "sync-cloud": "node tools/cloud-sync.js",
     "smoke": "node tools/smoke.js",
     "test:tennis": "node --test tools/tennis.test.js",
-    "test:data": "node --test tools/scorers-freshness.test.js tools/cloud-budget.test.js tools/data-regression.test.js tools/worlds.test.js tools/worlds-archive.test.js tools/worlds-brief.test.js tools/match-notification.test.js tools/match-notification-e2e.test.js tools/match-notification-db.test.js tools/match-notification-subscribe-db.test.js tools/live-notification.test.js tools/match-mvp-db.test.js tools/match-mvp-data.test.js tools/match-mvp.test.js tools/tennis.test.js tools/lol-winners.test.js"
+    "test:data": "node --test tools/activity-gate.test.js tools/scorers-freshness.test.js tools/cloud-budget.test.js tools/data-regression.test.js tools/worlds.test.js tools/worlds-archive.test.js tools/worlds-brief.test.js tools/match-notification.test.js tools/match-notification-e2e.test.js tools/match-notification-db.test.js tools/match-notification-subscribe-db.test.js tools/live-notification.test.js tools/match-mvp-db.test.js tools/match-mvp-data.test.js tools/match-mvp.test.js tools/tennis.test.js tools/lol-winners.test.js"
   },
   "dependencies": {
     "@tencent-ai/workbuddy-cloud-sdk": "dev"

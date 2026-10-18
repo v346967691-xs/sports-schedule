@@ -155,7 +155,7 @@ async function loadMatches(cloud) {
 const bucketKey = m => `${m.comp}:tennis-stats:${dayKey(m.start)}`
 function hasCore(p) {
   const rows=p?.sections?.find(s=>s.n===0)?.rows||[]
-  return ['ACE','双误','总得分'].every(label=>{const r=rows.find(r=>r[0]===label);return r&&r[1]!==null&&r[2]!==null})
+  return ['ACE','双误','总得分'].every(label=>{const r=rows.find(r=>r[0]===label);return r&&r[1]!=null&&r[2]!=null})
 }
 /** 官方已有值优先；补充源只填空，不把较少字段的页面覆盖到官方统计上。 */
 function supplement(primary,secondary) {
@@ -245,4 +245,4 @@ async function main(cloud, options = {}) {
     failed:(official.failed||0)+(fallback.failed||0),writes:official.writes+fallback.writes,sources:{official,liveTennis:fallback}}
 }
 if(require.main===module)main().then(result=>console.log(JSON.stringify(result))).catch(e=>{console.error(e.message);process.exitCode=1})
-module.exports={findEvent,findMatch,normalize,mergeStats,main,collectRelay,dayKey}
+module.exports={findEvent,findMatch,normalize,mergeStats,main,collectRelay,dayKey,hasCore}

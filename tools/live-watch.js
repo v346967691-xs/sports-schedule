@@ -201,6 +201,7 @@ async function scan(comps) {
       let j
       try {
         j = await getJSON(`${ESPN}/${c.sport}/${c.league}/scoreboard?dates=${d}`)
+        if(!Array.isArray(j?.events))throw Error('ESPN 响应缺少赛程')
       } catch (err) {
         problem = err
         console.error(`[live-watch] ESPN(${c.key}/${d}) 失败：${err.message}`)
@@ -257,6 +258,7 @@ async function scanTennis() {
       const dates = espnDates()
       for (const date of dates) {
         const j = await getJSON(`${ESPN}/tennis/${tour}/scoreboard?dates=${date}`)
+        if(!Array.isArray(j?.events))throw Error('网球响应缺少赛程')
         for (const ev of (j.events || [])) for (const group of (ev.groupings || [])) {
           if (tour === 'wta' && !WTA_TOUR_EVENT_IDS.has(String(ev.id || '').split('-')[0])) continue
           const expected = tour === 'atp' ? 'mens-singles' : 'womens-singles'
@@ -730,6 +732,21 @@ async function main() {
   if (writeFailed || notificationFailed || Object.values(sourceHealth).some(s => !s.ok)) process.exitCode = 2
 }
 
+function expectedSources() {
+  return TARGETS.map(c => `espn:${c.key}:${c.league}`).concat(['cba','kpl','tennis:atp','tennis:wta'],LOL_KEYS.map(k=>`lol:${k}`))
+}
+
+/** Upstream-only discovery. Never constructs a cloud client or claims notifications. */
+async function probeActivity() {
+  nearStarts.clear()
+  for(const key of Object.keys(sourceHealth))delete sourceHealth[key]
+  const chunks=await Promise.all([scan(TARGETS),scanCba().catch(error=>{sourceResult('cba',error);return {rows:[]}}),scanKpl(),scanLol(),scanTennis()])
+  const rows=chunks.flatMap(part=>Array.isArray(part)?part:part.rows)
+  const problems=expectedSources().filter(key=>!sourceHealth[key]?.ok)
+  return {rows,active:rows.some(row=>row.st==='live')||chunks[0].liveComps.length>0||nearStarts.size>0||!!chunks[1].near,
+    healthy:problems.length===0,problems,sources:expectedSources().length}
+}
+
 if (require.main === module) {
   main().catch((err) => {
     console.error('[live-watch] 未预期错误：', err && err.stack ? err.stack : err)
@@ -737,4 +754,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows, nearStart }
+module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows, nearStart, expectedSources, probeActivity }

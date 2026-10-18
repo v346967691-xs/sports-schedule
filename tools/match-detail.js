@@ -1181,7 +1181,7 @@ function dayKey(iso) {
  *   已结束：抓一次就够（事件不会变）
  *   未开赛：12 小时一次（近况/交锋变化慢，而且赛前 ESPN 也没更多东西可给）
  */
-function needsFetch(m, captured) {
+function needsFetch(m, captured, now = Date.now()) {
   // --force：连已结束的比赛也重抓（改过 SCHEMA 或要补齐阵容球员池时用）
   if (FORCE) return true
   if (m.status === 'live' || m.status === 'inprogress') return true
@@ -1197,8 +1197,8 @@ function needsFetch(m, captured) {
     //   ④ 所有赛事：已完赛但整份 payload 一块内容都没有（上游残缺响应，事故四）
     //   ⚠️ 不能每班都试（15 分钟一次太浪费）→ 开赛 48 小时内、每 2 小时补一次，过期认了。
     const t = Date.parse(m.start)
-    const inWindow = Number.isFinite(t) && (Date.now() - t < RETRY_WINDOW_MS
-      || (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive()))
+    const inWindow = Number.isFinite(t) && (now - t < RETRY_WINDOW_MS
+      || (worldsArchive.isWorlds2026(m) && worldsArchive.archiveActive(now)))
     // 「已完赛但 payload 还是壳吗」—— 判据集中算一次，供两处用：
     //   · 决定这次要不要重抓（下面 return true）
     //   · 决定重抓的**间隔**（壳按 15 分钟，非壳按 2 小时）
@@ -1208,7 +1208,7 @@ function needsFetch(m, captured) {
     //    摘完的 payload 看起来跟「残缺响应」一模一样（实测 10-05 两场 NBA 就是这种）。
     //    若不限制，这类桶会在 48h 内被反复重抓，抓回来又被裁掉 —— 纯浪费请求量。
     //    而真正的残缺响应在开赛当天就会被发现，24h 足够补上。
-    const emptyShell = Date.now() - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
+    const emptyShell = now - t < EMPTY_RETRY_WINDOW_MS && !hasContent(prev)
     let shell = prev.fin === false || emptyShell
     // 名单/比赛统计可能晚于比分结算；投票数据在 48h 内独立补抓。
     if (!isLol(m.comp) && (!prev.mvp || prev.mvp.v !== 1 || prev.mvp.complete !== true)) shell = true
@@ -1231,12 +1231,12 @@ function needsFetch(m, captured) {
     //    ⚠️ 不会因此增加请求量：常规路径只在主闸放行那一班跑（约 90 分钟一班），
     //       所以 15 分钟闸对它等于「每次都放行」，与原来最多 2 小时一次的频率同量级；
     //       而壳本身就是短暂状态（补抓一次 `fin` 就变 true / 局数就齐了）。
-    const gapOk = Date.now() - (prev.ts || 0) > ((FAST || shell) ? FAST_GAP_MS : RETRY_GAP_MS)
+    const gapOk = now - (prev.ts || 0) > ((FAST || shell) ? FAST_GAP_MS : RETRY_GAP_MS)
     if (!inWindow || !gapOk) return false
     if (shell) return true
     return false
   }
-  return Date.now() - (prev.ts || 0) > UPCOMING_REFRESH_MS
+  return now - (prev.ts || 0) > UPCOMING_REFRESH_MS
 }
 
 async function main() {

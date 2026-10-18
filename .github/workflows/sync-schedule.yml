@@ -44,8 +44,8 @@ jobs:
     # ⚠️ 留出实时比分盯场（最长 14 分钟）、前序同步和最终云端新鲜度校验的余量。
     timeout-minutes: 20
     env:
-      CLOUD_USAGE_DIR: '${{ runner.temp }}/sports-cloud-usage'
-      NOTIFICATION_EMPTY_CACHE: '${{ runner.temp }}/sports-notification-empty'
+      CLOUD_USAGE_DIR: '${{ github.workspace }}/.cloud-diagnostics/usage'
+      NOTIFICATION_EMPTY_CACHE: '${{ github.workspace }}/.cloud-diagnostics/notification-empty'
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -228,6 +228,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cloud-usage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/sports-cloud-usage
+          path: ${{ github.workspace }}/.cloud-diagnostics/usage
           retention-days: 14
           if-no-files-found: ignore

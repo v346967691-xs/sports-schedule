@@ -341,3 +341,14 @@ test('record stores the pending flag and the official signature the next shift c
   assert.equal(blank.worldsPending, true)
   assert.equal(blank.worldsSig, '')
 })
+
+test('the batch stays serialised and the signature is recorded after the local write', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/sync-schedule.yml'), 'utf8')
+  // 局部写和全量 push 写的是同一行：并发会让后写者用旧快照盖掉前写者。
+  assert.match(workflow, /concurrency:\s*\n\s*group: sync-schedule\s*\n\s*cancel-in-progress: false/)
+  // record 必须跑在 cloud-sync 之后，否则这一班记下的签名会是上一版的对阵。
+  assert.ok(workflow.indexOf('node tools/cloud-sync.js') < workflow.indexOf('tools/activity-gate.js --record'))
+  // 🔴 job 级 env 里没有 runner context：写 runner.temp 会让整个 workflow 变成 0 秒失败。
+  assert.match(workflow, /WORLDS_CACHE: \$\{\{ github\.workspace \}\}/)
+  assert.ok(!workflow.includes('runner.temp'), 'job 级 env 不得引用 runner 上下文')
+})

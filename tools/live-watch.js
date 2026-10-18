@@ -537,6 +537,24 @@ async function scanLol() {
   return chunks.flat()
 }
 
+/** A skipped league is not an empty league: keep its last verified final for client readers.
+ * Preserve observation time so an unrelated heartbeat cannot make old results look fresh.
+ * Retained finals never enter liveComps and never keep the collector awake.
+ */
+function retainFinalRows(rows, previousData, now = Date.now()) {
+  const result = rows.slice()
+  const present = new Set(rows.map(row => row.id))
+  for (const row of previousData && previousData.rows || []) {
+    if (!row || !row.id || present.has(row.id) || row.st !== 'finished'
+      || !Number.isFinite(row.hs) || row.hs < 0 || !Number.isFinite(row.as) || row.as < 0) continue
+    const at = Date.parse(row.at || previousData.generatedAt || '')
+    if (!Number.isFinite(at) || now - at > 15 * 60000 || at > now + 60000) continue
+    result.push({ ...row, at: new Date(at).toISOString() })
+    present.add(row.id)
+  }
+  return result
+}
+
 async function push(cloud, rows) {
   const nowIso = new Date().toISOString()
   const row = {
@@ -576,6 +594,8 @@ async function main() {
   } catch (err) {
     console.warn('[live-watch] 读取上一份实时比分失败，暂时无法保留 LoL 来源旧值：', (err && err.message) || err)
   }
+  // Also retain observed finals when their first publication fails, so the next round retries them.
+  let previousFinalData = previousLiveData
   console.log(`[live-watch] 候选赛事 ${TARGETS.length} 个，间隔 ${everySec}s${once ? '（单次）' : `，最长 ${minutes} 分钟`}`)
 
   const deadline = Date.now() + minutes * 60 * 1000
@@ -654,6 +674,8 @@ async function main() {
         tennisRows.forEach(r => { const k = r.id.slice(0, r.id.indexOf('-')); if (liveComps.indexOf(k) < 0 && r.st === 'live') liveComps.push(k) })
       }
     }
+    rows.splice(0, rows.length, ...retainFinalRows(rows, previousFinalData))
+    previousFinalData = { generatedAt: new Date(Date.now()).toISOString(), rows: rows.map(row => ({ ...row })) }
     const live = rows.filter((r) => r.st === 'live').length
     console.log(
       `[live-watch] 第 ${round} 轮 ${useAll ? '全量' : `收敛(${comps.length})`}：${rows.length} 场（进行中 ${live}），耗时 ${Date.now() - t0}ms`
@@ -666,7 +688,9 @@ async function main() {
       //    原本独占全部写入请求的 73%）。
       //    规则：内容变了立刻写（60 秒粒度、新鲜度零损失）；一直没变则每
       //    HEARTBEAT_ROUNDS 轮补一次，让客户端知道这条管道还活着，而不是同步挂了。
-      const sig = JSON.stringify([rows, Object.keys(sourceHealth).sort().map(k => [k, sourceHealth[k].ok])])
+      // Observation times are freshness evidence, not score changes; retain heartbeat deduplication.
+      const contentRows = rows.map(({ at, ...row }) => row)
+      const sig = JSON.stringify([contentRows, Object.keys(sourceHealth).sort().map(k => [k, sourceHealth[k].ok])])
       if (sig === lastSig && roundsSinceWrite < HEARTBEAT_ROUNDS) {
         idleWritesSkipped += 1
       } else {
@@ -675,6 +699,7 @@ async function main() {
           lastSig = sig
           roundsSinceWrite = 0
           previousLiveData = {
+            generatedAt: new Date(Date.now()).toISOString(),
             rows: rows.map(row => ({ ...row })),
             sources: JSON.parse(JSON.stringify(sourceHealth)),
           }
@@ -754,4 +779,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows, nearStart, expectedSources, probeActivity }
+module.exports = { main, zhLiveStatus, kplStatusText, kplEffectiveStatus, scan, scanKpl, scanLol, scanTennis, espnDates, TARGETS, LOL_KEYS, preserveLastGoodLolRows, retainFinalRows, nearStart, expectedSources, probeActivity }

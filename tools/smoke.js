@@ -3874,7 +3874,7 @@ async function run() {
   // 🔴 但「不写」不能变成「永不写」—— 客户端要能区分「比分没变」和「同步挂了」。
   const lwSrc = fs.readFileSync(path.join(ROOT, 'tools/live-watch.js'), 'utf8')
   check('实时比分：内容没变就不重复写云端（省掉占大头的无效写入）',
-    /sig === lastSig/.test(lwSrc) && /JSON\.stringify\(\[rows,/.test(lwSrc))
+    /sig === lastSig/.test(lwSrc) && /JSON\.stringify\(\[contentRows,/.test(lwSrc))
   const hbRounds = Number((lwSrc.match(/const HEARTBEAT_ROUNDS = (\d+)/) || [])[1])
   check('实时比分：心跳上限存在且不超过 10 轮（别让客户端分不清「没变」和「挂了」）',
     Number.isFinite(hbRounds) && hbRounds >= 1 && hbRounds <= 10, `${hbRounds} 轮 ≈ ${hbRounds} 分钟`)

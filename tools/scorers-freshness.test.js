@@ -38,3 +38,13 @@ test('post-match scorer refresh targets only leagues whose own source timestamp 
   assert.deepEqual(scorersDueKeys([{id:'epl-1',st:'finished'},{id:'liga-2',st:'finished'},{id:'nba-3',st:'finished'}],starts,
     {epl:{fetchedAt:'2026-10-17T19:00Z'},liga:{fetchedAt:'2026-10-17T21:00Z'}},'2026-10-18T00:00Z'),['epl'])
 })
+
+test('legacy NBA timestamps and six-hour expiry cannot be renewed by a football refresh',async()=>{
+  const nba={boards:[{rows:[{i:'1',v:30}]}],fetchedAt:new Date(at-6*3600000).toISOString()}
+  const fresh=await collector.collectFootball({generatedAt:new Date(at-3600000).toISOString(),tables:{nba}},
+    {now:at,only:['epl'],read:async()=>require('./fixtures/health-20261018/epl.json')})
+  assert.equal(collector.reusableBasket(fresh.tables.nba,at),false)
+  assert.equal(collector.reusableBasket({boards:nba.boards},at),false)
+  assert.equal(collector.reusableBasket({...nba,fetchedAt:new Date(at-3600000).toISOString()},at),true)
+  assert.equal(collector.reusableBasket({...nba,fetchedAt:new Date(at+3600000).toISOString()},at),false)
+})

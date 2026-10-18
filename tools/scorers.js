@@ -291,6 +291,11 @@ async function fetchBasketLeaders(league, thisYear, limit) {
 
 /* ------------------------------------------------------------------ 主流程 */
 
+function reusableBasket(table, now=Date.now()) {
+  const age=now-Date.parse(table?.fetchedAt||'')
+  return !!table?.boards?.length && Number.isFinite(age) && age>=0 && age<LEADERS_TTL_MS
+}
+
 async function main(options = {}) {
   const available = []
   let tables = {}
@@ -312,11 +317,12 @@ async function main(options = {}) {
 
   // 篮球赛季数据榜（目前只有 NBA；CBA 不是 ESPN 数据源，上游没有这类榜）
   const prevNba = prev && prev.tables ? prev.tables.nba : null
-  const prevAge = prevNba?.fetchedAt || prev?.generatedAt ? Date.now() - Date.parse(prevNba?.fetchedAt || prev.generatedAt) : Infinity
+  // Legacy global timestamps cannot prove NBA freshness: football also rewrote them.
+  const prevAge = Date.now() - Date.parse(prevNba?.fetchedAt||'')
   if(options.only && !options.only.includes('nba')) {
     // A football final never refetches unrelated NBA boards.
   } else
-  if (prevNba && prevNba.boards && prevNba.boards.length && Number.isFinite(prevAge) && prevAge < LEADERS_TTL_MS) {
+  if (reusableBasket(prevNba)) {
     tables.nba = {...prevNba,fetchedAt:prevNba.fetchedAt||prev.generatedAt}
     available.push(`NBA 数据榜 ${prevNba.boards.length} 榜（距上次 ${Math.round(prevAge / 60000)} 分钟，未重抓）`)
   } else {
@@ -370,4 +376,4 @@ if(require.main===module)main().catch((err) => {
   console.error('[scorers] 未预期错误：', err && err.stack ? err.stack : err)
   process.exit(1)
 })
-module.exports={TARGETS,buildTable,collectFootball,main}
+module.exports={TARGETS,buildTable,collectFootball,fetchBasketLeaders,reusableBasket,main}

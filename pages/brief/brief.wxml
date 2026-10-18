@@ -124,6 +124,8 @@
       <view class="empty">{{cur.note || '本期没有可展示的内容'}}</view>
     </block>
 
+    <!-- AI 生成标识：合规要求，一行极简 -->
+    <view class="aigc-line" wx:if="{{cur.aigc}}">本页内容由 {{cur.aigc.explicit}}</view>
 
   </block>
 

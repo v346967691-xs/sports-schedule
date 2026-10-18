@@ -29,6 +29,7 @@ const data = require('../../utils/data')
 const bracket = require('../../utils/bracket')
 const fmt = require('../../utils/format')
 const poster = require('../../utils/poster')
+const competitionOrder = require('../../utils/competition-order')
 const { appInstance } = require('../../utils/app-instance')
 
 /** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
@@ -181,7 +182,13 @@ function timeLabel(iso) {
 Page({
   data: {
     comps: [],
+    compSortRows: [],
+    showCompSort: false,
+    compSortDragIndex: -1,
+    compSortDragOffset: 0,
     tennisChinaOnly: false,
+    tennisMode: 'live',
+    tennisDisplayMode: 'weekly',
     activeComp: '',
     /** swiper 当前页 —— 与 activeComp 同步，横滑内容区时由 bindchange 反推 */
     swiperIndex: 0,
@@ -231,15 +238,17 @@ Page({
       activeComp,
       tier,
       tennisChinaOnly: !!(query && query.scope === 'china'),
+      tennisMode: query && query.mode === 'weekly' ? 'weekly' : 'live',
       comps: keys.map((k) => {
         const c = data.compOf(k)
-        return { key: k, name: c.name, accent: c.accent }
+        return { key: k, name: c.name, accent: c.accent, cat:c.cat }
       }),
     })
     this.render()
   },
 
   onShow() {
+    this.visible = true
     // 从别的页面点了某个赛事进来（首页 / 赛程页 / 详情页 / 球队页 → pendingComp）
     //
     // ⚠️ 必须**无条件清空**这个槽位：它和赛程页共用同一个 globalData.pendingComp。
@@ -258,6 +267,19 @@ Page({
     data.refresh().then((r) => { if (r.updated) this.render() })
   },
 
+  onHide() { this.visible=false; if(this.tennisTimer)clearInterval(this.tennisTimer); this.tennisTimer=null },
+  onUnload() { this.onHide() },
+  syncTennisPoll() {
+    if (!this.visible || data.catOf(this.data.activeComp) !== 'tennis') {
+      if(this.tennisTimer)clearInterval(this.tennisTimer);this.tennisTimer=null;return
+    }
+    if (!this.tennisTimer && typeof data.refreshTennisInsights === 'function') {
+      const refresh = () => data.refreshTennisInsights().then(changed => { if (changed && this.visible && data.catOf(this.data.activeComp) === 'tennis') this.render() })
+      this.tennisTimer = setInterval(refresh, require('../../utils/tennis-refresh').POINTS_MS)
+      refresh()
+    }
+  },
+
   /**
    * 下拉刷新。
    * 🔴 `rank.json` 一直开着 `enablePullDownRefresh`，但这个方法**从来没实现过** ——
@@ -265,7 +287,7 @@ Page({
    * ⚠️ 必须 `wx.stopPullDownRefresh()`：不调用的话下拉的转圈会一直停在那儿不收起。
    */
   onPullDownRefresh() {
-    data.refresh()
+    Promise.all([data.refresh(), data.catOf(this.data.activeComp) === 'tennis' && typeof data.refreshTennisInsights === 'function' ? data.refreshTennisInsights(true) : Promise.resolve(false)])
       .then(() => { this.render() })
       .catch(() => {})
       .then(() => wx.stopPullDownRefresh())
@@ -326,7 +348,7 @@ Page({
    */
   tierAvailable(key, tier) {
     if (tier === 'tennis-weekly') {
-      const board = data.tennisRankingBoard(key, false)
+      const board = (typeof data.tennisLiveBoard === 'function' && data.tennisLiveBoard(key, false)) || data.tennisRankingBoard(key, false)
       return !!board && board.rows.length > 0
     }
     if (tier === 'standings') return !!data.standingsOf(key)
@@ -374,15 +396,94 @@ Page({
   compKeys() {
     const has = data.standingsTables()
     const swiss = this.swissIndex()
-    const order = []
+    const eligible = new Set()
     data.categories().forEach((cat) => {
       ;(cat.competitions || []).forEach((key) => {
         // 四种榜任意一种有内容，这个赛事才值得进来
         if (has[key] || data.kplRankBoards(key).length || data.leaderBoards(key).length || swiss[key]
-          || (cat.key === 'tennis' && this.tierAvailable(key, 'tennis-weekly'))) order.push(key)
+          || (cat.key === 'tennis' && this.tierAvailable(key, 'tennis-weekly'))) eligible.add(key)
       })
     })
-    return order
+    return competitionOrder.orderKeys(Array.from(eligible), data.categories())
+  },
+
+  /** 排行榜与赛程页共用完整的跨类别赛事顺序设置 */
+  onCompSortOpen() {
+    const categories = data.categories()
+    const compMap = data.compMap()
+    const categoryNames = Object.fromEntries(categories.map((category) => [category.key, category.name]))
+    const rows = competitionOrder.getOrder(categories).map((key) => ({
+      ...compMap[key],
+      categoryName: categoryNames[(compMap[key] || {}).cat] || '',
+    })).filter((comp) => comp.key)
+    this.setData({ compSortRows: rows, showCompSort: true, compSortDragIndex: -1, compSortDragOffset: 0 })
+  },
+
+  onCompSortClose() {
+    this._compSortDrag = null
+    this.setData({ showCompSort: false, compSortDragIndex: -1, compSortDragOffset: 0 })
+  },
+
+  stopCompSortTap() {},
+
+  onCompSortMove(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const direction = Number(e.currentTarget.dataset.direction)
+    const nextIndex = index + direction
+    const rows = competitionOrder.moveItem(this.data.compSortRows, index, nextIndex)
+    if (rows.every((row, i) => row.key === this.data.compSortRows[i].key)) return
+    if (!competitionOrder.setOrder(rows.map((comp) => comp.key))) {
+      console.warn('[赛程助手] 保存赛事顺序失败')
+    }
+    this.setData({ compSortRows: rows }, () => this.render())
+  },
+
+  onCompSortPin(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const rows = competitionOrder.moveToFront(this.data.compSortRows, index)
+    if (rows.every((row, i) => row.key === this.data.compSortRows[i].key)) return
+    if (!competitionOrder.setOrder(rows.map((comp) => comp.key))) console.warn('[赛程助手] 保存赛事顺序失败')
+    this.setData({ compSortRows: rows }, () => this.render())
+  },
+
+  onCompSortDragStart(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const rows = this.data.compSortRows || []
+    const touch = (e.touches || [])[0]
+    if (!Number.isInteger(index) || index < 0 || index >= rows.length || !touch) return
+    this._compSortDrag = { startIndex: index, startY: touch.clientY, rows: rows.slice() }
+    this.setData({ compSortDragIndex: index, compSortDragOffset: 0 })
+  },
+
+  onCompSortDragMove(e) {
+    const drag = this._compSortDrag
+    const touch = (e.touches || [])[0]
+    if (!drag || !touch) return
+    const width = (wx.getSystemInfoSync().windowWidth || 375)
+    const rowHeight = width * 84 / 750
+    const delta = touch.clientY - drag.startY
+    const offset = Math.round(delta / rowHeight)
+    const target = Math.max(0, Math.min(drag.rows.length - 1, drag.startIndex + offset))
+    const rows = competitionOrder.moveItem(drag.rows, drag.startIndex, target)
+    this._compSortDrag.target = target
+    this.setData({ compSortRows: rows, compSortDragIndex: target, compSortDragOffset: delta - (target - drag.startIndex) * rowHeight })
+  },
+
+  onCompSortDragEnd() {
+    const drag = this._compSortDrag
+    if (!drag) return
+    this._compSortDrag = null
+    const rows = this.data.compSortRows.slice()
+    if (rows.some((row, i) => row.key !== drag.rows[i].key)
+      && !competitionOrder.setOrder(rows.map((comp) => comp.key))) console.warn('[赛程助手] 保存赛事顺序失败')
+    this.setData({ compSortRows: rows, compSortDragIndex: -1, compSortDragOffset: 0 }, () => this.render())
+  },
+
+  onCompSortReset() {
+    const categories = data.categories()
+    if (!competitionOrder.resetOrder(categories)) console.warn('[赛程助手] 恢复赛事默认顺序失败')
+    this.onCompSortOpen()
+    this.render()
   },
 
   /**
@@ -417,8 +518,10 @@ Page({
     if (visible) this._rendered[key] = true
 
     if (data.catOf(key) === 'tennis') {
-      const board = data.tennisRankingBoard(key, this.data.tennisChinaOnly) || { rows: [] }
-      const china = data.tennisRankingBoard(key, true)
+      const live = this.data.tennisMode === 'live' && typeof data.tennisLiveBoard === 'function'
+      const liveBoard = live ? data.tennisLiveBoard(key, this.data.tennisChinaOnly) : null
+      const board = liveBoard || { ...(data.tennisRankingBoard(key, this.data.tennisChinaOnly) || { rows: [] }), mode:'weekly',label:'正式周榜' }
+      const china = liveBoard ? data.tennisLiveBoard(key, true) : data.tennisRankingBoard(key, true)
       return { key, name, index, visible, rankRows: board.rows, tennis: board, tennisChinaCount: china ? china.rows.length : 0,
         columns: [], groups: [], legend: [], totalTeams: 0, season: '',
         goals: [], assists: [], boards: [], swiss: [], swissTeams: 0,
@@ -502,25 +605,35 @@ Page({
     this._swiss = null
     const keys = this.compKeys()
     if (!keys.length) {
-      this.setData({ slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], playerBoards: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
+      this.setData({ comps: [], activeComp: '', slides: [], swiperIndex: 0, groups: [], columns: [], tiers: [], rankRows: [], playerBoards: [], emptyReason: '积分榜数据暂未生成，稍后自动同步' })
       return
     }
-    const idx = Math.max(0, this.indexOfKey(this.data.activeComp))
+    // 排序偏好会在赛程页更新；排行榜常驻在 tab 栈中，切回时 onLoad 不会重跑。
+    // 每次渲染都同步顶部标签和内容页，避免标签仍是旧顺序、swiper 已是新顺序。
+    const activeComp = keys.indexOf(this.data.activeComp) > -1 ? this.data.activeComp : keys[0]
+    const idx = keys.indexOf(activeComp)
+    const comps = keys.map((key) => {
+      const comp = data.compOf(key)
+      return { key, name: comp.name, accent: comp.accent, cat:comp.cat }
+    })
     // 数据可能在刷新后变化：档位要按最新数据再收敛一次，避免停在一个已经没内容的档
-    const tier = this.resolveTier(this.data.activeComp, this.data.tier)
+    const tier = this.resolveTier(activeComp, this.data.tier)
     const slides = keys.map((k, i) => this.buildSlide(k, i, idx, tier))
     const cur = slides[idx] || { name: '', columns: [], groups: [], legend: [], totalTeams: 0, season: '', goals: [], assists: [], rankRows: [], boards: [], swiss: [], swissTeams: 0 }
 
     this.setData({
+      comps,
+      activeComp,
       slides,
       swiperIndex: idx,
       emptyReason: '',
       tier,
       // WXML 按 kind 选模板（standings / scorer / leader / players / swiss）
-      tierKind: this.tierKindOf(this.data.activeComp, tier),
-      tierLabel: this.tierLabelOf(this.data.activeComp, tier),
-      tiers: this.tierState(this.data.activeComp),
+      tierKind: this.tierKindOf(activeComp, tier),
+      tierLabel: this.tierLabelOf(activeComp, tier),
+      tiers: this.tierState(activeComp),
       rankRows: cur.rankRows || [],
+      tennisDisplayMode: cur.tennis && cur.tennis.mode || 'weekly',
       boards: cur.boards || [],
       // 激活赛事的镜像，供分享标题 / 冒烟断言使用
       compName: cur.name,
@@ -537,6 +650,7 @@ Page({
     }, () => {
       this.buildShareImage()
     })
+    this.syncTennisPoll()
   },
 
   /**
@@ -548,7 +662,7 @@ Page({
     if (!rows.length) return
     const img = await poster.build(this, 'share-canvas', 'rank', {
       comp: this.data.compName || '',
-      boardName: (this.data.tierLabel || '排行榜') + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : ''),
+      boardName: (this.data.tierLabel || '排行榜') + (this.data.tierKind === 'tennis' ? (this.data.tennisDisplayMode === 'live' ? ' · 实时估算' : ' · 正式周榜') : '') + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : ''),
       rows,
       accent: (data.compOf(this.data.activeComp) || {}).accent || '#2E7CF6',
     })
@@ -640,11 +754,16 @@ Page({
     this.setData({ tennisChinaOnly: e.currentTarget.dataset.scope === 'china' }, () => this.render())
   },
 
+  onTennisModeTap(e) {
+    const mode = e.currentTarget.dataset.mode
+      if(!['live','weekly'].includes(mode))return
+    this.setData({tennisMode:mode},()=>this.render())
+  },
+
   onTennisRowTap(e) {
     const row = (this.data.rankRows || []).find(r => r.id === e.currentTarget.dataset.id)
     if (!row) return
-    appInstance().globalData.pendingTeam = { comp: this.data.activeComp, id: row.id, name: row.en, abbr: row.en, display: row.name }
-    wx.switchTab({ url: '/pages/schedule/schedule' })
+    wx.navigateTo({url:require('../../utils/tennis-insights').profileUrl(this.data.activeComp,{...row,name:row.en})})
   },
 
   onRowTap(e) {
@@ -666,9 +785,9 @@ Page({
     const name = this.data.compName
     const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier) + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : '')
     return share.message({
-      title: name ? `${name}${tierLabel} · 闪现赛程助手` : `闪现赛程助手 · 各赛事${tierLabel}`,
+      title: name ? `${name}${tierLabel}${this.data.tierKind === 'tennis' ? (this.data.tennisDisplayMode === 'live' ? ' · 实时估算' : ' · 正式周榜') : ' · 闪现赛程助手'}` : `闪现赛程助手 · 各赛事${tierLabel}`,
       path: this.data.activeComp
-        ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
+        ? `/pages/rank/rank?comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' ? '&mode='+this.data.tennisMode : ''}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
         : '/pages/rank/rank',
       imageUrl: this.data.shareImage,
     })
@@ -678,9 +797,9 @@ Page({
     const name = this.data.compName
     const tierLabel = this.tierLabelOf(this.data.activeComp, this.data.tier) + (this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? ' · 中国选手' : '')
     return share.timeline({
-      title: name ? `${name}${tierLabel}${this.data.tierKind === 'tennis' ? ' · 正式周榜' : '实时更新'}` : `各赛事${tierLabel}实时更新`,
+      title: name ? `${name}${tierLabel}${this.data.tierKind === 'tennis' ? (this.data.tennisDisplayMode === 'live' ? ' · 实时估算' : ' · 正式周榜') : '实时更新'}` : `各赛事${tierLabel}实时更新`,
       query: this.data.activeComp
-        ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
+        ? `comp=${encodeURIComponent(this.data.activeComp)}&tier=${encodeURIComponent(this.data.tier)}${this.data.tierKind === 'tennis' ? '&mode='+this.data.tennisMode : ''}${this.data.tierKind === 'tennis' && this.data.tennisChinaOnly ? '&scope=china' : ''}`
         : '',
       imageUrl: this.data.shareImage,
     })

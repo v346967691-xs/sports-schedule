@@ -48,5 +48,19 @@
   },
   "lazyCodeLoading": "requiredComponents",
   "sitemapLocation": "sitemap.json",
-  "style": "v2"
+  "style": "v2",
+  "subPackages": [
+    {
+      "root": "pages/tournament",
+      "pages": [
+        "tournament"
+      ]
+    },
+    {
+      "root": "pages/tennis-player",
+      "pages": [
+        "tennis-player"
+      ]
+    }
+  ]
 }

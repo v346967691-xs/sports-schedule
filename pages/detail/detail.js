@@ -1,5 +1,6 @@
 const share = require('../../utils/share')
 const poster = require('../../utils/poster')
+const tennis = require('../../utils/tennis')
 const data = require('../../utils/data')
 const lolView = require('../../utils/lol-view')
 const view = require('../../utils/view')
@@ -13,6 +14,7 @@ const kplView = require('../../utils/kpl-view')
 const lolMvpVote = require('../../utils/lol-mvp')
 const matchMvpVote = require('../../utils/match-mvp')
 const matchMvpView = require('../../utils/match-mvp-view')
+const worldsArchive = require('../../utils/worlds-archive')
 
 const RESULT_ZH = { W: '胜', D: '平', L: '负' }
 
@@ -159,8 +161,8 @@ function buildTennisSets(match, sideName) {
   return {
     cols: Array.from({ length: n }, (_, i) => `第${i + 1}盘`),
     rows: [
-      { side: sideName('home'), scores: Array.from({ length: n }, (_, i) => sets.h[i] == null ? '-' : String(sets.h[i])) },
-      { side: sideName('away'), scores: Array.from({ length: n }, (_, i) => sets.a[i] == null ? '-' : String(sets.a[i])) },
+      { side: sideName('home'), retired:!!match.home.retired, seed:match.home.seed, scores: Array.from({ length: n }, (_, i) => sets.h[i] == null ? '-' : String(sets.h[i])) },
+      { side: sideName('away'), retired:!!match.away.retired, seed:match.away.seed, scores: Array.from({ length: n }, (_, i) => sets.a[i] == null ? '-' : String(sets.a[i])) },
     ],
   }
 }
@@ -230,7 +232,7 @@ function decorateDetail(d, match) {
   const box = buildBox(d, sideName)
   const quarters = buildQuarters(match, sideName)
   const kpl = kplView.buildKpl(d, sideName('home'), sideName('away'))
-  const lol = lolView.buildLol(d, sideName('home'), sideName('away'))
+  const lol = lolView.buildLol(d, sideName('home'), sideName('away'),match)
   const lolMvpCandidates = lolView.buildMvpCandidates(d, sideName('home'), sideName('away'))
   return {
     // 赛前预览：未开赛的比赛只有「近况 + 交锋」两块（ESPN 这时也给不出事件和统计）。
@@ -287,6 +289,10 @@ Page({
     hasStandings: false,  // 该赛事有没有积分榜（有才显示入口）
     detail: null,        // 比赛详情（事件时间轴 / 近况 / 交锋 / 技术统计），没有就整块隐藏
     tennisSets: null,    // 网球逐盘比分来自赛程/实时通道，不依赖通用比赛详情。
+    tennisStats: null,
+    tennisStatsKey: 0,
+    tennisStatsRows: [],
+    tennisStatsDuration: '',
     detailAll: false,    // 是否展开换人事件
     shareImage: '',      // 转发卡图（离屏 canvas 画好后存这里）
     lolMvpShareImage: '',
@@ -352,9 +358,30 @@ Page({
    * 普通赛事保持原保留窗口；Worlds2026 日桶保留到决赛后 30 天。
    */
   async loadDetail(match) {
-    // 网球逐盘数据已随 applyMatch 更新，无需轮询不提供网球数据的通用详情日桶。
+    // 统计为独立增强内容；比分和逐盘数据仍走原实时通道。
     if (data.compOf(match.comp).cat === 'tennis') {
-      this.finalDetailReady = match.status === 'finished'
+      if(typeof data.tennisMatchStats!=='function'){
+        this.finalDetailReady = match.status === 'finished'
+        return
+      }
+      const sameMatch=this.tennisStatsReadId===match.id
+      const finishing=match.status==='finished' && (!sameMatch || this.tennisStatsReadStatus!=='finished')
+      const statsWait=this.data.tennisStats?.complete && match.status==='finished'
+        ? require('../../utils/tennis-refresh').FINAL_STATS_MS : require('../../utils/tennis-refresh').LIVE_STATS_MS
+      if(sameMatch && !finishing && Date.now()-(this.tennisStatsReadAt||0)<statsWait)return
+      if(!sameMatch)this.setData({tennisStats:null,tennisStatsKey:0,tennisStatsRows:[],tennisStatsDuration:''})
+      this.tennisStatsReadId=match.id;this.tennisStatsReadAt=Date.now();this.tennisStatsReadStatus=match.status
+      try{
+        const stats=await data.tennisMatchStats(match,{force:finishing && sameMatch})
+        if(!this.data.match || this.data.match.id!==match.id || this.data.match.status!==match.status)return
+        if(stats){
+          const selected=stats.sections.find(s=>s.key===this.data.tennisStatsKey)||stats.sections[0]
+          this.setData({tennisStats:stats,tennisStatsKey:selected.key,tennisStatsRows:selected.rows,tennisStatsDuration:selected.duration||''})
+        }
+        // 完赛时上游暂时返回空数据，仍保留同一场已展示的赛中统计。
+        this.finalDetailReady = match.status==='finished' && !!(this.data.tennisStats && this.data.tennisStats.complete)
+      }catch(e){console.warn('[赛程助手] 网球统计暂不可用',e)}
+      this.syncLivePoll()
       return
     }
     if (Date.now() - (this.detailReadAt || 0) < 3 * 60000) return
@@ -388,28 +415,39 @@ Page({
     this.setData({ 'detail.shownEvents': next ? d.events : d.keyEvents, detailAll: next })
   },
 
+  onTennisStatsTab(e) {
+    const section=this.data.tennisStats && this.data.tennisStats.sections.find(s=>s.key===Number(e.currentTarget.dataset.key))
+    if(section)this.setData({tennisStatsKey:section.key,tennisStatsRows:section.rows,tennisStatsDuration:section.duration||''})
+  },
+
   /** 用一场比赛对象刷新整页（onLoad 与云端回补共用同一套逻辑） */
   applyMatch(raw) {
     const changedToFinished = this.data.match && this.data.match.status !== 'finished' && raw.status === 'finished'
     if (changedToFinished) this.detailReadAt = 0
-    if (raw.status === 'finished' && raw.comp !== 'cba' && data.compOf(raw.comp).cat !== 'tennis' && !this.detailPollUntil
+    if (raw.status === 'finished' && raw.comp !== 'cba' && (data.compOf(raw.comp).cat !== 'tennis' || typeof data.tennisMatchStats === 'function') && !this.detailPollUntil
       && Date.now() - Date.parse(raw.start) < 48 * 3600000) this.detailPollUntil = Date.now() + 20 * 60000
     const app = appInstance()
     const match = view.decorate.call({ compOf: data.compOf }, raw)
     const comp = data.compOf(match.comp)
+    const age = Date.now() - Date.parse(match.start)
+    const statsPending = age >= 0 && (
+      (worldsArchive.isWorlds2026(match) && worldsArchive.archiveActive())
+      || (age < (comp.cat === 'tennis' ? 30 * 86400000 : 48 * 3600000)
+        && (comp.cat === 'football' || comp.cat === 'tennis' || ['nba', 'kpl', 'worlds', 'demacia', 'lpl', 'lck', 'lec', 'msi'].includes(match.comp))))
     const rows = [
       { label: '开赛时间', value: `${fmt.dayLabel(match.date)} ${match.time}（北京时间）` },
       { label: '比赛状态', value: match.status === 'upcoming' ? `未开始 · ${fmt.countdownText(match.start)}` : match.status === 'live' ? '进行中' : (match.statusText || '已结束') },
-      { label: '所属阶段', value: match.stage || comp.full },
+      { label: '所属阶段', value: match._isTennis ? (match._roundNameRaw || '待公布') : (match.stage || comp.full) },
     ]
     if (match._bo) rows.push({ label: '赛制', value: match._bo + ' 淘汰制' })
     if (match.venue) rows.push({ label: '比赛场地', value: match.venue })
-    if (match.broadcast && match.broadcast.length) rows.push({ label: '转播', value: match.broadcast.join(' / ') })
-    rows.push({ label: '赛事', value: comp.full })
+    if (match._isTennis && match.broadcast && match.broadcast.length) rows.push({ label: '转播', value: match.broadcast.join(' / ') })
+    rows.push({ label: '赛事', value: match._isTennis ? match._eventCompetition : comp.full })
 
     this.setData({
       match,
       comp,
+      statsPending,
       rows,
       tennisSets: buildTennisSets(match, side => (match[side] && (match[side].zhName || match[side].name)) || ''),
       loading: false,
@@ -427,6 +465,13 @@ Page({
     })
   },
 
+  goTournament(e) {
+    const event = data.tennisEventForMatch(this.data.match)
+    if (!event) return
+    const tab = e.currentTarget.dataset.tab === 'bracket' ? 'bracket' : 'schedule'
+    wx.navigateTo({ url: `/pages/tournament/tournament?event=${encodeURIComponent(event.key)}&tab=${tab}` })
+  },
+
   /**
    * 转发卡图：画「对阵双方 + 比分」。
    * 必须提前画 —— onShareAppMessage 是同步的，等分享时再画来不及。
@@ -436,15 +481,17 @@ Page({
     const comp = this.data.comp || {}
     if (!m) return
     const img = await poster.build(this, 'share-canvas', 'match', {
-      comp: comp.full || comp.name || '',
-      stage: m.stage || '',
+      cat: comp.cat,
+      comp: m._isTennis ? tennis.tournamentLabel(m, data.tennisTournamentLevel) : (comp.name || comp.full || ''),
+      stage: m._isTennis ? (m._roundNameRaw || '') : (m.stage || ''),
       home: m.home.zhName || m.home.name,
       away: m.away.zhName || m.away.name,
       homeScore: m.home.score,
       awayScore: m.away.score,
-      dateText: fmt.dayLabel(m.date),
+      date: m.date,
+      status: m.status,
       timeText: m.time,
-      statusText: m.status === 'upcoming' ? '未开始' : (m.statusText || '已结束'),
+      statusText: m.status === 'upcoming' ? '未开始' : (m.statusText || (m.status === 'live' ? '进行中' : '已结束')),
       accent: comp.accent || '#2E7CF6',
     })
     if (img) this.setData({ shareImage: img })
@@ -997,8 +1044,7 @@ Page({
     // 未确定的对阵（待定 / TBD）不是一支球队，点了也没东西可看
     if (!team || !team.id || String(team.id) === 'TBD' || team.name === '待定') return
     if (data.compOf(m.comp).cat === 'tennis') {
-      appInstance().globalData.pendingTeam = { comp: m.comp, id: team.id, name: team.name, abbr: team.abbr, display: team.zhName || team.name }
-      wx.switchTab({ url: '/pages/schedule/schedule' })
+      wx.navigateTo({url:require('../../utils/tennis-insights').profileUrl(m.comp,team)})
       return
     }
     wx.navigateTo({

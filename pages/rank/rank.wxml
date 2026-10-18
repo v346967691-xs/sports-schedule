@@ -3,24 +3,54 @@
 
 <view class="page rank">
   <!-- 赛事标签区：这里横滑只是挪动标签本身，不切换下方内容；要切换必须点击 -->
-  <scroll-view
-    class="chip-bar"
-    scroll-x
-    enable-flex
-    scroll-into-view="chip-{{activeComp}}"
-    scroll-with-animation
-  >
-    <view class="chip-row">
-      <view
-        wx:for="{{comps}}"
-        wx:key="key"
-        id="chip-{{item.key}}"
-        class="chip {{item.key === activeComp ? 'active' : ''}}"
-        data-key="{{item.key}}"
-        bindtap="onCompTap"
-      >{{item.name}}</view>
+  <view class="rank-filter-row">
+    <scroll-view
+      class="chip-bar"
+      scroll-x
+      enable-flex
+      scroll-into-view="chip-{{activeComp}}"
+      scroll-with-animation
+    >
+      <view class="chip-row">
+        <view
+          wx:for="{{comps}}"
+          wx:key="key"
+          id="chip-{{item.key}}"
+          class="chip {{item.key === activeComp ? 'active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onCompTap"
+        ><image class="sport-icon" wx:if="{{item.cat}}" src="/images/sport-{{item.cat}}{{item.key === activeComp ? '-white' : ''}}.png" mode="aspectFit"/>{{item.name}}</view>
+      </view>
+    </scroll-view>
+    <view class="rank-sort-entry" bindtap="onCompSortOpen">排序</view>
+  </view>
+
+  <view class="comp-sort-mask" wx:if="{{showCompSort}}" bindtap="onCompSortClose">
+    <view class="comp-sort-panel" catchtap="stopCompSortTap">
+      <view class="comp-sort-header">
+        <view>
+          <view class="comp-sort-title">赛事排序</view>
+          <view class="comp-sort-hint">跨类别统一排序 · 赛程页和排行榜同步</view>
+        </view>
+        <view class="comp-sort-close" bindtap="onCompSortClose">完成</view>
+      </view>
+      <scroll-view class="comp-sort-list" scroll-y>
+        <view class="comp-sort-item {{index === compSortDragIndex ? 'dragging' : ''}}" wx:for="{{compSortRows}}" wx:key="key"
+          style="transform: translateY({{index === compSortDragIndex ? compSortDragOffset : 0}}px); z-index: {{index === compSortDragIndex ? 2 : 0}}">
+          <view class="comp-sort-drag-handle" data-index="{{index}}" bindtouchstart="onCompSortDragStart"
+            catchtouchmove="onCompSortDragMove" bindtouchend="onCompSortDragEnd" bindtouchcancel="onCompSortDragEnd">☰</view>
+          <view class="comp-sort-color" style="background: {{item.accent}}"></view>
+          <view class="comp-sort-name">{{item.name}}<text class="comp-sort-category">{{item.categoryName}}</text></view>
+          <view class="comp-sort-arrows">
+            <view class="comp-sort-pin" data-index="{{index}}" bindtap="onCompSortPin">置顶</view>
+            <view class="comp-sort-arrow {{index === 0 ? 'disabled' : ''}}" data-index="{{index}}" data-direction="-1" bindtap="onCompSortMove">↑</view>
+            <view class="comp-sort-arrow {{index === compSortRows.length - 1 ? 'disabled' : ''}}" data-index="{{index}}" data-direction="1" bindtap="onCompSortMove">↓</view>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="comp-sort-reset" bindtap="onCompSortReset">恢复默认顺序</view>
     </view>
-  </scroll-view>
+  </view>
 
   <!--
     档位分段控件：档位**按赛事大类给不同的集合**（2026-10-06 改）
@@ -55,25 +85,30 @@
           <block wx:if="{{tierKind === 'tennis'}}">
             <view class="meta">
               <text class="meta-main">{{item.name}} · 单打世界排名</text>
-              <text class="meta-sub">正式周榜 · 排名日期 {{item.tennis.rankingDate}}</text>
+              <text class="meta-sub">{{item.tennis.mode === 'live' ? '实时估算 · 含来源已计入的赛后积分' : '正式周榜'}} · 周榜日期 {{item.tennis.rankingDate}}</text>
               <text class="meta-sub">同步于 {{updatedAt}} · {{item.tennis.source}}</text>
+            </view>
+            <view class="tennis-scope">
+              <text class="{{tennisMode === 'live' ? 'selected' : ''}}" data-mode="live" bindtap="onTennisModeTap">实时积分</text>
+              <text class="{{tennisMode === 'weekly' ? 'selected' : ''}}" data-mode="weekly" bindtap="onTennisModeTap">正式周榜</text>
             </view>
             <view class="tennis-scope">
               <text class="{{!tennisChinaOnly ? 'selected' : ''}}" data-scope="all" bindtap="onTennisScopeTap">世界前 100</text>
               <text class="{{tennisChinaOnly ? 'selected' : ''}}" data-scope="china" bindtap="onTennisScopeTap">中国选手</text>
             </view>
-            <view class="tennis-warning" wx:if="{{item.tennis.stale}}">暂未同步到较新的周榜，当前展示上次成功取得的排名。</view>
-            <view class="table card scorer">
+            <view class="tennis-warning" wx:if="{{item.tennis.stale}}">当前展示上次成功同步的{{item.tennis.mode === 'live' ? '实时估算' : '周榜'}}，最新赛果可能尚未计入。</view>
+            <view class="tennis-warning" wx:if="{{tennisMode === 'live' && item.tennis.mode !== 'live'}}">实时积分暂未取得，先展示正式周榜。</view>
+            <view class="table card scorer tennis-table">
               <view class="tr th">
                 <view class="th-pos">排名</view><view class="th-player">选手</view><view class="th-val">积分</view>
               </view>
               <view wx:for="{{item.rankRows}}" wx:for-item="row" wx:key="id" class="tr" data-id="{{row.id}}" bindtap="onTennisRowTap" hover-class="tr-hover">
-                <view class="td-pos"><text class="pos-num">{{row.pos}}</text></view>
+                <view class="td-pos"><text class="pos-num">{{row.pos}}</text><view class="rank-movement {{row.movement > 0 ? 'rise' : row.movement < 0 ? 'fall' : 'flat'}}">{{row.movement === null ? '—' : row.movement > 0 ? '↑' : row.movement < 0 ? '↓' : '→'}}{{row.movement === null ? '' : row.movement < 0 ? -row.movement : row.movement}}</view></view>
                 <view class="td-player"><view class="player-name">{{row.name}}</view><view class="tennis-country">{{row.country === 'CHN' ? '中国' : row.country}}</view></view>
-                <view class="td-val">{{row.value}}</view>
+                <view class="td-val">{{row.value}}<view class="tennis-points-delta {{row.delta > 0 ? 'rise' : row.delta < 0 ? 'fall' : 'flat'}}" wx:if="{{item.tennis.mode === 'live' && row.delta !== null}}">{{row.delta > 0 ? '+' : ''}}{{row.delta}}</view></view>
               </view>
             </view>
-            <view class="foot-note">展示 ATP / WTA 正式周排名，按标注的排名日期为准；中国选手展示来源覆盖的前 {{item.tennisChinaCount}} 位。点击选手可查看赛程。</view>
+            <view class="foot-note">{{item.tennis.mode === 'live' ? '实时积分为来源估算；小字为较正式周榜的积分净变化。' : '正式周排名按标注日期为准。'}}排名箭头：{{item.tennis.mode === 'live' ? '较当前周榜' : '较前一周'}}，— 表示缺少比较数据。中国选手展示来源覆盖的前 {{item.tennisChinaCount}} 位。点击选手查看个人档案、积分明细及参赛前景。</view>
           </block>
           <block wx:elif="{{tierKind === 'standings'}}">
             <view class="meta" wx:if="{{item.totalTeams}}">
@@ -147,11 +182,6 @@
               </block>
             </view>
 
-            <view class="foot-note">
-              分区色带只标联赛名次能确定的欧战席位，不含杯赛冠军名额与欧战表现名额；降级与欧国联升降级按官方赛制标注。
-              足球按积分排序，篮球看胜率 —— 两类运动的规则本来就不一样。
-              电竞榜由已结束的官方赛果实时汇总，赛季刚开始时可能还没生成。
-            </view>
           </block>
 
           <!-- 射手榜 / 助攻榜档（足球，tierKind = scorer） -->

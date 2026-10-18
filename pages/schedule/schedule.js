@@ -6,6 +6,8 @@ const nav = require('../../utils/nav')
 const poster = require('../../utils/poster')
 const bracket = require('../../utils/bracket')
 const tennis = require('../../utils/tennis')
+const tennisEvent = require('../../utils/tennis-event')
+const competitionOrder = require('../../utils/competition-order')
 const { appInstance } = require('../../utils/app-instance')
 
 const CATS = [
@@ -16,7 +18,6 @@ const CATS = [
 ]
 
 const PAGE_SIZE = 3
-/** 赛程卡片上给每队挂几个近况色块。5 个是足球 App 的通例，再多会挤到队名 */
 const FORM_N = 5
 /** 实时比分轮询间隔。服务端 live_scores 60 秒刷一次，客户端也按 60 秒拉，不多打接口 */
 const LIVE_POLL_MS = 60 * 1000
@@ -60,6 +61,10 @@ Page({
     cats: CATS,
     activeCat: 'football',
     catComps: [],
+    compSortRows: [],
+    showCompSort: false,
+    compSortDragIndex: -1,
+    compSortDragOffset: 0,
     activeComp: '',
     teamFilter: null,
     mode: 'upcoming',
@@ -69,6 +74,8 @@ Page({
     tournamentChips: [],
     tournamentFilter: '',
     tournamentLabel: '',
+    courtFilter: '',
+    courtChips: [],
     /** 淘汰赛对阵树（只在选中淘汰赛轮次时有值，见 doReload） */
     bracket: null,
     rows: [],
@@ -96,6 +103,7 @@ Page({
     const tennisQuery = cat === 'tennis' ? {
       tournamentFilter: query && query.tournament ? decodeURIComponent(query.tournament) : '',
       stageFilter: query && query.round ? decodeURIComponent(query.round) : '',
+      courtFilter: query && query.court ? decodeURIComponent(query.court) : '',
       mode: query && ['upcoming', 'live', 'finished'].includes(query.mode) ? query.mode : 'upcoming',
     } : {}
     this.setData({ activeCat: cat, activeComp: comp, ...tennisQuery })
@@ -105,6 +113,7 @@ Page({
 
   onShow() {
     this.liveVisible = true
+    this.syncFavorites()
     const app = appInstance()
     const pending = app.globalData.pendingComp
     if (pending) {
@@ -146,6 +155,13 @@ Page({
 
   onHide() { this.liveVisible = false; this.stopLivePoll() },
   onUnload() { this.liveVisible = false; this.stopLivePoll() },
+
+  /** 先用本地关注态渲染，再同步登录用户的关注；详情页返回时也更新。 */
+  syncFavorites() {
+    return appInstance().refreshAuth().then(() => {
+      if (this.liveVisible) this.setData({ rows: this.buildRows(this.data.shownGroups) })
+    }).catch(err => console.warn('[赛程助手] 同步比赛关注失败', err))
+  },
 
   /* ------------------------------------------------------------ 实时比分轮询
    *
@@ -194,14 +210,104 @@ Page({
   },
 
   applyCat(cat) {
-    const catComps = (data.categories().find((c) => c.key === cat) || {}).competitions || []
+    const categories = data.categories()
+    const compKeys = (categories.find((c) => c.key === cat) || {}).competitions || []
     const compMap = data.compMap()
+    const orderedKeys = competitionOrder.orderKeys(compKeys, categories)
+    const catComps = orderedKeys.map((key) => compMap[key]).filter(Boolean)
     this.setData({
-      catComps: catComps.map((k) => compMap[k]).filter(Boolean),
+      catComps,
+      compSortRows: catComps.map((comp) => ({ ...comp })),
       activeCat: cat,
       teamFilter: null,
     })
     this.reload()
+  },
+
+  /** 打开当前运动类别的赛事排序面板 */
+  onCompSortOpen() {
+    const categories = data.categories()
+    const compMap = data.compMap()
+    const categoryNames = Object.fromEntries(categories.map((category) => [category.key, category.name]))
+    const rows = competitionOrder.getOrder(categories).map((key) => ({
+      ...compMap[key],
+      categoryName: categoryNames[(compMap[key] || {}).cat] || '',
+    })).filter((comp) => comp.key)
+    this.setData({ compSortRows: rows, showCompSort: true, compSortDragIndex: -1, compSortDragOffset: 0 })
+  },
+
+  onCompSortClose() {
+    this._compSortDrag = null
+    this.setData({ showCompSort: false, compSortDragIndex: -1, compSortDragOffset: 0 })
+  },
+
+  stopCompSortTap() {},
+
+  /** 上下移动即保存，离开页面后顺序仍保留在本机 */
+  onCompSortMove(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const direction = Number(e.currentTarget.dataset.direction)
+    const nextIndex = index + direction
+    const rows = competitionOrder.moveItem(this.data.compSortRows, index, nextIndex)
+    if (rows.every((row, i) => row.key === this.data.compSortRows[i].key)) return
+    if (!competitionOrder.setOrder(rows.map((comp) => comp.key))) {
+      console.warn('[赛程助手] 保存赛事顺序失败')
+    }
+    this.setData({ compSortRows: rows, catComps: rows.filter((comp) => comp.cat === this.data.activeCat) })
+  },
+
+  onCompSortPin(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const rows = competitionOrder.moveToFront(this.data.compSortRows, index)
+    if (rows.every((row, i) => row.key === this.data.compSortRows[i].key)) return
+    if (!competitionOrder.setOrder(rows.map((comp) => comp.key))) console.warn('[赛程助手] 保存赛事顺序失败')
+    this.setData({ compSortRows: rows, catComps: rows.filter((comp) => comp.cat === this.data.activeCat) })
+  },
+
+  onCompSortDragStart(e) {
+    const index = Number(e.currentTarget.dataset.index)
+    const rows = this.data.compSortRows || []
+    const touch = (e.touches || [])[0]
+    if (!Number.isInteger(index) || index < 0 || index >= rows.length || !touch) return
+    this._compSortDrag = { startIndex: index, startY: touch.clientY, rows: rows.slice() }
+    this.setData({ compSortDragIndex: index, compSortDragOffset: 0 })
+  },
+
+  onCompSortDragMove(e) {
+    const drag = this._compSortDrag
+    const touch = (e.touches || [])[0]
+    if (!drag || !touch) return
+    const width = (wx.getSystemInfoSync().windowWidth || 375)
+    const rowHeight = width * 84 / 750
+    const delta = touch.clientY - drag.startY
+    const offset = Math.round(delta / rowHeight)
+    const target = Math.max(0, Math.min(drag.rows.length - 1, drag.startIndex + offset))
+    const rows = competitionOrder.moveItem(drag.rows, drag.startIndex, target)
+    this._compSortDrag.target = target
+    this.setData({ compSortRows: rows, compSortDragIndex: target, compSortDragOffset: delta - (target - drag.startIndex) * rowHeight })
+  },
+
+  onCompSortDragEnd() {
+    const drag = this._compSortDrag
+    if (!drag) return
+    this._compSortDrag = null
+    const rows = this.data.compSortRows.slice()
+    if (rows.some((row, i) => row.key !== drag.rows[i].key)
+      && !competitionOrder.setOrder(rows.map((comp) => comp.key))) console.warn('[赛程助手] 保存赛事顺序失败')
+    this.setData({ compSortRows: rows, compSortDragIndex: -1, compSortDragOffset: 0,
+      catComps: rows.filter((comp) => comp.cat === this.data.activeCat) })
+  },
+
+  onCompSortReset() {
+    const categories = data.categories()
+    const categoryNames = Object.fromEntries(categories.map((category) => [category.key, category.name]))
+    const compMap = data.compMap()
+    if (!competitionOrder.resetOrder(categories)) console.warn('[赛程助手] 恢复赛事默认顺序失败')
+    const rows = competitionOrder.getOrder(categories).map((key) => ({
+      ...compMap[key],
+      categoryName: categoryNames[(compMap[key] || {}).cat] || '',
+    })).filter((comp) => comp.key)
+    this.setData({ compSortRows: rows, catComps: rows.filter((comp) => comp.cat === this.data.activeCat) })
   },
 
   /** 同首页：出错也要在页面上说清楚，不能留白 */
@@ -229,9 +335,6 @@ Page({
       : mode === 'live'
         ? data.query({ cat: activeCat, comps, team: teamFilter, status: 'live' })
         : data.upcoming({ cat: activeCat, comps, team: teamFilter, status: 'upcoming' })
-    // 前瞻只在「看未来赛程」时有意义：已完赛的比赛结果就摆在比分上，再挂近况是噪声
-    this._showForm = mode === 'upcoming'
-
     // 阶段筛选。选项按**未筛选**的列表算，否则选完某阶段后选项本身就没了，切不回来。
     // 筛掉的阶段在 totalMatches / totalGroups 里也不出现，所以「共 N 场」跟眼睛看到的一致。
     const tournamentChips = activeCat === 'tennis' ? tennis.tournamentChipsOf(list, data.tennisTournamentLevel).map(c => ({
@@ -240,11 +343,19 @@ Page({
     const selectedTournament = tournamentChips.find(c => c.key === this.data.tournamentFilter)
     const tournamentFilter = selectedTournament ? selectedTournament.key : ''
     if (tournamentFilter) list = list.filter(m => tennis.tournamentOf(m).key === tournamentFilter)
+    const courtMap = new Map()
+    if (activeCat === 'tennis' && tournamentFilter) {
+      data.query({ cat: 'tennis', comps }).filter(m => tennis.tournamentOf(m).key === tournamentFilter)
+        .forEach(m => { const court = tennisEvent.courtOf(m); courtMap.set(court.key, court) })
+    }
+    const courtChips = [...courtMap.values()].sort(tennisEvent.compareCourts)
+    const courtFilter = courtChips.some(court => court.key === this.data.courtFilter) ? this.data.courtFilter : ''
     const stageChips = activeCat === 'tennis'
       ? (tournamentFilter ? stageChipsOf(list) : [])
       : (activeComp ? stageChipsOf(list) : [])
     const stage = stageChips.some((c) => c.key === stageFilter) ? stageFilter : ''
     if (stage) list = list.filter((m) => stageOf(m) === stage)
+    if (courtFilter) list = list.filter(m => tennisEvent.courtOf(m).key === courtFilter)
 
     const compName = activeComp ? data.compOf(activeComp).name : ''
 
@@ -262,6 +373,9 @@ Page({
       : null
 
     this.allGroups = view.groupByDate(list, { compOf: data.compOf, tennisTournamentLevel: data.tennisTournamentLevel })
+    this.allGroups.forEach(group => group.items.forEach(match => {
+      if (tennis.isTennis(match)) match._courtLabel = tennisEvent.courtOf(match).name
+    }))
     this.setData({
       rows: this.buildRows(shownGroups),
       totalGroups: this.allGroups.length,
@@ -270,6 +384,8 @@ Page({
       stageFilter: stage,
       tournamentChips,
       tournamentFilter,
+      courtChips,
+      courtFilter,
       tournamentLabel: selectedTournament ? selectedTournament.label : '',
       bracket: koTree,
       updatedAt: this.updatedLabel(),
@@ -342,19 +458,15 @@ Page({
    */
   buildRows(n) {
     const groups = this.allGroups || []
+    const showForm = this.data.mode === 'upcoming'
+    const app = appInstance()
     const rows = []
-    const showForm = !!this._showForm
     groups.slice(0, Math.min(n, groups.length)).forEach((g) => {
       rows.push({ type: 'head', key: `h-${g.date}`, date: g.date, dayLabel: g.dayLabel, count: g.items.length })
       g.items.forEach((m) => {
-        if (showForm) {
-          // 🔴 近况**从赛程快照算**（data.teamForm），不读 match_detail ——
-          //    详情里那份 form 覆盖不到 10% 的比赛，而这里要覆盖所有未来赛程。
-          //    实测 60 场 × 2 队 = 6ms，性能完全够。
-          m._homeForm = data.teamForm(m.comp, m.home.id, FORM_N).map((f) => f.result)
-          m._awayForm = data.teamForm(m.comp, m.away.id, FORM_N).map((f) => f.result)
-        }
-        rows.push({ type: 'match', key: `m-${m.id}`, match: m })
+        rows.push({ type: 'match', key: `m-${m.id}`, match: { ...m, _isFav: app.isFav(m.id),
+          _homeForm: showForm ? data.teamForm(m.comp, m.home.id, FORM_N).map(f => f.result) : [],
+          _awayForm: showForm ? data.teamForm(m.comp, m.away.id, FORM_N).map(f => f.result) : [] } })
       })
     })
     return rows
@@ -379,14 +491,14 @@ Page({
 
   onCatTap(e) {
     const cat = e.currentTarget.dataset.key
-    this.setData({ activeCat: cat, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '', stageChips: [], tournamentFilter: '' })
+    this.setData({ activeCat: cat, activeComp: '', shownGroups: PAGE_SIZE, stageFilter: '', stageChips: [], tournamentFilter: '', courtFilter: '' })
     this.applyCat(cat)
   },
 
   onCompTap(e) {
     const key = e.currentTarget.dataset.key
     const next = key === this.data.activeComp ? '' : key
-    this.setData({ activeComp: next, shownGroups: PAGE_SIZE, teamFilter: null, stageFilter: '', tournamentFilter: '' })
+    this.setData({ activeComp: next, shownGroups: PAGE_SIZE, teamFilter: null, stageFilter: '', tournamentFilter: '', courtFilter: '' })
     this.reload()
   },
 
@@ -405,8 +517,19 @@ Page({
   onTournamentTap(e) {
     const key = e.currentTarget.dataset.key || ''
     const next = key === this.data.tournamentFilter ? '' : key
-    this.setData({ tournamentFilter: next, stageFilter: '', shownGroups: PAGE_SIZE })
+    this.setData({ tournamentFilter: next, stageFilter: '', courtFilter: '', shownGroups: PAGE_SIZE })
     this.reload()
+  },
+
+  onCourtTap(e) {
+    this.setData({ courtFilter: e.currentTarget.dataset.key || '', shownGroups: PAGE_SIZE })
+    this.reload()
+  },
+
+  goTournament() {
+    const match = data.query({ cat: 'tennis' }).find(m => tennis.tournamentOf(m).key === this.data.tournamentFilter)
+    const event = data.tennisEventForMatch(match)
+    if (event) wx.navigateTo({ url: `/pages/tournament/tournament?event=${encodeURIComponent(event.key)}` })
   },
 
   /** 取消「只看某队」 */
@@ -445,6 +568,7 @@ Page({
       if (!d.activeComp) params.push('cat=tennis')
       if (d.tournamentFilter) params.push(`tournament=${encodeURIComponent(d.tournamentFilter)}`)
       if (d.stageFilter) params.push(`round=${encodeURIComponent(d.stageFilter)}`)
+      if (d.courtFilter) params.push(`court=${encodeURIComponent(d.courtFilter)}`)
       params.push(`mode=${d.mode}`)
     }
     return params.join('&')

@@ -1,0 +1,51 @@
+<view class="athlete-page">
+  <view class="empty" wx:if="{{error}}">{{error}}</view>
+  <block wx:else>
+    <view class="athlete-hero">
+      <view class="athlete-heading"><image wx:if="{{photo}}" src="{{photo}}" mode="aspectFill" binderror="onPhotoError" class="portrait"/>
+        <view class="athlete-heading-text"><view class="athlete-tour"><image class="sport-icon" src="/images/sport-tennis-white.png" mode="aspectFit"/>{{comp === 'atp' ? 'ATP' : 'WTA'}} · 单打</view><view class="athlete-name">{{name}}</view><view class="athlete-en">{{enName}}</view></view>
+      </view>
+      <view class="athlete-follow" bindtap="onFollow">{{followed ? '已关注选手' : '+ 关注选手'}}</view>
+    </view>
+    <view class="athlete-section">
+      <view class="athlete-section-title">实时积分</view>
+      <view class="athlete-points" wx:if="{{liveReady}}">
+        <view><view class="point-label">实时世界排名</view><view class="point-number">{{player.rank}}</view></view>
+        <view><view class="point-label">实时估算积分</view><view class="point-number">{{player.points}}</view></view>
+        <view><view class="point-label">较正式周榜</view><view class="point-number delta {{player.points < player.officialPoints ? 'negative' : ''}}">{{player.deltaLabel || '—'}}</view></view>
+      </view>
+      <view class="athlete-note" wx:if="{{liveReady}}">正式周榜：第 {{player.officialRank || '—'}} 位 · {{player.officialPoints === null ? '—' : player.officialPoints}} 分</view>
+      <view class="athlete-note" wx:else>暂未取得该选手的实时积分，比赛赛程和已有档案仍可查阅。</view>
+      <view class="points-detail" wx:if="{{gains.length}}"><view class="points-heading">最近计入的赛事积分</view>
+        <view class="points-row" wx:for="{{gains}}" wx:key="event"><text>{{item.event}} · {{item.roundLabel}}</text><text>+{{item.points}}</text></view>
+      </view>
+      <view class="points-detail" wx:if="{{drops.length}}"><view class="points-heading">到期扣除 / 被替换的积分</view>
+        <view class="points-row" wx:for="{{drops}}" wx:key="event"><text>{{item.event}} · {{item.roundLabel}}</text><text>−{{item.points}}</text></view>
+      </view>
+      <view class="athlete-note" wx:if="{{asOf}}">数据截至 {{asOf}} · rank.tennis 实时估算，已包含来源计入的赛后积分。</view>
+      <view class="athlete-warning" wx:if="{{stale}}">当前为上次成功同步的积分，最新赛果可能尚未计入。</view>
+    </view>
+    <view class="athlete-section" wx:if="{{profile.length}}"><view class="athlete-section-title">选手档案</view>
+      <view class="profile-row" wx:for="{{profile}}" wx:key="label"><text>{{item.label}}</text><text>{{item.value}}</text></view>
+    </view>
+    <view class="athlete-section" wx:if="{{finals}}"><view class="athlete-section-title">通往年终总决赛</view>
+      <view class="eligibility-status {{finals.tone}}">{{finals.title}}</view>
+      <view class="race-points" wx:if="{{finals.rank}}">年度冠军积分第 {{finals.rank}} 位 · {{finals.points}} 分</view>
+      <view class="race-gap" wx:if="{{finals.gap !== null}}">距当前第7名 {{finals.gap}} 分 · 当前第7名 {{finals.linePoints}} 分</view>
+      <view class="athlete-note">{{finals.note}}</view>
+    </view>
+    <view class="athlete-section" wx:if="{{eligibility.length}}"><view class="athlete-section-title">当前及后续分站</view>
+      <view class="athlete-note">正式报名按截止时采用的周排名、名单及特殊通道确认，实时积分只用于观察竞争力。</view>
+      <view class="eligibility-item" wx:for="{{eligibility}}" wx:key="name"><view class="eligibility-name">{{item.station}} <text>{{item.level}}</text></view>
+        <view class="eligibility-date">{{item.start}} — {{item.end}} · {{item.phaseLabel}}</view>
+        <view class="eligibility-status {{item.tone}}">{{item.title}}</view><view class="athlete-note">{{item.reason}}</view>
+      </view>
+    </view>
+    <view class="athlete-section" wx:if="{{upcoming.length}}"><view class="athlete-section-title">接下来的比赛</view>
+      <view class="athlete-match" wx:for="{{upcoming}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail"><view>{{item.home.zhName}}<text class="tennis-seed" wx:if="{{item.home.seed}}">[{{item.home.seed}}]</text><text class="tennis-retired" wx:if="{{item.home.retired}}">退赛</text> VS {{item.away.zhName}}<text class="tennis-seed" wx:if="{{item.away.seed}}">[{{item.away.seed}}]</text><text class="tennis-retired" wx:if="{{item.away.retired}}">退赛</text></view><view class="athlete-note">{{item.date}} {{item.time}} · {{item._stageLabel}} · {{item._statusLabel}}</view></view>
+    </view>
+    <view class="athlete-section" wx:if="{{recent.length}}"><view class="athlete-section-title">最近赛果</view>
+      <view class="athlete-match" wx:for="{{recent}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail"><view>{{item.home.zhName}}<text class="tennis-seed" wx:if="{{item.home.seed}}">[{{item.home.seed}}]</text><text class="tennis-retired" wx:if="{{item.home.retired}}">退赛</text> {{item.home.score}} : {{item.away.score}} {{item.away.zhName}}<text class="tennis-seed" wx:if="{{item.away.seed}}">[{{item.away.seed}}]</text><text class="tennis-retired" wx:if="{{item.away.retired}}">退赛</text></view><view class="athlete-note">{{item.date}} · {{item._stageLabel}}</view></view>
+    </view>
+  </block>
+</view>

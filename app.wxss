@@ -298,14 +298,28 @@ page {
   font-weight: 700;
 }
 
+.mc-head .sport-icon {
+  width: 42rpx;
+  height: 42rpx;
+}
+
 .mc-stage {
   flex: 1;
+  min-width: 0;
   margin-left: 14rpx;
   font-size: 22rpx;
   color: var(--muted);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.mc-broadcast {
+  flex: none;
+  margin-left: 12rpx;
+  color: #28724c;
+  font-size: 20rpx;
+  white-space: nowrap;
 }
 
 .mc-status {
@@ -449,3 +463,9 @@ page {
 .mc-badge.ghost {
   color: var(--muted);
 }
+
+.tennis-retired{display:inline-block;flex:none;font-size:18rpx;font-weight:700;line-height:28rpx;padding:0 6rpx;margin:0 8rpx;color:#b84646;background:#fff0ee;border:1rpx solid #f0cac5;border-radius:5rpx;white-space:nowrap;vertical-align:middle}
+
+.tennis-seed{flex:none;font-size:18rpx;line-height:26rpx;margin:0 5rpx;color:#76849a;white-space:nowrap}
+
+.sport-icon{display:inline-block;flex:none;width:30rpx;height:30rpx;margin-right:8rpx;vertical-align:middle}.sport-label{display:flex;align-items:baseline}.sport-label .sport-icon{align-self:flex-start;margin-top:6rpx}

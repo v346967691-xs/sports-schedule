@@ -1,5 +1,5 @@
 /** 展示实时估算、正式周榜及参赛依据；资格结论必须有名单或对阵证据。 */
-const { nameKey, nameZh } = require('./tennis-names')
+const { nameKey, nameZh, displayName } = require('./tennis-names')
 const tennis = require('./tennis')
 const roundLabels = { W: '冠军', F: '亚军', SF: '半决赛', QF: '八强', R16: '16强', R32: '32强', R64: '64强', R128: '128强' }
 const playerFields = ['key','name','country','rank','points','officialRank','officialPoints','birthYear','photo','gains','drops','currentEvent','currentRound','eventPoints','nextPoints','espnId']
@@ -36,7 +36,7 @@ function board(payload, chinaOnly, now = Date.now()) {
   if (!payload || !Array.isArray(payload.players)) return null
   const all = payload.players.concat((payload.pool || []).map(row => ({ name: row[0], country: row[1], rank: row[2], points: row[3], officialRank: row[4], officialPoints: row[5] })))
   const rows = all.filter(row => chinaOnly ? row.country === 'CHN' : row.rank <= 100).sort((a,b) => a.rank-b.rank)
-    .slice(0, chinaOnly ? 10 : 100).map(row => ({ id: row.key || nameKey(row.name), name: nameZh(row.name) || row.name,
+    .slice(0, chinaOnly ? 10 : 100).map(row => ({ id: row.key || nameKey(row.name), name: displayName(row.name),
       en: row.name, country: row.country, pos: row.rank, value: row.points,
       delta: Number.isFinite(row.officialPoints) ? row.points - row.officialPoints : null,
       movement: Number.isFinite(row.officialRank) ? row.officialRank - row.rank : null }))

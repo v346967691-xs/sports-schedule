@@ -71,17 +71,19 @@ function nameOf(t) {
 }
 
 function decorate(m) {
+  m = require('./tennis-result').display(require('./match-status').normalize(m))
   const ctx = this || {}
   const comp = ctx.compOf ? ctx.compOf(m.comp) : { name: m.comp, accent: '#6B7280' }
   const isEsports = m.bo !== null && m.bo !== undefined
-  const homeWin = m.status === 'finished' && typeof m.home.score === 'number' && typeof m.away.score === 'number' && m.home.score > m.away.score
-  const awayWin = m.status === 'finished' && typeof m.home.score === 'number' && typeof m.away.score === 'number' && m.away.score > m.home.score
-  const hasScore = m.status !== 'upcoming' && typeof m.home.score === 'number' && typeof m.away.score === 'number'
+  const officialWinner = m._retirementKnown && m.winnerId
+  const homeWin = m._isRetirement ? !!officialWinner && String(m.home.id) === String(officialWinner) : m.status === 'finished' && typeof m.home.score === 'number' && typeof m.away.score === 'number' && m.home.score > m.away.score
+  const awayWin = m._isRetirement ? !!officialWinner && String(m.away.id) === String(officialWinner) : m.status === 'finished' && typeof m.home.score === 'number' && typeof m.away.score === 'number' && m.away.score > m.home.score
+  const hasScore = ['live','finished'].includes(m.status) && typeof m.home.score === 'number' && typeof m.away.score === 'number'
 
   let statusLabel = m.statusText
   let statusHint = ''
   if (m.status === 'upcoming') {
-    statusLabel = isEsports && m.bo ? `BO${m.bo}` : '未开始'
+    statusLabel = /延期|延迟|暂停/.test(m.statusText||'') ? m.statusText : isEsports && m.bo ? `BO${m.bo}` : '未开始'
     statusHint = fmt.countdownText(m.start)
   } else if (m.status === 'live') {
     statusLabel = m.statusText || '进行中'
@@ -96,15 +98,20 @@ function decorate(m) {
     //    而且 statusText 本身信息更丰富：已延期 / 点球大战 / 加时赛 / 已结束。
     statusLabel = m.statusText || '已结束'
   }
+  if(m._retirementPending)statusLabel='退赛 · 胜方待确认'
 
   // 中文名优先，取不到再回落英文名；未定对阵统一成「待定」
-  const withZh = (t) => Object.assign({}, t, { zhName: nameOf(t) })
+  const withZh = (t) => Object.assign({}, t, { zhName: tennis.isTennis(m) ? require('./tennis-names').displayName(t.name,nameOf(t)) : nameOf(t) })
 
   // 卡片小字只展示「轮次/阶段」，不重复 tag 上已经写着的赛事名。
   // 数据里的 stage 形如「全球总决赛 · 瑞士轮」「LEC · 第 4 周」——
   // 第一段是赛事名，去掉；「联赛阶段 · D1组」这种第一段本身就是阶段，保留。
-  const stageLabel = tennis.isTennis(m)
-    ? [tennis.tournamentLabel(m, ctx.tennisTournamentLevel), tennis.roundOf(m)].filter(Boolean).join(' · ')
+  const isTennis = tennis.isTennis(m)
+  const tournamentTitle = isTennis ? tennis.tournamentOf(m).raw : ''
+  const roundNameRaw = isTennis ? String(m.stage || '').split('·').slice(1).map(s => s.trim()).filter(Boolean).join(' · ') : ''
+  const roundName = isTennis ? tennis.roundOf(m) : ''
+  const stageLabel = isTennis
+    ? [tennis.tournamentLabel(m, ctx.tennisTournamentLevel), roundName].filter(Boolean).join(' · ')
     : roundLabel(m.stage, comp.name)
 
   return Object.assign({}, m, {
@@ -117,7 +124,12 @@ function decorate(m) {
     _weekday: fmt.weekdayLabel(m.date),
     _statusLabel: statusLabel,
     _statusHint: statusHint,
+    _isTennis: isTennis,
+    _tournamentTitle: tournamentTitle,
+    _roundNameRaw: roundNameRaw,
+    _eventCompetition: isTennis ? `${m.comp.toUpperCase()} · ${tournamentTitle}` : '',
     _stageLabel: stageLabel,
+    _broadcastLabel: isTennis && Array.isArray(m.broadcast) ? m.broadcast.join(' / ') : '',
     _hasScore: hasScore,
     _homeWin: homeWin,
     _awayWin: awayWin,

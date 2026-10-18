@@ -20,7 +20,7 @@
         data-key="{{item.key}}"
         bindtap="onCatTap"
       >
-        {{item.name}}<text class="tf-cat-num" wx:if="{{item.followed}}">{{item.followed}}</text>
+        <image class="sport-icon" wx:if="{{item.cat}}" src="/images/sport-{{item.cat}}{{item.key === activeCat ? '-white' : ''}}.png" mode="aspectFit"/>{{item.name}}<text class="tf-cat-num" wx:if="{{item.followed}}">{{item.followed}}</text>
       </view>
     </view>
   </scroll-view>
@@ -46,7 +46,7 @@
     >
       <view class="tf-bar" style="background: {{item.color}}"></view>
       <!-- 主体点击进球队详情，右下角按钮才关注：两个动作分开，避免误触取消关注 -->
-      <view class="tf-body" wx:if="{{item.isTennis}}">
+      <view class="tf-body" wx:if="{{item.isTennis}}" data-index="{{index}}" bindtap="onTeamTap">
         <view class="tf-name">{{item.display}}</view>
         <view class="tf-abbr">{{item.abbr}}</view>
         <view class="tf-rank" wx:if="{{item.rankText}}">{{item.rankText}}</view>

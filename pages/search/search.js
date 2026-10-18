@@ -75,6 +75,7 @@ Page({
           return {
             kind: 'comp',
             key: it.key,
+            cat:data.compOf(it.key).cat,
             name: it.name,
             full: it.full,
             accent: it.accent,
@@ -87,6 +88,7 @@ Page({
           id: it.id,
           comp: it.comp,
           compName: it.compName,
+          cat:data.compOf(it.comp).cat,
           compCount: it.comps.length,
           display: it.display,
           // name / zh / abbr / color 要原样带上：关注落库与云端同步都要用到

@@ -13,7 +13,7 @@
         <view class="avatar" style="background: rgba(255,255,255,0.18);">{{abbr}}</view>
         <view class="hero-id">
           <view class="hero-name">{{name}}</view>
-          <view class="hero-comp">{{compName}}</view>
+          <view class="hero-comp"><image class="sport-icon" wx:if="{{compCat}}" src="/images/sport-{{compCat}}-white.png" mode="aspectFit"/>{{compName}}</view>
         </view>
       </view>
 
@@ -88,8 +88,9 @@
         hover-class="mc-hover"
       >
         <view class="mc-head">
-          <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+          <image class="sport-icon" wx:if="{{item._comp.cat}}" src="/images/sport-{{item._comp.cat}}.png" mode="aspectFit"/><view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
           <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+          <view class="mc-broadcast" wx:if="{{item._broadcastLabel}}">{{item._broadcastLabel}}</view>
           <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
         </view>
 
@@ -102,14 +103,12 @@
           <view class="mc-teams">
             <view class="mc-row">
               <view class="mc-dot" style="background: {{item.home.color}}"></view>
-              <view class="mc-name {{item.home.id === id ? 'win' : ''}}">{{item.home.zhName}}</view>
-              <view class="mc-abbr">{{item.home.abbr}}</view>
+              <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item.home.id === id ? 'win' : ''}}">{{item.home.zhName}}</view>
               <view class="mc-score" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
             </view>
             <view class="mc-row">
               <view class="mc-dot" style="background: {{item.away.color}}"></view>
-              <view class="mc-name {{item.away.id === id ? 'win' : ''}}">{{item.away.zhName}}</view>
-              <view class="mc-abbr">{{item.away.abbr}}</view>
+              <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item.away.id === id ? 'win' : ''}}">{{item.away.zhName}}</view>
               <view class="mc-score" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
             </view>
           </view>

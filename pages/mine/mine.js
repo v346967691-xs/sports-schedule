@@ -181,6 +181,10 @@ Page({
     const idx = e.currentTarget.dataset.index
     const team = this.data.teams[idx]
     if (!team) return
+    if(team.comp==='atp'||team.comp==='wta'){
+      wx.navigateTo({url:require('../../utils/tennis-insights').profileUrl(team.comp,team)})
+      return
+    }
     appInstance().globalData.pendingTeam = { comp: team.comp, id: team.id, name: team.name, abbr: team.abbr, display: team.display }
     wx.switchTab({ url: '/pages/schedule/schedule' })
   },

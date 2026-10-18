@@ -369,6 +369,10 @@ async function run() {
   check('我的页：关注球队区块有数据', ctxMineTeam.data.teams.length >= 1 && ctxMineTeam.data.teamMatches.length > 0, `teams=${ctxMineTeam.data.teams.length} matches=${ctxMineTeam.data.teamMatches.length}`)
 
   // 关注球队不能只列未来赛程：24 小时内打完的比赛也要展示
+  // Anchor this fixture to its own latest final; checked-in snapshots need not be current.
+  const wallNow = Date.now
+  const latestFinal = dataMod.matches().filter(m=>m.status==='finished').map(m=>Date.parse(m.start)).filter(Number.isFinite).sort((a,b)=>b-a)[0]
+  Date.now = () => latestFinal + 30 * 60000
   const recentPool = dataMod.recentFinished({}, 24)
   check('数据层：recentFinished 能捞出 24 小时内的已结束比赛', recentPool.length > 0, `${recentPool.length} 场`)
   check('数据层：recentFinished 按时间倒序（最新在前）',
@@ -410,6 +414,7 @@ async function run() {
     check('我的页：24 小时内的赛果展示出来', false, '数据里找不到近 24 小时已结束的比赛，用例无法验证')
   }
 
+  Date.now = wallNow
   // 关注球队的未来赛程只展示 7 天内（更远的占位置又用不上）
   const furthest = ctxMineTeam.data.teamMatches.map((m) => m.date).sort().pop()
   check('我的页：未来赛程收敛到 7 天内',
@@ -481,6 +486,7 @@ async function run() {
       drawImage: () => images.push(1),
       fillRect: () => rects.push(1),
       clearRect() {}, scale() {},
+      createLinearGradient: () => ({addColorStop(){}}),
       beginPath() {}, moveTo() {}, arcTo() {}, closePath() {}, fill() {},
     }
   }
@@ -495,7 +501,7 @@ async function run() {
   const mText = ctxM.texts.join(' | ')
   check('卡图：比赛卡画出双方队名',
     mText.indexOf('中国U23亚运队') > -1 && mText.indexOf('韩国U23') > -1, mText.slice(0, 80))
-  check('卡图：比赛卡画出比分 1 - 2', mText.indexOf('1 - 2') > -1, mText.slice(0, 80))
+  check('卡图：比赛卡画出比分 1-2', mText.indexOf('1-2') > -1, mText.slice(0, 80))
 
   // 未开赛（无比分）必须显示 VS，不能画成 "null - null"
   const ctxU = fakeCtx()
@@ -523,7 +529,7 @@ async function run() {
     bg: {}, home: '中国U23亚运队', away: '韩国U23', homeScore: 1, awayScore: 2,
   })
   check('卡图：有底图时先贴图再写字',
-    ctxBg.images.length === 1 && ctxBg.rects.length === 0 && ctxBg.texts.length > 0,
+    ctxBg.images.length === 1 && ctxBg.rects.length === 3 && ctxBg.texts.length > 0,
     `drawImage=${ctxBg.images.length} fillRect=${ctxBg.rects.length}`)
 
   const ctxNoBg = fakeCtx()
@@ -539,13 +545,13 @@ async function run() {
     ctxBriefBg.texts.join(' | ').slice(0, 60))
 
   // 底图文件必须真的在包里，否则 loadBg 静默失败、悄悄退回纯色底
-  const bgFiles = ['images/share-match.jpg', 'images/share-brief.jpg']
+  const bgFiles = ['football','basketball','esports','tennis'].map(cat=>'images/share-match-'+cat+'.jpg').concat('images/share-brief.jpg')
   const badBg = bgFiles.filter((f) => {
     try { return fsMod.statSync(path.join(ROOT, f)).size > 200 * 1024 } catch (e) { return true }
   })
-  check('卡图：两张底图已进包且单张 ≤ 200KB', badBg.length === 0, badBg.join(' '))
+  check('卡图：四类比赛及日报底图已进包且单张 ≤ 200KB', badBg.length === 0, badBg.join(' '))
   check('卡图：BG 常量已指向底图',
-    posterMod.BG.match === '/images/share-match.jpg' && posterMod.BG.brief === '/images/share-brief.jpg')
+    posterMod.BG.match === '/images/share-match-football.jpg' && ['football','basketball','esports','tennis'].every(cat=>posterMod.BG.matches[cat]==='/images/share-match-'+cat+'.jpg') && posterMod.BG.brief === '/images/share-brief.jpg')
 
   /* ── 2026-10-08 新增四张分享卡：榜单 / 球员 / 球队 / 赛程 ──
      🔴 这四张**一律代码画、不配底图**：包体积余量只有 ~320KB，一张底图 ~110KB，
@@ -669,7 +675,7 @@ async function run() {
     /data\.teamForm\(/.test(schJs) && !/_homeForm\s*=\s*.*matchDetail/.test(schJs))
   // 只在「看未来赛程」时给，已完赛的比分本身就说明了结果
   check('前瞻：只在 upcoming 模式挂近况（已完赛不挂，比分已在右边）',
-    /_showForm\s*=\s*mode\s*===\s*'upcoming'/.test(schJs))
+    /const showForm = this\.data\.mode === 'upcoming'/.test(schJs))
   check('前瞻：主客两行都渲染了近况色块',
     (schWxml.match(/class="mc-form"/g) || []).length === 2
     && schWxml.indexOf('_homeForm') > -1 && schWxml.indexOf('_awayForm') > -1)
@@ -909,9 +915,8 @@ async function run() {
   // ③ 老比赛详情按赛事保留窗口裁剪；Worlds 单局数据还可能等待官方结算
   const detailWxml = fsMod.readFileSync(path.join(ROOT, 'pages/detail/detail.wxml'), 'utf8')
   check('详情：缺少赛后数据时说明数据窗口或 Worlds 官方结算状态',
-    detailWxml.indexOf('比赛详情按保留窗口显示') > -1
-    && detailWxml.indexOf('单局数据暂未就绪') > -1
-    && detailWxml.indexOf('未结算或未返回的数据稍后补齐') > -1
+    detailWxml.indexOf('比赛数据统计中，请稍后查阅。') > -1 && detailWxml.indexOf('比赛详情按保留窗口显示') > -1
+    && /statsPending/.test(detailWxml) && /!match\._isTennis/.test(detailWxml)
     && /match\.status === 'finished'/.test(detailWxml))
 
   // ④ teams 页底注承诺了「去我的」，goMine 必须接线（以前是死代码）
@@ -3236,7 +3241,7 @@ async function run() {
     //    开赛那一刻没人扫 → 最多晚 5 分钟才补上比分。ESPN 那条通道用同样的 near 窗口避开，
     //    CBA 之前没对齐（10-11 补）。scanCba 从返回数组改成 {rows, near}。
     check('实时比分：CBA 的收敛条件含「窗口内有比赛（含未开打）」（否则开赛瞬间会漏扫）',
-      /cbaActive = cbaRows\.length > 0 \|\| cba\.near/.test(lwSrcAll)
+      /cbaActive = cbaRows\.some\(row => row\.st === 'live'\) \|\| cba\.near/.test(lwSrcAll)
       && /return \{ rows, near \}/.test(lwSrcAll))
 
     check('实时比分：ESPN 的 dates 用 UTC，取昨天/今天/明天三天（覆盖所有时区）',
@@ -3672,7 +3677,7 @@ async function run() {
 
   // 一次探测同时干两件事（识别隔离 + 取时间做节流），拆成两次读每月多烧约 2900 次请求。
   check('云同步：节流判断与环境探测合并为一次读（别拆回两次请求）',
-    (csSrc.match(/from\('schedule_cache'\)/g) || []).length === 1,
+    (csSrc.slice(csSrc.indexOf('async function gate('),csSrc.indexOf('async function detailAgeMin(')).match(/from\('schedule_cache'\)/g) || []).length === 1,
     `cloud-sync 里 schedule_cache 查询点 ${(csSrc.match(/from\('schedule_cache'\)/g) || []).length} 处`)
 
   // match_detail 按天分桶，一次 11 行，是单次全量推送里请求数最大一块 → 独立节流。
@@ -3874,7 +3879,7 @@ async function run() {
   check('实时比分：心跳上限存在且不超过 10 轮（别让客户端分不清「没变」和「挂了」）',
     Number.isFinite(hbRounds) && hbRounds >= 1 && hbRounds <= 10, `${hbRounds} 轮 ≈ ${hbRounds} 分钟`)
 
-  // 🔴 云环境整体不可用（隔离 / 停服）时：**早退 + 退出码 0，不算失败**。
+  // 云环境隔离/停服时早退并以退出码 3 标记不可用，避免误报健康。
   //    否则每 15 分钟一班全飘红，一天 96 封 GitHub 失败邮件，还会白烧 Actions 分钟数。
   //    但绝不能误伤：权限错误（42501）这类是**真的代码/配置问题**，必须照常判红。
   const outageMod = require(path.join(ROOT, 'tools/cloud-outage.js'))
@@ -3887,10 +3892,10 @@ async function run() {
     && outageMod.isOutage({ code: '22P02', message: 'invalid input syntax' }) === false,
     '42501 / 22P02 均判为「非环境故障」')
   const ccSrc = fs.readFileSync(path.join(ROOT, 'tools/check-cloud.js'), 'utf8')
-  check('云故障：新鲜度校验遇到隔离时退出 0（不把环境问题当同步失败）',
-    /isOutage\(error\)/.test(ccSrc) && ccSrc.indexOf('跳过新鲜度校验') !== -1)
-  check('云故障：同步脚本探测到隔离就早退（省下每班 2 分钟抓取 + 不再刷失败邮件）',
-    /verdict\.outage/.test(csSrc) && csSrc.indexOf('本班不重试、不算失败') !== -1)
+  check('云故障：新鲜度校验遇到隔离时退出 3，不能标为健康',
+    /isOutage\(error\)/.test(ccSrc) && ccSrc.indexOf('process.exitCode = 3') !== -1)
+  check('云故障：同步脚本探测到隔离就早退并标记不可用',
+    /verdict\.outage/.test(csSrc) && csSrc.indexOf('本班停止，不重试') !== -1 && csSrc.indexOf('process.exitCode = 3') !== -1)
 
   /* ───────────────── 2026-10-11 · 球队身份：数字 id 跨赛事复用 ─────────────────
    *

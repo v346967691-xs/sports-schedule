@@ -11,12 +11,28 @@
   overflow: hidden;
 }
 
-.chip-bar {
+.rank-filter-row {
   flex: none;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-bottom: 2rpx solid var(--line);
+}
+
+.chip-bar {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   padding: 20rpx 0 18rpx;
   background: #fff;
-  border-bottom: 2rpx solid var(--line);
+}
+
+.rank-sort-entry {
+  flex: none;
+  padding: 12rpx 20rpx 12rpx 12rpx;
+  color: var(--brand);
+  font-size: 23rpx;
+  font-weight: 600;
 }
 
 .body {
@@ -38,6 +54,144 @@
 
 .chip-bar .chip:last-child {
   margin-right: 24rpx;
+}
+
+.comp-sort-mask {
+  position: fixed;
+  z-index: 100;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(12, 20, 45, 0.48);
+}
+
+.comp-sort-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 82vh;
+  padding: 28rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  background: #fff;
+}
+
+.comp-sort-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.comp-sort-title {
+  color: var(--text);
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.comp-sort-hint {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 22rpx;
+}
+
+.comp-sort-close {
+  padding: 12rpx 18rpx;
+  color: var(--brand);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.comp-sort-list {
+  height: 52vh;
+}
+
+.comp-sort-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 84rpx;
+  border-bottom: 1rpx solid var(--line);
+  transition: transform 0.08s ease;
+}
+
+.comp-sort-item.dragging {
+  background: #fff;
+  box-shadow: 0 4rpx 18rpx rgba(12, 20, 45, 0.16);
+  transition: none;
+}
+
+.comp-sort-drag-handle {
+  flex: none;
+  width: 40rpx;
+  margin-right: 10rpx;
+  color: var(--muted);
+  font-size: 30rpx;
+  text-align: center;
+}
+
+.comp-sort-pin {
+  flex: none;
+  margin-left: 8rpx;
+  padding: 10rpx 12rpx;
+  border-radius: 10rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
+.comp-sort-color {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 18rpx;
+  border-radius: 50%;
+}
+
+.comp-sort-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 27rpx;
+}
+
+.comp-sort-category {
+  margin-left: 14rpx;
+  color: var(--muted);
+  font-size: 21rpx;
+}
+
+.comp-sort-arrows {
+  display: flex;
+  align-items: center;
+}
+
+.comp-sort-arrow {
+  width: 64rpx;
+  height: 60rpx;
+  margin-left: 8rpx;
+  border-radius: 12rpx;
+  background: var(--bg);
+  color: var(--brand);
+  font-size: 30rpx;
+  line-height: 60rpx;
+  text-align: center;
+}
+
+.comp-sort-arrow.disabled {
+  color: #c5cad4;
+}
+
+.comp-sort-reset {
+  margin-top: 18rpx;
+  padding: 18rpx;
+  border-radius: 12rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 25rpx;
+  text-align: center;
 }
 
 /* ------------------------------------------------------------ 档位分段控件
@@ -482,3 +636,10 @@
 .tennis-scope .selected { background:#17255E; color:#fff; }
 .tennis-country { color:#818A9B; font-size:22rpx; margin-top:6rpx; }
 .tennis-warning { color:#A16E17; font-size:24rpx; margin-bottom:20rpx; }
+.tennis-points-delta{font-size:20rpx;color:#7f8da5;line-height:1.5;font-weight:400}
+
+.rank-movement{font-size:20rpx;line-height:26rpx;font-weight:600}.rank-movement.rise{color:#ba4949}.rank-movement.fall{color:#16734c}.rank-movement.flat{color:#909aaa}
+
+.tennis-table .td-pos{flex-direction:column;justify-content:center;align-items:center}.tennis-table .td-pos,.tennis-table .th-pos{width:70rpx}
+
+.tennis-points-delta.rise{color:#ba4949}.tennis-points-delta.fall{color:#16734c}

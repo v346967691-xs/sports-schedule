@@ -9,24 +9,30 @@
       class="cat {{item.key === activeCat ? 'active' : ''}}"
       data-key="{{item.key}}"
       bindtap="onCatTap"
-    >{{item.name}}</view>
+    >
+      <image class="sport-icon cat-sport-icon" src="/images/sport-{{item.key}}-white.png" mode="aspectFit"/>
+      <text>{{item.name}}</text>
+    </view>
   </view>
 
   <view class="filter-bar">
-    <scroll-view class="chip-row-wrap" scroll-x enable-flex>
-      <view class="chip-row">
-        <view class="chip {{activeComp === '' ? 'active' : ''}}" data-key="" bindtap="onCompTap">全部</view>
-        <view
-          wx:for="{{catComps}}"
-          wx:key="key"
-          class="chip {{item.key === activeComp ? 'active' : ''}}"
-          data-key="{{item.key}}"
-          bindtap="onCompTap"
-        >
-          <view class="chip-accent" style="background: {{item.accent}}"></view>{{item.name}}
+    <view class="competition-filter-row">
+      <scroll-view class="chip-row-wrap competition-chip-scroll" scroll-x enable-flex>
+        <view class="chip-row">
+          <view class="chip {{activeComp === '' ? 'active' : ''}}" data-key="" bindtap="onCompTap">全部</view>
+          <view
+            wx:for="{{catComps}}"
+            wx:key="key"
+            class="chip {{item.key === activeComp ? 'active' : ''}}"
+            data-key="{{item.key}}"
+            bindtap="onCompTap"
+          >
+            <image class="sport-icon" wx:if="{{item.cat}}" src="/images/sport-{{item.cat}}{{item.key === activeComp ? '-white' : ''}}.png" mode="aspectFit"/>{{item.name}}
+          </view>
         </view>
-      </view>
-    </scroll-view>
+      </scroll-view>
+      <view class="comp-sort-entry" bindtap="onCompSortOpen">排序</view>
+    </view>
 
     <view class="mode-switch">
       <view class="mode {{mode === 'upcoming' ? 'active' : ''}}" data-mode="upcoming" bindtap="onModeTap">即将开赛</view>
@@ -40,7 +46,7 @@
         <view class="chip stage-chip {{tournamentFilter === '' ? 'active' : ''}}" data-key="" bindtap="onTournamentTap">全部分站</view>
         <view wx:for="{{tournamentChips}}" wx:key="key"
           class="chip stage-chip {{tournamentFilter === item.key ? 'active' : ''}}"
-          data-key="{{item.key}}" bindtap="onTournamentTap">{{item.label}} {{item.count}}</view>
+          data-key="{{item.key}}" bindtap="onTournamentTap">{{item.label}}</view>
       </view>
     </scroll-view>
 
@@ -57,9 +63,47 @@
           class="chip stage-chip {{stageFilter === item.key ? 'active' : ''}}"
           data-key="{{item.key}}"
           bindtap="onStageTap"
-        >{{item.key}} {{item.count}}</view>
+        >{{item.key}}</view>
       </view>
     </scroll-view>
+  </view>
+
+  <view class="tennis-station-entry" wx:if="{{activeCat === 'tennis' && tournamentFilter}}" bindtap="goTournament">
+    <view><view class="tennis-station-title">{{tournamentLabel}}</view><view class="tennis-station-desc">完整分站赛程 · 按球场查看 · 晋级图</view></view><text>›</text>
+  </view>
+  <scroll-view class="chip-row-wrap tennis-courts" scroll-x enable-flex wx:if="{{activeCat === 'tennis' && tournamentFilter && courtChips.length}}">
+    <view class="chip-row">
+      <text class="filter-level-label">球场</text>
+      <view class="chip stage-chip {{courtFilter === '' ? 'active' : ''}}" data-key="" bindtap="onCourtTap">全部球场</view>
+      <view class="chip stage-chip {{courtFilter === item.key ? 'active' : ''}}" wx:for="{{courtChips}}" wx:key="key" data-key="{{item.key}}" bindtap="onCourtTap">{{item.name}}</view>
+    </view>
+  </scroll-view>
+
+  <view class="comp-sort-mask" wx:if="{{showCompSort}}" bindtap="onCompSortClose">
+    <view class="comp-sort-panel" catchtap="stopCompSortTap">
+      <view class="comp-sort-header">
+        <view>
+          <view class="comp-sort-title">赛事排序</view>
+          <view class="comp-sort-hint">跨类别统一排序 · ATP等也可移到最前</view>
+        </view>
+        <view class="comp-sort-close" bindtap="onCompSortClose">完成</view>
+      </view>
+      <scroll-view class="comp-sort-list" scroll-y>
+        <view class="comp-sort-item {{index === compSortDragIndex ? 'dragging' : ''}}" wx:for="{{compSortRows}}" wx:key="key"
+          style="transform: translateY({{index === compSortDragIndex ? compSortDragOffset : 0}}px); z-index: {{index === compSortDragIndex ? 2 : 0}}">
+          <view class="comp-sort-drag-handle" data-index="{{index}}" bindtouchstart="onCompSortDragStart"
+            catchtouchmove="onCompSortDragMove" bindtouchend="onCompSortDragEnd" bindtouchcancel="onCompSortDragEnd">☰</view>
+          <view class="comp-sort-color" style="background: {{item.accent}}"></view>
+          <view class="comp-sort-name">{{item.name}}<text class="comp-sort-category">{{item.categoryName}}</text></view>
+          <view class="comp-sort-arrows">
+            <view class="comp-sort-pin" data-index="{{index}}" bindtap="onCompSortPin">置顶</view>
+            <view class="comp-sort-arrow {{index === 0 ? 'disabled' : ''}}" data-index="{{index}}" data-direction="-1" bindtap="onCompSortMove">↑</view>
+            <view class="comp-sort-arrow {{index === compSortRows.length - 1 ? 'disabled' : ''}}" data-index="{{index}}" data-direction="1" bindtap="onCompSortMove">↓</view>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="comp-sort-reset" bindtap="onCompSortReset">恢复默认顺序</view>
+    </view>
   </view>
 
   <!-- 有排行榜的赛事才出现：看赛程的时候顺手能查排名 -->
@@ -155,8 +199,10 @@
 
     <view class="mc" wx:if="{{item.type === 'match'}}" data-id="{{item.match.id}}" bindtap="goDetail" hover-class="mc-hover">
       <view class="mc-head">
-        <view class="mc-tag" style="background: {{item.match._accent}}">{{item.match._compName}}</view>
+        <image class="sport-icon" wx:if="{{item.match._comp.cat}}" src="/images/sport-{{item.match._comp.cat}}.png" mode="aspectFit"/><view class="mc-tag" style="background: {{item.match._accent}}">{{item.match._compName}}</view>
         <view class="mc-stage" wx:if="{{item.match._stageLabel}}">{{item.match._stageLabel}}</view>
+        <view class="mc-broadcast" wx:if="{{item.match._broadcastLabel}}">{{item.match._broadcastLabel}}</view>
+        <view class="mc-followed" wx:if="{{item.match._isFav}}" aria-label="已关注比赛" role="img"><view class="mc-followed-eye"></view></view>
         <view class="mc-status status-{{item.match.status}}">{{item.match._statusLabel}}</view>
       </view>
 
@@ -169,27 +215,21 @@
         <view class="mc-teams">
           <view class="mc-row">
             <view class="mc-dot" style="background: {{item.match.home.color}}"></view>
-            <view class="mc-name {{item.match._homeWin ? 'win' : ''}}">{{item.match.home.zhName}}</view>
-            <view class="mc-abbr">{{item.match.home.abbr}}</view>
-            <!-- 赛前前瞻：双方近 5 场胜平负。只在「看未来赛程」时给，已完赛的比分本身就在右边 -->
-            <view class="mc-form" wx:if="{{item.match._homeForm.length}}">
-              <view class="ff ff-{{f}}" wx:for="{{item.match._homeForm}}" wx:for-item="f" wx:key="*this"></view>
-            </view>
+            <view class="mc-name {{item.match._isTennis ? 'tennis-name' : ''}} {{item.match._homeWin ? 'win' : ''}}">{{item.match.home.zhName}}<text class="tennis-seed" wx:if="{{item.match.home.seed}}">[{{item.match.home.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.match.home.retired}}">退赛</text>
+            <view class="mc-form" wx:if="{{item.match._homeForm.length}}"><view class="ff ff-{{f}}" wx:for="{{item.match._homeForm}}" wx:for-item="f" wx:key="index"></view></view>
             <view class="mc-score {{item.match._homeWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.home.score}}</view>
           </view>
           <view class="mc-row">
             <view class="mc-dot" style="background: {{item.match.away.color}}"></view>
-            <view class="mc-name {{item.match._awayWin ? 'win' : ''}}">{{item.match.away.zhName}}</view>
-            <view class="mc-abbr">{{item.match.away.abbr}}</view>
-            <view class="mc-form" wx:if="{{item.match._awayForm.length}}">
-              <view class="ff ff-{{f}}" wx:for="{{item.match._awayForm}}" wx:for-item="f" wx:key="*this"></view>
-            </view>
+            <view class="mc-name {{item.match._isTennis ? 'tennis-name' : ''}} {{item.match._awayWin ? 'win' : ''}}">{{item.match.away.zhName}}<text class="tennis-seed" wx:if="{{item.match.away.seed}}">[{{item.match.away.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.match.away.retired}}">退赛</text>
+            <view class="mc-form" wx:if="{{item.match._awayForm.length}}"><view class="ff ff-{{f}}" wx:for="{{item.match._awayForm}}" wx:for-item="f" wx:key="index"></view></view>
             <view class="mc-score {{item.match._awayWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.away.score}}</view>
           </view>
         </view>
       </view>
 
-      <view class="mc-foot" wx:if="{{item.match._statusHint || item.match._bo || item.match._historical}}">
+      <view class="mc-foot" wx:if="{{item.match._statusHint || item.match._bo || item.match._historical || item.match._courtLabel}}">
+        <text class="mc-hint" wx:if="{{item.match._courtLabel}}">{{item.match._courtLabel}}</text>
         <text class="mc-hint" wx:if="{{item.match._statusHint}}">{{item.match._statusHint}}</text>
         <text class="mc-badge" wx:if="{{item.match._bo}}">{{item.match._bo}}</text>
         <text class="mc-badge ghost" wx:if="{{item.match._historical}}">历史战绩</text>

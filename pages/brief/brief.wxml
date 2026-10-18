@@ -91,7 +91,6 @@
           <view class="brief-item" wx:for="{{cur.briefs}}" wx:key="matchId"
                 data-id="{{item.matchId}}" bindtap="onBriefTap">
             <text class="bf-line">{{item.line}}</text>
-            <text class="bf-tag" wx:if="{{item.narrativeZh}}">{{item.narrativeZh}}</text>
           </view>
         </view>
       </block>
@@ -125,11 +124,6 @@
       <view class="empty">{{cur.note || '本期没有可展示的内容'}}</view>
     </block>
 
-    <!-- AI 生成标识（合规强制） -->
-    <view class="aigc" wx:if="{{cur.aigc}}">
-      <text class="aigc-tag">{{cur.aigc.explicit}}</text>
-      <text class="aigc-note">{{cur.aigc.explicitNote}}</text>
-    </view>
 
   </block>
 

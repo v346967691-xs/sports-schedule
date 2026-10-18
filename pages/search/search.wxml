@@ -53,7 +53,7 @@
       bindtap="onCompTap"
       hover-class="s-row-hover"
     >
-      <view class="s-comp-dot" style="background: {{item.accent}}"></view>
+      <image class="sport-icon" wx:if="{{item.cat}}" src="/images/sport-{{item.cat}}.png" mode="aspectFit"/>
       <view class="s-comp-main">
         <view class="s-comp-name">{{item.name}}</view>
         <view class="s-comp-sub" wx:if="{{item.full}}">{{item.full}}</view>
@@ -79,7 +79,7 @@
       <view class="s-team-main" data-index="{{index}}" bindtap="onTeamTap">
         <view class="s-team-name">{{item.display}}</view>
         <view class="s-team-sub">
-          <text class="s-tag">{{item.compName}}</text>
+          <view class="s-tag"><image class="sport-icon" wx:if="{{item.cat}}" src="/images/sport-{{item.cat}}.png" mode="aspectFit"/>{{item.compName}}</view>
           <text class="s-team-en" wx:if="{{item.abbr}}">{{item.abbr}}</text>
         </view>
       </view>

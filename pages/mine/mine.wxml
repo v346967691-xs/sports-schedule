@@ -56,8 +56,10 @@
         <view class="section-sub">最近赛果</view>
         <view class="mc" wx:for="{{teamResults}}" wx:key="id" data-id="{{item.id}}" bindtap="onTeamMatchTap" hover-class="mc-hover">
           <view class="mc-head">
-            <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+            <image class="sport-icon" wx:if="{{item._comp.cat}}" src="/images/sport-{{item._comp.cat}}.png" mode="aspectFit"/><view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
             <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+
+            <view class="mc-broadcast" wx:if="{{item._broadcastLabel}}">{{item._broadcastLabel}}</view>
             <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
           </view>
           <view class="mc-body">
@@ -69,14 +71,12 @@
             <view class="mc-teams">
               <view class="mc-row">
                 <view class="mc-dot" style="background: {{item.home.color}}"></view>
-                <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
-                <view class="mc-abbr">{{item.home.abbr}}</view>
+                <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}<text class="tennis-seed" wx:if="{{item.home.seed}}">[{{item.home.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.home.retired}}">退赛</text>
                 <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
               </view>
               <view class="mc-row">
                 <view class="mc-dot" style="background: {{item.away.color}}"></view>
-                <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
-                <view class="mc-abbr">{{item.away.abbr}}</view>
+                <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}<text class="tennis-seed" wx:if="{{item.away.seed}}">[{{item.away.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.away.retired}}">退赛</text>
                 <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
               </view>
             </view>
@@ -87,8 +87,9 @@
       <view class="section-sub">他们接下来的比赛</view>
       <view class="mc" wx:for="{{teamMatches}}" wx:key="id" data-id="{{item.id}}" bindtap="onTeamMatchTap" hover-class="mc-hover">
         <view class="mc-head">
-          <view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
+          <image class="sport-icon" wx:if="{{item._comp.cat}}" src="/images/sport-{{item._comp.cat}}.png" mode="aspectFit"/><view class="mc-tag" style="background: {{item._accent}}">{{item._compName}}</view>
           <view class="mc-stage" wx:if="{{item._stageLabel}}">{{item._stageLabel}}</view>
+          <view class="mc-broadcast" wx:if="{{item._broadcastLabel}}">{{item._broadcastLabel}}</view>
           <view class="mc-status status-{{item.status}}">{{item._statusLabel}}</view>
         </view>
         <view class="mc-body">
@@ -100,14 +101,12 @@
           <view class="mc-teams">
             <view class="mc-row">
               <view class="mc-dot" style="background: {{item.home.color}}"></view>
-              <view class="mc-name {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}</view>
-              <view class="mc-abbr">{{item.home.abbr}}</view>
+              <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item._homeWin ? 'win' : ''}}">{{item.home.zhName}}<text class="tennis-seed" wx:if="{{item.home.seed}}">[{{item.home.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.home.retired}}">退赛</text>
               <view class="mc-score {{item._homeWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.home.score}}</view>
             </view>
             <view class="mc-row">
               <view class="mc-dot" style="background: {{item.away.color}}"></view>
-              <view class="mc-name {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}</view>
-              <view class="mc-abbr">{{item.away.abbr}}</view>
+              <view class="mc-name {{item._isTennis ? 'tennis-name' : ''}} {{item._awayWin ? 'win' : ''}}">{{item.away.zhName}}<text class="tennis-seed" wx:if="{{item.away.seed}}">[{{item.away.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.away.retired}}">退赛</text>
               <view class="mc-score {{item._awayWin ? 'win' : ''}}" wx:if="{{item._hasScore}}">{{item.away.score}}</view>
             </view>
           </view>

@@ -12,6 +12,20 @@
 
 const snapshot = require('./snapshot')
 const tennisNames = require('./tennis-names')
+const tennisInsightsView = require('./tennis-insights')
+const tennisCadence = require('./tennis-refresh')
+const tennisInsights = {}
+let tennisInsightsReadAt = 0
+let tennisInsightsPending = null
+const tennisEvent = require('./tennis-event')
+let tennisEventArchiveAt = 0
+let tennisEventArchive = (() => {
+  try {
+    const payload = require('../data/tennis-events')
+    tennisEventArchiveAt = Date.parse(payload.generatedAt) || 0
+    return tennisEvent.archiveRows(payload).map(tennisNames.localizeMatch)
+  } catch (err) { return [] }
+})()
 const worldsArchive = require('./worlds-archive')
 let archiveMatches = {}
 let archiveDetails = {}
@@ -105,13 +119,21 @@ function applyLive() {
     const base = Date.parse(meta.generatedAt || '')
     if (!Number.isFinite(at) || at < base || Date.now() - at > 15 * 60000 || at > Date.now() + 60000) return
     if (p.st) m.status = p.st
-    if (p.stt != null) m.statusText = p.stt
+    if (p.stt != null && !(catOf(m.comp)==='tennis'&&p.stt==='已结束'&&/退赛|不战|retir|walk.?over/.test(m.statusText||''))) m.statusText = p.stt
+    if(catOf(m.comp)==='tennis'){
+      if(p.sd){m.home.seed=p.sd[0];m.away.seed=p.sd[1]}
+      if(m.status!=='finished')delete m.winnerId
+      else if(p.wi&&[m.home,m.away].some(side=>side&&String(side.id)===String(p.wi)))m.winnerId=String(p.wi)
+    }
     if (p.hs != null && m.home) m.home.score = p.hs
     if (p.as != null && m.away) m.away.score = p.as
     if (p.ls) {
       if (catOf(m.comp) === 'tennis') m.sets = p.ls
       else m.linescores = p.ls
     }
+    Object.assign(m,require('./match-status').normalize(m))
+    if(m.status!=='finished')delete m.winnerId
+    m._liveAt = at
     n += 1
   })
   return n
@@ -217,8 +239,61 @@ function catOf(compKey) {
 }
 
 function findMatch(id) {
-  return matches().find((m) => m.id === id) || (worldsArchive.archiveActive() ? archiveMatches[id] : null) || null
+  const current = matches().find((m) => m.id === id)
+  const archived = tennisEventArchive.find(m => m.id === id && Date.parse(m.eventEnd || m.start) + 30 * 86400000 >= Date.now())
+  if (current && archived && tennisEventArchiveAt > Math.max(current._liveAt || 0, Date.parse(meta.generatedAt) || 0)) {
+    return tennisEvent.mergeRows([current], [archived])[0]
+  }
+  return current || archived
+    || (worldsArchive.archiveActive() ? archiveMatches[id] : null) || null
 }
+
+function tennisEventRows() {
+  const older = [], newer = []
+  matches().filter(m => m.comp === 'atp' || m.comp === 'wta').forEach(match => {
+    const observedAt = Math.max(match._liveAt || 0, Date.parse(meta.generatedAt) || 0)
+    ;(observedAt >= tennisEventArchiveAt ? newer : older).push(match)
+  })
+  return tennisEvent.mergeRows(tennisEvent.mergeRows(older, tennisEventArchive), newer)
+}
+
+function tennisEvents() {
+  return tennisEvent.eventsOf(tennisEventRows()).filter(event => Date.parse(event.end) + 30 * 86400000 >= Date.now())
+}
+
+function tennisEventForMatch(match) {
+  if (!match || !['atp', 'wta'].includes(match.comp)) return null
+  const archived = tennisEventArchive.find(row => row.id === match.id)
+  return tennisEvent.identity(tennisEvent.mergeRows(archived ? [archived] : [], [match])[0])
+}
+
+function tennisEventMatches(key) {
+  return tennisEventRows().filter(match => tennisEvent.identity(match).key === key)
+    .sort((a, b) => String(a.start).localeCompare(String(b.start)))
+}
+
+async function refreshTennisInsights(force) {
+  if (!cloudClient.isReady()) return false
+  if (tennisInsightsPending) return tennisInsightsPending
+  if (!force && Date.now() - tennisInsightsReadAt < tennisCadence.POINTS_MS) return false
+  tennisInsightsReadAt = Date.now()
+  tennisInsightsPending = Promise.all(['atp', 'wta'].map(async tour => {
+    try {
+      const result = await cloudClient.cloud.database.from('team_roster').select('payload').eq('id', `${tour}:tennis-live`).maybeSingle()
+      const payload = tennisInsightsView.decode(result.data && result.data.payload)
+      if (result.error || !payload || payload.tour !== tour || !Array.isArray(payload.players)) return false
+      if (tennisInsights[tour] && payload.asOf < tennisInsights[tour].asOf) return false
+      const changed = !tennisInsights[tour] || tennisInsights[tour].checkedAt !== payload.checkedAt
+      tennisInsights[tour] = payload
+      return changed
+    } catch (err) { return false }
+  })).then(results => results.some(Boolean)).finally(() => { tennisInsightsPending = null })
+  return tennisInsightsPending
+}
+
+function tennisInsightPayload(tour) { return tennisInsights[tour] || null }
+
+function tennisLiveBoard(tour, chinaOnly) { return tennisInsightsView.board(tennisInsights[tour], chinaOnly) }
 
 /** 本届有界日桶归档；失败返回已有缓存，绝不改变普通赛程 query 的窗口。 */
 async function loadWorldsArchive() {
@@ -678,7 +753,28 @@ function staleInfo() {
  *    但以后若改推紧凑格式，这里不该再改一次。
  */
 function applyCloudSnapshot(snapList, snapMeta) {
-  cache = snapList.map(tennisNames.localizeMatch)
+  if (snapMeta && snapMeta.tennisEvents) {
+    const incomingAt = Date.parse(snapMeta.tennisEvents.generatedAt) || 0
+    if (incomingAt >= tennisEventArchiveAt) {
+      tennisEventArchive = tennisEvent.mergeRows(tennisEventArchive, tennisEvent.archiveRows(snapMeta.tennisEvents)).map(tennisNames.localizeMatch)
+      tennisEventArchiveAt = incomingAt
+    }
+  }
+  // 云端 schedule_cache 当前不含网球转播平台字段，而本地包已按巡回赛/赛事版权标注。
+  // 直接用云端记录替换会把所有网球比赛的 broadcast: [] 覆盖进内存，卡片因而隐藏平台名。
+  // 保留同一场本地已知的平台信息；云端以后提供非空值时仍以云端为准。
+  const bundledBroadcasts = new Map(matches()
+    .filter((match) => match && ['atp', 'wta'].includes(match.comp) && Array.isArray(match.broadcast) && match.broadcast.length)
+    .map((match) => [match.id, match.broadcast]))
+  cache = snapList.map((match) => {
+    const localized = tennisNames.localizeMatch(match)
+    if (localized && ['atp', 'wta'].includes(localized.comp)
+      && (!Array.isArray(localized.broadcast) || !localized.broadcast.length)) {
+      const bundled = bundledBroadcasts.get(localized.id)
+      if (bundled) localized.broadcast = bundled
+    }
+    return localized
+  })
   meta = snapMeta
   if (snapMeta && snapMeta.tennisRankings) {
     const weekly = require('./tennis-rankings').merge(tennisRankings.weekly, snapMeta.tennisRankings.weekly)
@@ -843,6 +939,19 @@ async function matchDetail(match) {
   }
 }
 
+async function tennisMatchStats(match, options) {
+  if(!match || !['atp','wta'].includes(match.comp) || !match.start)return null
+  const teamId='tennis-stats:'+dayStampCN(match.start)
+  const hit=rosterCache[`${match.comp}:${teamId}`]
+  if (!(options && options.force) && match.status==='finished' && hit
+    && Date.now()-hit.t<tennisCadence.FINAL_STATS_MS && hit.v?.matches?.[match.id]?.complete) {
+    const stats=require('./tennis-stats').build(hit.v.matches[match.id],match)
+    if(stats)return stats
+  }
+  const payload=await teamRoster(match.comp,teamId,!!(options && options.force))
+  return require('./tennis-stats').build(payload && payload.matches && payload.matches[match.id],match)
+}
+
 /**
  * 球队名单（含球员档案：位置 / 球衣号 / 年龄 / 国籍 / 身高体重）。
  *
@@ -859,11 +968,12 @@ const ROSTER_TTL = 10 * 60 * 1000
 const rosterCache = {}
 const rosterPending = {}
 
-async function teamRoster(comp, teamId) {
+async function teamRoster(comp, teamId, force) {
   if (!comp || !teamId || !cloudClient.isReady()) return null
   const key = `${comp}:${teamId}`
   const hit = rosterCache[key]
-  if (hit && Date.now() - hit.t < ROSTER_TTL) return hit.v
+  const statsCache = String(teamId).indexOf('tennis-stats:') === 0
+  if (!force && hit && Date.now() - hit.t < (statsCache ? tennisCadence.LIVE_STATS_MS : ROSTER_TTL)) return hit.v
   if (rosterPending[key]) return rosterPending[key]
   rosterPending[key] = (async () => {
     try {
@@ -872,12 +982,12 @@ async function teamRoster(comp, teamId) {
         .select('payload')
         .eq('id', key)
         .maybeSingle()
-      if (error || !data || !data.payload) return null
+      if (error || !data || !data.payload) return statsCache && hit ? hit.v : null
       rosterCache[key] = { t: Date.now(), v: data.payload }
       return data.payload
     } catch (err) {
       console.warn('[赛程助手] 云端球队名单读取失败', err)
-      return null
+      return statsCache && hit ? hit.v : null
     } finally {
       delete rosterPending[key]
     }
@@ -958,6 +1068,13 @@ module.exports = {
   compOf,
   catOf,
   findMatch,
+  tennisEvents,
+  tennisEventForMatch,
+  tennisEventMatches,
+  tennisMatches: tennisEventRows,
+  refreshTennisInsights,
+  tennisInsightPayload,
+  tennisLiveBoard,
   loadWorldsArchive,
   findArchivedMatch,
   query,
@@ -996,6 +1113,7 @@ module.exports = {
   kplRankSeason,
   kplRankGeneratedAt,
   matchDetail,
+  tennisMatchStats,
   teamRoster,
   playerProfile,
   refresh,

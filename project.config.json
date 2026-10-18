@@ -9,6 +9,10 @@
     "ignore": [
       {
         "type": "file",
+        "value": "images/share-match.jpg"
+      },
+      {
+        "type": "file",
         "value": "data/match-details.js"
       },
       {
@@ -62,6 +66,26 @@
       {
         "type": "file",
         "value": "闪现赛程助手小程序承诺书.jpg"
+      },
+      {
+        "type": "folder",
+        "value": "docs"
+      },
+      {
+        "type": "file",
+        "value": "AGENTS.md"
+      },
+      {
+        "type": "file",
+        "value": "CLAUDE.md"
+      },
+      {
+        "type": "file",
+        "value": "data/kpl-rank.js"
+      },
+      {
+        "type": "file",
+        "value": "utils/match-notification-core.js"
       }
     ],
     "include": []

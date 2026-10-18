@@ -9,9 +9,9 @@
 
 <view class="page detail" wx:if="{{match}}">
   <view class="hero" style="background: linear-gradient(135deg, {{comp.accent}} 0%, {{comp.accent}}cc 100%)">
-    <view class="hero-tag">{{comp.name}}</view>
-    <view class="hero-comp">{{comp.full}}</view>
-    <view class="hero-stage">{{match.stage}}</view>
+    <view class="sport-label"><image class="sport-icon" wx:if="{{comp.cat}}" src="/images/sport-{{comp.cat}}-white.png" mode="aspectFit"/><view class="hero-tag">{{comp.name}}</view></view>
+    <view class="hero-comp">{{match._isTennis ? match._tournamentTitle : comp.full}}</view>
+    <view class="hero-stage">{{match._isTennis ? match._roundNameRaw : match.stage}}</view>
   </view>
 
   <view class="score-card">
@@ -25,18 +25,21 @@
     <view class="score-body">
       <view class="team" data-side="home" bindtap="onTeamTap" hover-class="team-hover">
         <view class="team-dot" style="background: {{match.home.color}}"></view>
-        <view class="team-name {{match._homeWin ? 'win' : ''}}">{{match.home.zhName}}</view>
-        <view class="team-abbr">{{match.home.abbr}}</view>
+        <view class="team-name {{match._homeWin ? 'win' : ''}} {{match._isTennis ? 'tennis-name' : ''}}">{{match.home.zhName}}<text class="tennis-seed" wx:if="{{match.home.seed}}">[{{match.home.seed}}]</text></view><text class="tennis-retired" wx:if="{{match.home.retired}}">退赛</text>
         <view class="team-score {{match._homeWin ? 'win' : ''}}" wx:if="{{match._hasScore}}">{{match.home.score}}</view>
       </view>
-      <view class="vs">{{match._hasScore ? (comp.cat === 'tennis' ? '盘分' : '终比分') : 'VS'}}</view>
+      <view class="vs">{{match._hasScore ? (comp.cat === 'tennis' ? '盘分' : '') : 'VS'}}</view>
       <view class="team" data-side="away" bindtap="onTeamTap" hover-class="team-hover">
         <view class="team-dot" style="background: {{match.away.color}}"></view>
-        <view class="team-name {{match._awayWin ? 'win' : ''}}">{{match.away.zhName}}</view>
-        <view class="team-abbr">{{match.away.abbr}}</view>
+        <view class="team-name {{match._awayWin ? 'win' : ''}} {{match._isTennis ? 'tennis-name' : ''}}">{{match.away.zhName}}<text class="tennis-seed" wx:if="{{match.away.seed}}">[{{match.away.seed}}]</text></view><text class="tennis-retired" wx:if="{{match.away.retired}}">退赛</text>
         <view class="team-score {{match._awayWin ? 'win' : ''}}" wx:if="{{match._hasScore}}">{{match.away.score}}</view>
       </view>
     </view>
+  </view>
+
+  <view class="tennis-event-links" wx:if="{{match._isTennis}}">
+    <view data-tab="schedule" bindtap="goTournament">分站赛程 · 按球场查看 ›</view>
+    <view data-tab="bracket" bindtap="goTournament">完整晋级图 ›</view>
   </view>
 
   <!-- 篮球分节比分：只有上游给了 linescores 才显示（足球没有分节） -->
@@ -57,11 +60,22 @@
       <view class="q-n" wx:for="{{tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{c}}</view>
     </view>
     <view class="q-row" wx:for="{{tennisSets.rows}}" wx:for-item="r" wx:key="side">
-      <view class="q-t">{{r.side}}</view>
+      <view class="q-t">{{r.side}}<text class="tennis-seed" wx:if="{{r.seed}}">[{{r.seed}}]</text><text class="tennis-retired" wx:if="{{r.retired}}">退赛</text></view>
       <view class="q-n" wx:for="{{tennisSets.cols}}" wx:for-item="c" wx:key="*this">{{r.scores[index]}}</view>
     </view>
   </view>
 
+  <view class="tennis-stats-card" wx:if="{{tennisStats}}">
+    <view class="tennis-stats-title">单场技术统计</view>
+    <view class="tennis-stats-tabs">
+      <text wx:for="{{tennisStats.sections}}" wx:key="key" class="{{tennisStatsKey === item.key ? 'selected' : ''}}" data-key="{{item.key}}" bindtap="onTennisStatsTab">{{item.label}}</text>
+    </view>
+    <view class="tennis-stat-row tennis-stat-head"><text>{{match.home.zhName}}</text><text>项目</text><text>{{match.away.zhName}}</text></view>
+    <view class="tennis-stats-note" wx:if="{{tennisStatsDuration}}">{{tennisStatsKey === 0 ? '比赛耗时' : '本盘耗时'}} {{tennisStatsDuration}}</view>
+    <view class="tennis-stat-row" wx:for="{{tennisStatsRows}}" wx:key="label"><text>{{item.home}}</text><text>{{item.label}}</text><text>{{item.away}}</text></view>
+    <view class="tennis-stats-note">{{tennisStats.source}} · 同步于 {{tennisStats.updated}}。{{tennisStats.complete ? '' : '统计更新中。'}}— 表示来源未提供或无适用机会。</view>
+  </view>
+  <view class="retirement-note" wx:if="{{match._isRetirement}}">退赛场次保留退赛前的实际赢盘数和逐盘比分。</view>
   <view class="status-bar">
     <view class="status-pill status-{{match.status}}">{{match._statusLabel}}</view>
     <view class="status-hint" wx:if="{{match._statusHint}}">{{match._statusHint}}</view>
@@ -88,9 +102,13 @@
        （包体积取舍，见 tools/match-detail.js 的 staleLineups）—— 这是设计好的，
        但以前只在源码注释里写了，用户看到的是「只剩比分卡、其他全没了」，
        第一反应是没加载出来或者 App 坏了。这里显式说一句。 -->
-  <view class="pre-tip" wx:if="{{match.status === 'finished' && (!detail || !(detail.hasTimeline || detail.hasStats || detail.hasForm || detail.hasH2H || detail.hasBox || detail.hasKpl || detail.hasLol))}}">
-    <view class="pre-tip-title">{{match.comp === 'worlds' ? '单局数据暂未就绪' : '赛后数据暂不可用'}}</view>
-    <view class="pre-tip-desc">{{match.comp === 'worlds' ? 'Worlds2026 赛程与单局数据保留至决赛后 30 天；未结算或未返回的数据稍后补齐' : '比赛详情按保留窗口显示；阵容与球员统计仅保留约 48 小时，比分不受影响'}}</view>
+  <view class="pre-tip" wx:if="{{!match._isTennis && match.status === 'finished' && (!detail || !(detail.hasTimeline || detail.hasStats || detail.hasForm || detail.hasH2H || detail.hasBox || detail.hasKpl || detail.hasLol))}}">
+    <view class="pre-tip-title">{{statsPending ? '比赛数据统计中，请稍后查阅。' : '赛后数据暂不可用'}}</view>
+    <view class="pre-tip-desc" wx:if="{{!statsPending}}">比赛详情按保留窗口显示；阵容与球员统计仅保留约 48 小时，比分不受影响</view>
+  </view>
+
+  <view class="pre-tip" wx:if="{{match._isTennis && match.status !== 'upcoming' && !tennisStats}}">
+    <view class="pre-tip-title">{{match.status === 'finished' ? (statsPending ? '比赛数据统计中，请稍后查阅。' : '技术统计暂不可用') : '技术统计待更新'}}</view>
   </view>
 
   <!-- ① 事件时间轴 -->
@@ -233,9 +251,10 @@
     <block wx:for="{{detail.lol.rounds}}" wx:for-item="r" wx:for-index="ri" wx:key="id">
       <view wx:if="{{detail.lol.active === ri}}">
         <view class="lol-note {{r.complete ? '' : 'partial'}}">{{r.note}}</view>
+        <view class="lol-result" wx:if="{{detail.lol.showResult}}">{{r.resultNote}}</view>
         <view class="lol-team-pair">
           <view class="lol-team-summary" wx:for="{{r.teams}}" wx:for-item="t" wx:for-index="ti" wx:key="label">
-          <view class="lol-team-name">{{t.label}} <text class="lol-side">{{t.side}}</text></view>
+          <view class="lol-team-name">{{t.label}} <text class="lol-result-tag {{t.result === '胜' ? 'won' : ''}}" wx:if="{{t.result}}">{{t.result}}</text> <text class="lol-side">{{t.side}}</text></view>
           <view class="lol-totals">击杀 {{t.kills}} · 经济 {{t.gold}}<view>推塔 {{t.towers}} · 小龙 {{t.dragons}} · 大龙 {{t.barons}}</view></view>
           </view>
         </view>
@@ -260,7 +279,6 @@
         </view>
       </view>
     </block>
-    <view class="foot-note tight">统计来自 LOL 官方赛事数据。未补齐的单局显示最后可用记录；击杀比分不代表该局胜负。</view>
   </view>
 
   <view class="section card" wx:if="{{detail.matchMvp.available}}">
@@ -317,7 +335,7 @@
       <button class="btn primary mvp-share-btn" open-type="share" data-kind="match-mvp" disabled="{{!matchMvpShareImage}}">分享我的 MVP 选择</button>
       <button class="btn primary mvp-share-btn" bindtap="generateMatchMvpPoster" loading="{{matchMvpPosterBusy}}" disabled="{{matchMvpPosterBusy}}">生成长图</button>
     </view>
-    <view class="foot-note tight">{{detail.matchMvp.note}}</view>
+    <view class="foot-note tight" wx:if="{{match.comp !== 'kpl'}}">{{detail.matchMvp.note}}</view>
   </view>
 
   <view class="section card" wx:if="{{detail.lolMvp.available && detail.lolMvp.enabled}}">
@@ -381,7 +399,6 @@
       <button class="btn primary mvp-share-btn" bindtap="generateLolMvpPoster"
         loading="{{mvpPosterBusy}}" disabled="{{mvpPosterBusy}}">生成长图</button>
     </view>
-    <view class="foot-note tight">投票只对已结束且统计完整的系列赛开放；选手数据按稳定选手编号跨局合并。</view>
   </view>
 
   <!-- ④ 双方近况 -->
@@ -411,7 +428,6 @@
         <text class="{{item.as > item.hs ? 'win' : ''}}">{{item.ao}}</text>
       </view>
     </view>
-    <view class="foot-note tight">交锋记录为公开数据源可查到的最近若干次，官方未收录的早期比赛不在其中。</view>
   </view>
 
   <view class="actions">
@@ -423,7 +439,7 @@
     </view>
     <view class="match-notifications" wx:if="{{isFav && (match.status === 'upcoming' || match.status === 'live')}}">
       <view class="match-notifications-title">比赛通知</view>
-      <view class="match-notifications-note">每次微信授权发送一条。赛前可分别设置开赛前 1 小时和 15 分钟提醒。</view>
+      <view class="match-notifications-note">赛前1小时、15分钟提醒，每次授权发一条</view>
       <view class="notification-state-row" wx:if="{{canRequestPre15}}">
         <text>开赛前 15 分钟</text>
         <text class="notification-state {{notificationStates.pre15 ? 'ready' : ''}}">{{notificationStates.pre15 === 'sent' ? '已发送' : notificationStates.pre15 === 'sending' ? '发送中' : notificationStates.pre15 ? '已订阅' : '未设置'}}</text>
@@ -447,8 +463,5 @@
     <view class="btn ghost" wx:if="{{hasStandings}}" bindtap="onStandingsTap">查看{{comp.name}}排行榜</view>
   </view>
 
-  <view class="foot-note">
-    比分与时间为各赛事公开数据源的快照；临场调整请以官方发布为准。
-  </view>
   <view class="safe-bottom"></view>
 </view>

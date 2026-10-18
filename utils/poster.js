@@ -31,7 +31,13 @@ const mvpLong = require('./lol-mvp-poster')
  * ⚠️ 底图自带品牌元素时，代码就不再重复画水印。
  */
 const BG = {
-  match: '/images/share-match.jpg',
+  match: '/images/share-match-football.jpg',
+  matches: {
+    football: '/images/share-match-football.jpg',
+    basketball: '/images/share-match-basketball.jpg',
+    esports: '/images/share-match-esports.jpg',
+    tennis: '/images/share-match-tennis.jpg',
+  },
   brief: '/images/share-brief.jpg',
 }
 
@@ -108,72 +114,130 @@ function brand(ctx, color) {
   ctx.textAlign = 'left'
 }
 
-/**
- * 比赛卡：赛事 + 对阵双方 + 比分
- * opt: { comp, stage, home, away, homeScore, awayScore, dateText, timeText, statusText, accent }
- */
+/** 明确月日，避免转发后「今天/明天」失效。输入已经是北京时间。 */
+function matchDate(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || ''))
+  if (m) return `${Number(m[2])}月${Number(m[3])}日`
+  return /今天|明天|昨天|后天|前天/.test(String(date || '')) ? '' : String(date || '')
+}
+
+/** 两行均衡折行，英文 ID 是完整单元；中文优先在城市、姓名分界处断开。 */
+function matchNameLines(ctx, value, width, cat) {
+  const text = String(value || '待定').trim() || '待定'
+  if (ctx.measureText(text).width <= width) return [text]
+  const tokens = text.match(/[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*|[^A-Za-z0-9]/g) || []
+  const city = /^(俄克拉荷马城|明尼苏达|洛杉矶|金州|新奥尔良|波特兰|圣安东尼奥|费城|布鲁克林|萨克拉门托|克利夫兰|孟菲斯|密尔沃基|夏洛特|达拉斯|波士顿|丹佛|底特律|休斯敦|印第安纳|迈阿密|纽约|奥兰多|菲尼克斯|多伦多|犹他|华盛顿|芝加哥|亚特兰大|杭州|苏州|重庆|深圳|成都|广州|武汉|北京|上海)/.exec(text)
+  let best = null
+  for (let i = 1; i < tokens.length; i++) {
+    const left = tokens.slice(0, i).join('').trim()
+    const right = tokens.slice(i).join('').trim()
+    if (!left || !right || /^[·.]/.test(right)) continue
+    // NBA 城市名完整保留；必要时继续缩字，避免拆成「俄克拉荷 / 马城雷霆」。
+    if (cat === 'basketball' && city && ctx.measureText(city[0]).width <= width && left !== city[0]) continue
+    const lw = ctx.measureText(left).width
+    const rw = ctx.measureText(right).width
+    if (lw > width || rw > width) continue
+    let penalty = Math.abs(lw - rw)
+    if (cat === 'tennis' && left.endsWith('·')) penalty -= width
+    if (cat !== 'tennis' && city && left === city[0]) penalty -= width
+    if (!best || penalty < best.penalty) best = { lines: [left, right], penalty }
+  }
+  return best ? best.lines : null
+}
+
+function matchNames(ctx, home, away, width, cat) {
+  // 单行略缩字；超过这个范围后用两行，双方始终统一字号。
+  for (let size = 34; size >= 28; size--) {
+    ctx.font = font(size, 700)
+    if ([home, away].every(s => ctx.measureText(s || '待定').width <= width)) {
+      return { size, home: [home || '待定'], away: [away || '待定'] }
+    }
+  }
+  for (let size = 30; size >= 25; size--) {
+    ctx.font = font(size, 700)
+    const h = matchNameLines(ctx, home, width, cat)
+    const a = matchNameLines(ctx, away, width, cat)
+    if (h && a) return { size, home: h, away: a }
+  }
+  // 极端超长单词无法完整放下时才截断；不把电竞 ID 拆成两段。
+  return { size: 25, home: [ellipsis(ctx, home || '待定', width)], away: [ellipsis(ctx, away || '待定', width)] }
+}
+
+/** 四角信息完整单行展示；右侧锚定末字，向左延伸，过长时双方同比缩字。 */
+function matchCornerRow(ctx, left, right, y) {
+  left = String(left || '')
+  right = String(right || '')
+  ctx.font = font(20, 700)
+  const total = ctx.measureText(left).width + ctx.measureText(right).width
+  const available = W - 56 - (left && right ? 18 : 0)
+  if (total > available) ctx.font = font(20 * available / total, 700)
+  ctx.textAlign = 'right'
+  if (right) ctx.fillText(right, W - 28, y)
+  ctx.textAlign = 'left'
+  if (left) ctx.fillText(left, 28, y)
+}
+
+/** 比赛分享卡：横向对阵，小号 VS、大号浅金比分、明确日期。 */
 function drawMatch(ctx, opt) {
   const o = opt || {}
-  const accent = o.accent || '#2E7CF6'
-  const hasScore = typeof o.homeScore === 'number' && typeof o.awayScore === 'number'
-  const score = hasScore ? `${o.homeScore} - ${o.awayScore}` : 'VS'
-
-  // 背景：有底图就贴图，没有才用代码画的纯色 + 蒙层
-  if (o.bg) {
-    ctx.drawImage(o.bg, 0, 0, W, H)
-  } else {
-    ctx.fillStyle = accent
+  const hasScore = o.status !== 'upcoming' && Number.isFinite(o.homeScore) && Number.isFinite(o.awayScore)
+  const score = hasScore ? `${o.homeScore}-${o.awayScore}` : 'VS'
+  // 三位数采用紧凑排版，仍大于队名字号，给两侧长队名留出空间。
+  const scoreSize = hasScore ? (Math.max(String(o.homeScore).length, String(o.awayScore).length) >= 3 ? 40 : 56) : 20
+  if (o.bg) ctx.drawImage(o.bg, 0, 0, W, H)
+  else {
+    ctx.fillStyle = '#182e49'
     ctx.fillRect(0, 0, W, H)
-    // 半透明深色蒙层，保证白字可读
-    ctx.fillStyle = 'rgba(10,14,24,0.42)'
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = 'rgba(199,124,64,0.24)'
+    ctx.fillRect(0, H - 8, W, 8)
   }
-
-  // 顶部：赛事名 · 阶段
-  ctx.fillStyle = 'rgba(255,255,255,0.86)'
-  ctx.font = font(17)
-  ctx.textBaseline = 'middle'
-  ctx.fillText(ellipsis(ctx, o.comp || '', 300), 28, 40)
-  if (o.stage) {
-    ctx.fillStyle = 'rgba(255,255,255,0.62)'
-    ctx.font = font(15)
-    ctx.textAlign = 'right'
-    ctx.fillText(ellipsis(ctx, o.stage, 200), W - 28, 40)
-    ctx.textAlign = 'left'
-  }
-
-  // 分隔线（装饰元素：底图自带设计时就不画，免得压在图上）
-  if (!o.bg) {
-    ctx.fillStyle = 'rgba(255,255,255,0.18)'
-    ctx.fillRect(28, 62, W - 56, 1)
-  }
-
-  // 中部：主队 / 比分 / 客队
-  ctx.textAlign = 'center'
+  // 蒙层压住局部灯光，让四角和队名始终清楚。
+  ctx.fillStyle = 'rgba(8,20,36,0.18)'
+  ctx.fillRect(0, 0, W, H)
+  // 边缘渐变承托四角信息，中央保持通透，不增加图片资源。
+  ;[[0, 100], [H, H - 100]].forEach(([edge, inner]) => {
+    const shade = ctx.createLinearGradient(0, edge, 0, inner)
+    shade.addColorStop(0, 'rgba(5,17,35,0.82)')
+    shade.addColorStop(0.45, 'rgba(5,17,35,0.54)')
+    shade.addColorStop(1, 'rgba(5,17,35,0)')
+    ctx.fillStyle = shade
+    ctx.fillRect(0, Math.min(edge, inner), W, 100)
+  })
   ctx.fillStyle = '#ffffff'
-  ctx.font = font(30, 600)
-  ctx.fillText(ellipsis(ctx, o.home || '', 420), W / 2, 140)
+  ctx.shadowColor = 'rgba(0,0,0,0.65)'
+  ctx.shadowBlur = 3
+  ctx.shadowOffsetY = 1
+  ctx.textBaseline = 'middle'
+  matchCornerRow(ctx, o.comp, o.stage, 34)
 
-  ctx.font = font(hasScore ? 62 : 46, 700)
-  ctx.fillText(score, W / 2, 218)
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
+  ctx.font = font(scoreSize, hasScore ? 800 : 600)
+  const gap = Math.max(64, ctx.measureText(score).width + 24)
+  const columnWidth = (W - 56 - gap) / 2
+  const names = matchNames(ctx, o.home, o.away, columnWidth, o.cat)
+  ctx.textAlign = 'center'
+  ctx.font = font(names.size, 700)
+  const lineHeight = names.size * 1.28
+  const centerY = 192
+  ;[[names.home, 28 + columnWidth / 2], [names.away, W - 28 - columnWidth / 2]].forEach(([lines, x]) => {
+    lines.forEach((line, i) => ctx.fillText(line, x, centerY + (i - (lines.length - 1) / 2) * lineHeight))
+  })
+  ctx.font = font(scoreSize, hasScore ? 800 : 600)
+  ctx.fillStyle = hasScore ? '#ffe0a3' : '#ffffff'
+  ctx.fillText(score, W / 2, centerY)
 
-  ctx.font = font(30, 600)
-  ctx.fillText(ellipsis(ctx, o.away || '', 420), W / 2, 296)
-  ctx.textAlign = 'left'
-
-  // 底部：日期 + 时间 + 状态
-  const bottom = [o.dateText, o.timeText].filter(Boolean).join(' ')
-  ctx.fillStyle = 'rgba(255,255,255,0.72)'
-  ctx.font = font(16)
+  ctx.fillStyle = '#ffffff'
+  ctx.shadowColor = 'rgba(0,0,0,0.65)'
+  ctx.shadowBlur = 3
+  ctx.shadowOffsetY = 1
+  const bottom = [matchDate(o.date || o.dateText), o.timeText].filter(Boolean).join(' ')
+  matchCornerRow(ctx, bottom, o.statusText, H - 28)
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
   ctx.textBaseline = 'alphabetic'
-  if (bottom) ctx.fillText(ellipsis(ctx, bottom, 260), 28, H - 22)
-  if (o.statusText) {
-    ctx.textAlign = 'right'
-    ctx.fillText(ellipsis(ctx, o.statusText, 150), W - 150, H - 22)
-    ctx.textAlign = 'left'
-  }
-  // 品牌放右下角，和状态错开
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'
 }
 
 /**
@@ -194,27 +258,35 @@ function drawBrief(ctx, opt) {
     ctx.fillRect(0, 0, W, 10)
   }
 
-  // 日期
-  ctx.fillStyle = MUTED
-  ctx.font = font(22)
-  ctx.textAlign = 'center'
+  // 标题上提，日期以小号粗体放在标题右侧，整组居中。
   ctx.textBaseline = 'middle'
-  ctx.fillText(ellipsis(ctx, o.dateText || '', 380), W / 2, 92)
-
-  // 主标题：闪现早/晚报
+  ctx.textAlign = 'left'
+  ctx.font = font(50, 700)
+  const title = `闪现${o.kindZh || '日报'}`
+  const titleWidth = ctx.measureText(title).width
+  ctx.font = font(18, 700)
+  const date = ellipsis(ctx, o.dateText || '', 140)
+  const dateWidth = date ? ctx.measureText(date).width + 16 : 0
+  const titleX = (W - titleWidth - dateWidth) / 2
   ctx.fillStyle = INK
   ctx.font = font(50, 700)
-  ctx.fillText(`闪现${o.kindZh || '日报'}`, W / 2, 168)
+  ctx.fillText(title, titleX, 136)
+  if (date) {
+    ctx.fillStyle = MUTED
+    ctx.font = font(18, 700)
+    ctx.fillText(date, titleX + titleWidth + 16, 142)
+  }
 
-  // 副标题（头条标题或前瞻导语），最多两行。
-  // 2026-09-30 用户定：换行后左对齐（整块仍水平居中），第二行不再居中
+  // 单行居中；多行以最长行确定居中的文字块，块内左对齐。
   if (o.sub) {
     ctx.fillStyle = '#5A6272'
-    ctx.font = font(19)
-    ctx.textAlign = 'left'
+    ctx.font = font(24, 700)
+    ctx.textAlign = 'center'
     const lines = wrap(ctx, o.sub, 400, 2)
+    const blockWidth = Math.max(...lines.map(line => ctx.measureText(line).width), 0)
+    if (lines.length > 1) ctx.textAlign = 'left'
     lines.forEach((ln, i) => {
-      ctx.fillText(ln, W / 2 - 200, 236 + i * 30)
+      ctx.fillText(ln, lines.length > 1 ? (W - blockWidth) / 2 : W / 2, 210 + i * 34)
     })
   }
 
@@ -572,8 +644,8 @@ function buildCanvas(page, id, kind, opt) {
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, width, height)
 
-      // 🔴 只有 match / brief 配了底图；四张新卡是代码画的，bgSrc 为空 → bg = null
-      const bgSrc = isMvpLong ? '/images/worlds-miniprogram.jpg' : kind === 'brief' ? BG.brief : kind === 'match' ? BG.match : ''
+      // 比赛按类别选择底图；其他卡片保持原有绘制方式。
+      const bgSrc = isMvpLong ? '/images/worlds-miniprogram.jpg' : kind === 'brief' ? BG.brief : kind === 'match' ? (BG.matches[opt && opt.cat] || BG.match) : ''
       loadBg(canvas, bgSrc).then((bg) => {
         if (isMvpLong && !bg) return resolve('')
         const full = Object.assign({}, opt, { bg: bg || null })
@@ -603,6 +675,8 @@ function buildCanvas(page, id, kind, opt) {
 module.exports = {
   build,
   drawMatch,
+  matchNames,
+  matchDate,
   drawBrief,
   drawRank,
   drawPlayer,

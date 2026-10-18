@@ -29,9 +29,8 @@ const SELECTABLE = [
 
 /**
  * 某些赛事只开放部分球队供关注。
- * 中国之队（chn）的比赛是从「中国队视角」抓的，对手（越南/马尔代夫/韩国U23…）
- * 也会被 teamsOf 抽出来，但用户要关注的是国字号球队本身，不是对手 ——
- * 这里按中文名过滤，只保留「中国」开头的（男足/女足/U17/U23亚运队）。
+ * 中国之队（chn）的比赛是从「中国队视角」抓的，对手也会被 teamsOf 抽出来；
+ * 用户要关注的是国字号球队本身，不是对手，因此这里只保留「中国」开头的球队。
  */
 const CAT_TEAM_FILTER = {
   chn: /^中国/,
@@ -94,6 +93,7 @@ Page({
       .map((k) => ({
         key: k,
         name: data.compOf(k).name,
+        cat:data.compOf(k).cat,
         followed: followedByComp[k] || 0,
       }))
 
@@ -144,7 +144,10 @@ Page({
   onTeamTap(e) {
     const item = this.data.teams[e.currentTarget.dataset.index]
     if (!item) return
-    if (item.comp === 'atp' || item.comp === 'wta') return
+    if (item.comp === 'atp' || item.comp === 'wta') {
+      wx.navigateTo({url:require('../../utils/tennis-insights').profileUrl(item.comp,item)})
+      return
+    }
     wx.navigateTo({
       url: `/pages/team/team?comp=${encodeURIComponent(item.comp)}&id=${encodeURIComponent(String(item.id))}`,
       fail() {

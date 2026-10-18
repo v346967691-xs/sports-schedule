@@ -2,6 +2,41 @@
   padding-top: 0;
 }
 
+/* 已关注比赛：灰色眼睛，与右侧状态留出独立间距。 */
+.mc-followed {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32rpx;
+  height: 32rpx;
+  margin-left: 16rpx;
+  margin-right: 12rpx;
+}
+
+.mc-followed-eye {
+  position: relative;
+  box-sizing: border-box;
+  width: 23rpx;
+  height: 23rpx;
+  border: 3rpx solid #a6adb7;
+  border-radius: 75% 15%;
+  transform: rotate(45deg);
+}
+
+.mc-followed-eye::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10rpx;
+  height: 10rpx;
+  margin-left: -5rpx;
+  margin-top: -5rpx;
+  border-radius: 50%;
+  background: #a6adb7;
+}
+
 .cat-bar {
   position: sticky;
   top: 0;
@@ -13,6 +48,9 @@
 
 .cat {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
   padding: 24rpx 0 20rpx;
   margin-right: 44rpx;
   color: rgba(255, 255, 255, 0.62);
@@ -22,6 +60,14 @@
 .cat.active {
   color: #fff;
   font-weight: 700;
+}
+
+.cat-sport-icon {
+  opacity: 0.62;
+}
+
+.cat.active .cat-sport-icon {
+  opacity: 1;
 }
 
 .cat.active::after {
@@ -89,6 +135,162 @@
 
 .chip-row-wrap::-webkit-scrollbar {
   display: none;
+}
+
+.competition-filter-row {
+  display: flex;
+  align-items: center;
+}
+
+.competition-chip-scroll {
+  flex: 1;
+  min-width: 0;
+}
+
+.comp-sort-entry {
+  flex: none;
+  padding: 12rpx 20rpx 12rpx 12rpx;
+  color: var(--brand);
+  font-size: 23rpx;
+  font-weight: 600;
+}
+
+.comp-sort-mask {
+  position: fixed;
+  z-index: 100;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(12, 20, 45, 0.48);
+}
+
+.comp-sort-panel {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 82vh;
+  padding: 28rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-radius: 28rpx 28rpx 0 0;
+  background: #fff;
+}
+
+.comp-sort-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18rpx;
+}
+
+.comp-sort-title {
+  color: var(--text);
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.comp-sort-hint {
+  margin-top: 8rpx;
+  color: var(--muted);
+  font-size: 22rpx;
+}
+
+.comp-sort-close {
+  padding: 12rpx 18rpx;
+  color: var(--brand);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.comp-sort-list {
+  height: 52vh;
+}
+
+.comp-sort-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 84rpx;
+  border-bottom: 1rpx solid var(--line);
+  transition: transform 0.08s ease;
+}
+
+.comp-sort-item.dragging {
+  background: #fff;
+  box-shadow: 0 4rpx 18rpx rgba(12, 20, 45, 0.16);
+  transition: none;
+}
+
+.comp-sort-drag-handle {
+  flex: none;
+  width: 40rpx;
+  margin-right: 10rpx;
+  color: var(--muted);
+  font-size: 30rpx;
+  text-align: center;
+}
+
+.comp-sort-pin {
+  flex: none;
+  margin-left: 8rpx;
+  padding: 10rpx 12rpx;
+  border-radius: 10rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 22rpx;
+  font-weight: 600;
+}
+
+.comp-sort-color {
+  flex: none;
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 18rpx;
+  border-radius: 50%;
+}
+
+.comp-sort-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 27rpx;
+}
+
+.comp-sort-category {
+  margin-left: 14rpx;
+  color: var(--muted);
+  font-size: 21rpx;
+}
+
+.comp-sort-arrows {
+  display: flex;
+  align-items: center;
+}
+
+.comp-sort-arrow {
+  width: 64rpx;
+  height: 60rpx;
+  margin-left: 8rpx;
+  border-radius: 12rpx;
+  background: var(--bg);
+  color: var(--brand);
+  font-size: 30rpx;
+  line-height: 60rpx;
+  text-align: center;
+}
+
+.comp-sort-arrow.disabled {
+  color: #c5cad4;
+}
+
+.comp-sort-reset {
+  margin-top: 18rpx;
+  padding: 18rpx;
+  border-radius: 12rpx;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 25rpx;
+  text-align: center;
 }
 
 .chip-row {
@@ -382,9 +584,12 @@
   width: 500px;
   height: 400px;
 }
+.tennis-station-entry { display:flex; align-items:center; justify-content:space-between; margin:20rpx 24rpx 12rpx; padding:24rpx; background:#e8f2ed; border-radius:16rpx; color:#1c6b45; }
+.tennis-station-title { font-size:27rpx; font-weight:700; }
+.tennis-station-desc { margin-top:8rpx; font-size:22rpx; color:#608575; }
+.tennis-station-entry > text { font-size:40rpx; }
+.tennis-courts { padding:12rpx 24rpx; box-sizing:border-box; }
 
-/* 赛前前瞻：双方近 5 场胜平负色块（只在看未来赛程时出现）
-   ⚠️ 不用 flex `gap`（老 WebView 不支持），间距一律 margin-right */
 .mc-form {
   display: flex;
   align-items: center;

@@ -36,12 +36,13 @@ test('Chinese player follows keep name matching through mine and schedule filter
   assert.equal(data.matchHasTeam(match, follows.asFilter()[0]), true)
   assert.equal(data.matchHasTeam({ ...match, comp: 'wta' }, follows.asFilter()[0]), false)
   let page
+  let destination
   const app = { globalData: {} }
-  load('../pages/mine/mine.js', { Page: value => { page = value }, wx: { switchTab() {} },
-    require: name => name.endsWith('/app-instance') ? { appInstance: () => app } : {} })
+  load('../pages/mine/mine.js', { Page: value => { page = value }, wx: { switchTab() {}, navigateTo:opt=>{destination=opt.url} },
+    require: name => name.endsWith('/app-instance') ? { appInstance: () => app } : name.endsWith('/tennis-insights') ? require('../utils/tennis-insights') : {} })
   page.data.teams = [player]
   page.onTeamTap({ currentTarget: { dataset: { index: 0 } } })
-  assert.equal(data.matchHasTeam(match, app.globalData.pendingTeam), true)
+  assert.match(destination,/pages\/tennis-player\/tennis-player/); assert.equal(new URLSearchParams(destination.split('?')[1]).get('name'),player.name)
 })
 
 test('tennis live discovery aligns home/away and deduplicates whole-tournament responses across date requests', async () => {
@@ -139,7 +140,7 @@ test('tennis detail displays and refreshes set scores without a generic detail p
   const data = { compOf: () => comp, standingsOf: () => null, matchDetail: async () => null }
   const app = { globalData: {}, isFav: () => false }
   let destination
-  load('../pages/detail/detail.js', { Page: value => { page = value }, wx: { switchTab: value => { destination = value.url } }, require: name => {
+  load('../pages/detail/detail.js', { Page: value => { page = value }, wx: { switchTab: value => { destination = value.url }, navigateTo:value=>{destination=value.url} }, require: name => {
     if (name.endsWith('/data')) return data
     if (name.endsWith('/app-instance')) return { appInstance: () => app }
     return realRequire(name)
@@ -156,8 +157,7 @@ test('tennis detail displays and refreshes set scores without a generic detail p
   page.applyMatch({ ...match, sets: { h: [6, 4], a: [4, 2] } })
   assert.deepEqual(Array.from(page.data.tennisSets.rows[0].scores), ['6', '4'])
   page.onTeamTap({ currentTarget: { dataset: { side: 'home' } } })
-  assert.equal(destination, '/pages/schedule/schedule')
-  assert.equal(app.globalData.pendingTeam.name, 'Player A')
+  assert.match(destination,/tennis-player/);assert.equal(new URLSearchParams(destination.split('?')[1]).get('name'),'Player A')
   page.applyMatch({ ...match, status: 'finished' })
   assert.equal(page.detailPollUntil, undefined)
   assert.equal(page.finalDetailReady, true)
@@ -370,7 +370,7 @@ test('weekly board shows Chinese names, preserves zero points, filters China and
   weekly.atp.rows[0].points = 0
   const world = view.board(weekly, 'atp', false, now)
   assert.equal(world.rows.length, 100)
-  assert.equal(world.rows[0].name, '扬尼克·辛纳')
+  assert.equal(world.rows[0].name, '辛纳')
   assert.equal(world.rows[0].value, 0)
   const china = view.board(weekly, 'atp', true, now)
   assert.equal(china.rows[0].name, '张之臻')
@@ -380,16 +380,16 @@ test('weekly board shows Chinese names, preserves zero points, filters China and
   assert.equal(view.merge(weekly, { atp: { ...weekly.atp, rankingDate: '2026-09-28' } }).atp, weekly.atp)
 })
 
-test('ranking page exposes only ATP/WTA weekly boards with China filtering, schedule links and restorable sharing', () => {
+test('ranking weekly mode preserves China filtering, player profile links and restorable sharing', () => {
   let page
   const app = { globalData: {} }
   let destination
   const filename = path.join(__dirname, '../pages/rank/rank.js'), actual = createRequire(filename)
-  load('../pages/rank/rank.js', { Page: p => { page = p }, wx: { switchTab: opt => { destination = opt.url } },
+  load('../pages/rank/rank.js', { Page: p => { page = p }, wx: { switchTab: opt => { destination = opt.url }, navigateTo:opt=>{destination=opt.url} },
     require: name => name.endsWith('/app-instance') ? { appInstance: () => app } : actual(name) })
   page.setData = (value, done) => { Object.assign(page.data, value); if (done) done() }
   page.buildShareImage = () => {}
-  page.onLoad({ comp: 'atp', scope: 'china' })
+  page.onLoad({ comp: 'atp', scope: 'china', mode:'weekly' })
   assert.equal(page.data.activeComp, 'atp')
   assert.equal(page.data.tier, 'tennis-weekly')
   assert.equal(page.data.tierKind, 'tennis')
@@ -400,12 +400,10 @@ test('ranking page exposes only ATP/WTA weekly boards with China filtering, sche
   assert.match(page.onShareAppMessage().path, /scope=china/)
   page.onTennisScopeTap({ currentTarget: { dataset: { scope: 'all' } } })
   assert.equal(page.data.rankRows.length, 100)
-  assert.equal(page.shareRows()[0].name, '扬尼克·辛纳')
+  assert.equal(page.shareRows()[0].name, '辛纳')
   const row = page.data.rankRows[0]
   page.onTennisRowTap({ currentTarget: { dataset: { id: row.id } } })
-  assert.equal(destination, '/pages/schedule/schedule')
-  assert.equal(app.globalData.pendingTeam.name, row.en)
-  assert.equal(app.globalData.pendingTeam.comp, 'atp')
+  assert.match(destination,/tennis-player/);const params=new URLSearchParams(destination.split('?')[1]);assert.equal(params.get('name'),row.en);assert.equal(params.get('comp'),'atp')
   page.onCompTap({ currentTarget: { dataset: { key: 'wta' } } })
   assert.equal(page.data.rankRows.length, 100)
   assert.equal(page.data.tier, 'tennis-weekly')

@@ -46,6 +46,7 @@ Page({
     comp: '',
     id: '',
     compName: '',
+    compCat:'',
     accent: '#6B7280',
     name: '-',
     abbr: '',
@@ -156,6 +157,7 @@ Page({
 
     this.setData({
       compName: comp.name,
+      compCat:comp.cat,
       accent: comp.accent,
       name: info.name,
       abbr: info.abbr,

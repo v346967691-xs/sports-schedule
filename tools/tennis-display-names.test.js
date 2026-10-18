@@ -1,0 +1,27 @@
+const test=require('node:test'),assert=require('node:assert/strict'),names=require('../utils/tennis-names')
+test('compact names preserve original full identities, Chinese full names and known same-surname distinctions',()=>{
+  assert.equal(names.displayName('Jannik Sinner'),'辛纳')
+  assert.equal(names.displayName('Iga Swiatek'),'斯瓦泰克')
+  assert.equal(names.displayName('Elina Svitolina'),'斯维托丽娜')
+  assert.equal(names.displayName('Alejandro Davidovich Fokina'),'福基纳')
+  assert.equal(names.displayName('Felix Auger Aliassime'),'阿利亚西姆')
+  assert.equal(names.displayName('Qinwen Zheng'),'郑钦文')
+  assert.equal(names.displayName('Mirra Andreeva'),'米拉·安德烈耶娃')
+  assert.equal(names.displayName('Unknown Person'),'Unknown Person')
+  assert.equal(names.displayName('Unknown Person','未知·选手'),'未知·选手')
+  assert.equal(names.nameZh('Jannik Sinner'),'扬尼克·辛纳')
+  const row={id:'atp-test',comp:'atp',status:'upcoming',start:'2026-10-16T04:00Z',date:'2026-10-16',home:{id:'a',name:'Jannik Sinner'},away:{id:'b',name:'Qinwen Zheng'}}
+  const card=require('../utils/view').decorate(row)
+  assert.equal(require('../utils/tournament-bracket').tennisEntries([{...row,status:'canceled',statusText:'已取消',stage:'Paris · Semifinal'}]).length,0)
+  assert.equal(card.home.zhName,'辛纳');assert.equal(card.home.name,'Jannik Sinner');assert.equal(row.home.zh,undefined)
+  const weekly=require('../utils/tennis-rankings').board({atp:{rows:[{id:'a',name:'Jannik Sinner',rank:1,points:1}]}},'atp',false)
+  assert.equal(weekly.rows[0].name,'辛纳');assert.equal(weekly.rows[0].en,'Jannik Sinner')
+})
+test('station labels recover missing archived levels, respect conflicting evidence and keep China Open tours separate',()=>{
+  const {eventLevel}=require('../utils/tennis-rankings')
+  assert.equal(eventLevel([],'wta','China Open','2026-10-01'),'WTA 1000')
+  assert.equal(eventLevel([],'atp','China Open','2026-10-01'),'ATP 500')
+  const known={tour:'wta',name:'China Open',start:'2026-09-30',end:'2026-10-11',level:'WTA 1000'}
+  assert.equal(eventLevel([known,{...known,name:'China Open 2026'}],'wta','China Open','2026-10-01'),'WTA 1000')
+  assert.equal(eventLevel([known,{...known,level:'WTA 500'}],'wta','China Open','2026-10-01'),'')
+})

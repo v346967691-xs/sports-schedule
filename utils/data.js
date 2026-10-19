@@ -1033,7 +1033,10 @@ async function doRefresh() {
     }
     const cloudTime = main.data.meta.generatedAt ? Date.parse(main.data.meta.generatedAt) : 0
     const bundleTime = meta.generatedAt ? Date.parse(meta.generatedAt) : 0
-    if (cloudTime <= bundleTime) {
+    // Worlds draw-only writes preserve the full-sync timestamp; accept their own newer revision.
+    const drawTime = Date.parse(main.data.meta.worldsRefreshedAt || '') || 0
+    const previousDrawTime = Date.parse(meta.worldsRefreshedAt || '') || 0
+    if (cloudTime < bundleTime || (cloudTime === bundleTime && drawTime <= previousDrawTime)) {
       return { updated: false, reason: 'not-newer', source: dataSource }
     }
     applyCloudSnapshot(list, main.data.meta)

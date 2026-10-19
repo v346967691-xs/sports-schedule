@@ -48,6 +48,7 @@ Page({
   onFilterTap(e) { this.setData({ activeFilter: e.currentTarget.dataset.key }, () => this.build()) },
   goDetail(e) { wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(e.currentTarget.dataset.id)}` }) },
   goBrief() { wx.navigateTo({ url: '/pages/worlds-brief/worlds-brief' }) },
+  goSwiss() { wx.navigateTo({ url: '/pages/worlds-swiss/worlds-swiss' }) },
   goTeams() { wx.navigateTo({ url: '/pages/teams/teams' }) },
   onShareAppMessage() { return share.message({ title: 'Worlds 2026 · 赛程、赛果与晋级形势', path: '/pages/worlds/worlds' }) },
 })

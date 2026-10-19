@@ -61,6 +61,12 @@
       "pages": [
         "tennis-player"
       ]
+    },
+    {
+      "root": "pages/worlds-swiss",
+      "pages": [
+        "worlds-swiss"
+      ]
     }
   ]
 }

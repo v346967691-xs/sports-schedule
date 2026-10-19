@@ -448,6 +448,7 @@ Page({
       match,
       comp,
       statsPending,
+      isWorldsSwiss: worldsArchive.isWorlds2026(match) && /瑞士|swiss/i.test(match.stage || ''),
       rows,
       tennisSets: buildTennisSets(match, side => (match[side] && (match[side].zhName || match[side].name)) || ''),
       loading: false,
@@ -463,6 +464,10 @@ Page({
       this.loadNotificationStates(match)
       this.syncLivePoll()
     })
+  },
+
+  goSwiss() {
+    wx.navigateTo({ url: `/pages/worlds-swiss/worlds-swiss?id=${encodeURIComponent(this.data.match.id)}` })
   },
 
   goTournament(e) {

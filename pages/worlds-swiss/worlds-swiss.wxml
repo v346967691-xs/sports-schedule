@@ -1,0 +1,39 @@
+<view class="page swiss-page">
+  <view class="swiss-hero">
+    <view class="swiss-kicker"><image class="sport-icon" src="/images/sport-esports-white.png" mode="aspectFit"/>Worlds 2026</view>
+    <view class="swiss-title">瑞士轮签表</view>
+    <view class="swiss-sub">3胜晋级 · 3负淘汰 · 已公布 {{published}} 场对阵</view>
+  </view>
+  <view class="swiss-tabs">
+    <view wx:for="{{rounds}}" wx:key="number" class="swiss-tab {{activeRound === item.number ? 'selected' : ''}}" data-round="{{item.number}}" bindtap="onRoundTap">{{item.title}}</view>
+  </view>
+  <view class="swiss-tip">左右滑动查看五轮 · 点击比赛查看详情</view>
+  <scroll-view class="swiss-scroll" scroll-x enable-flex scroll-into-view="{{scrollTarget}}" scroll-with-animation bindscroll="onBoardScroll">
+    <view class="swiss-columns">
+      <view class="swiss-column" wx:for="{{rounds}}" wx:for-item="r" wx:for-index="ri" wx:key="number" id="{{r.key}}">
+        <view class="swiss-round-title">{{r.title}}<text>{{r.count}} 场已公布</text></view>
+        <view class="swiss-pool {{g.tone}}" wx:for="{{r.groups}}" wx:for-item="g" wx:for-index="gi" wx:key="key">
+          <view class="swiss-pool-head"><text>{{g.label}}</text><text class="swiss-pool-hint">{{g.hint}}</text></view>
+          <view class="swiss-match {{m.lpl ? 'lpl' : ''}} {{m.id === focusedId ? 'focused' : ''}}" wx:for="{{g.matches}}" wx:for-item="m" wx:for-index="mi" wx:key="id" data-id="{{m.id}}" bindtap="goDetail">
+            <view class="swiss-match-meta"><text>{{m.bo}}</text><text class="status-{{m.status}}">{{m.statusLabel}}</text></view>
+            <view class="swiss-team-row {{m.homeWin ? 'winner' : ''}}"><text class="swiss-team-name">{{m.home}}</text><text class="swiss-score">{{m.hasScore ? m.homeScore : '—'}}</text></view>
+            <view class="swiss-team-row {{m.awayWin ? 'winner' : ''}}"><text class="swiss-team-name">{{m.away}}</text><text class="swiss-score">{{m.hasScore ? m.awayScore : '—'}}</text></view>
+            <view class="swiss-time">{{m.time}}</view>
+          </view>
+          <view class="swiss-wait" wx:if="{{g.missing}}">待抽签 · {{g.missing}} 场</view>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+  <view class="swiss-settled">
+    <view class="swiss-summary"><view class="swiss-summary-title">已晋级 · {{qualified.length}} / 8</view><view wx:if="{{!qualified.length}}" class="swiss-muted">等待赛果</view><view wx:for="{{qualified}}" wx:key="id" class="swiss-summary-team">{{item.name}}<text>{{item.record}}</text></view></view>
+    <view class="swiss-summary"><view class="swiss-summary-title">已淘汰 · {{eliminated.length}} / 8</view><view wx:if="{{!eliminated.length}}" class="swiss-muted">等待赛果</view><view wx:for="{{eliminated}}" wx:key="id" class="swiss-summary-team">{{item.name}}<text>{{item.record}}</text></view></view>
+  </view>
+  <view class="swiss-unplaced" wx:if="{{unplaced.length}}">
+    <view class="swiss-summary-title">轮次待核实</view>
+    <view class="swiss-muted">已公布对阵，待历史战绩补齐后归入签表</view>
+    <view class="swiss-unplaced-match" wx:for="{{unplaced}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail">{{item.home}} VS {{item.away}}<view class="swiss-time">{{item.time}}</view></view>
+  </view>
+  <view class="swiss-footer">时间均为北京时间 · 未公布对阵不作预测<view wx:if="{{updatedAt}}">对阵同步于 {{updatedAt}}</view></view>
+  <view class="safe-bottom"></view>
+</view>

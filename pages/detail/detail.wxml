@@ -37,6 +37,8 @@
     </view>
   </view>
 
+  <view class="swiss-bracket-entry" wx:if="{{isWorldsSwiss}}" bindtap="goSwiss">查看瑞士轮签表<text>五轮对阵 · 晋级与淘汰 ›</text></view>
+
   <view class="tennis-event-links" wx:if="{{match._isTennis}}">
     <view data-tab="schedule" bindtap="goTournament">分站赛程 · 按球场查看 ›</view>
     <view data-tab="bracket" bindtap="goTournament">完整晋级图 ›</view>

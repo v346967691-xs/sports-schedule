@@ -30,6 +30,7 @@ const bracket = require('../../utils/bracket')
 const fmt = require('../../utils/format')
 const poster = require('../../utils/poster')
 const competitionOrder = require('../../utils/competition-order')
+const rankTabs = require('../../utils/rank-tabs')
 const { appInstance } = require('../../utils/app-instance')
 
 /** 射手榜 / 助攻榜各显示多少名。上游每榜给 50 人，这里截前 N —— 再往后参考价值骤降 */
@@ -190,6 +191,7 @@ Page({
     tennisMode: 'live',
     tennisDisplayMode: 'weekly',
     activeComp: '',
+    chipAnchor: '',
     /** swiper 当前页 —— 与 activeComp 同步，横滑内容区时由 bindchange 反推 */
     swiperIndex: 0,
     /** 每个赛事一屏：{ key, name, columns, groups, ... } */
@@ -624,6 +626,7 @@ Page({
     this.setData({
       comps,
       activeComp,
+      chipAnchor: rankTabs.anchor(keys, activeComp, this.data.chipAnchor),
       slides,
       swiperIndex: idx,
       emptyReason: '',
@@ -735,7 +738,7 @@ Page({
     }, () => this.render())
   },
 
-  /** 内容区横滑 → 立刻换赛事，并把顶部标签锚定到该赛事 */
+  /** 内容区横滑 → 换赛事；顶部标签超过第三个位置才推进。 */
   onSwiperChange(e) {
     const idx = e && e.detail && typeof e.detail.current === 'number' ? e.detail.current : -1
     const slides = this.data.slides || []

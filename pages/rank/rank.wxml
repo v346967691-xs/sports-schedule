@@ -8,7 +8,7 @@
       class="chip-bar"
       scroll-x
       enable-flex
-      scroll-into-view="chip-{{activeComp}}"
+      scroll-into-view="chip-{{chipAnchor}}"
       scroll-with-animation
     >
       <view class="chip-row">

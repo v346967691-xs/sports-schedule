@@ -5,6 +5,7 @@ const STATIONS = {
   'China Open': '中国网球公开赛',
   'Dongfeng Voyah Wuhan Open': '武汉网球公开赛',
   'Ningbo Open': '宁波公开赛',
+  'BNB Ningbo Open': '宁波公开赛',
   'Guangzhou Open': '广州公开赛',
   'Prudential Hong Kong Tennis Open': '香港网球公开赛',
   'Kinoshita Group Japan Open Tennis Championships': '日本网球公开赛',

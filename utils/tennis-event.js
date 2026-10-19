@@ -94,8 +94,25 @@ function archiveRows(payload) {
   })
 }
 
-function buildArchive(incoming, previous, now = Date.now()) {
-  const rows = mergeRows(archiveRows(previous), incoming)
+function buildArchive(incoming, previous, now = Date.now(), authoritative = false) {
+  const prior = archiveRows(previous)
+  // 仅整站成功抓取可撤销消失的空签位；普通赛程窗口、失败和归档续接不代表整站删除。
+  if (authoritative) {
+    const ids = new Set(incoming.map(match => match.id))
+    const events = new Set(incoming.filter(tennis.isTennis).map(match => identity(match).key))
+    const unknown = side => !side || /^(?:TBD|待定|0|-\d+)$/i.test(String(side.id || side.name || 'TBD'))
+    prior.forEach(match => {
+      if (match.status === 'upcoming' && unknown(match.home) && unknown(match.away)
+          && match.home?.score == null && match.away?.score == null
+          && !((match.sets?.h || []).length || (match.sets?.a || []).length)
+          && events.has(identity(match).key) && !ids.has(match.id)) {
+        // 保留撤销标记，防止客户端把包内/旧主赛程的占位重新合并回来。
+        match.status = 'canceled'
+        match.statusText = '占位已取消'
+      }
+    })
+  }
+  const rows = mergeRows(prior, incoming)
   const events = eventsOf(rows).filter(event => {
     const end = Date.parse(event.end), start = Date.parse(event.start)
     return Number.isFinite(end) && end + 30 * DAY >= now && start <= now + 90 * DAY

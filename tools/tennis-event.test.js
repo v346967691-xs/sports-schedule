@@ -60,6 +60,27 @@ test('compact snapshots preserve event identity and official winners including r
   assert.equal(missingWinner.winnerId, '')
 })
 
+test('authoritative event refresh cancels vanished empty slots without deleting real history or future slots', () => {
+  const empty = id => match(id, 'Round 1', '-3', '-4')
+  const vanished = empty('bye'), future = empty('future')
+  const real = match('real', 'Round 1', '1', '2', '1')
+  const pending = match('pending', 'Round 1', '3', '4')
+  const other = { ...empty('other'), eventId: 'other-event' }
+  const initial = event.buildArchive([vanished, future, real, pending, other], null, NOW)
+  const incoming = [future, real]
+  const regular = event.archiveRows(event.buildArchive(incoming, initial, NOW))
+  assert.equal(regular.find(m => m.id === vanished.id).status, 'upcoming', 'partial windows cannot retract slots')
+  const updated = event.archiveRows(event.buildArchive(incoming, initial, NOW, true))
+  assert.equal(updated.find(m => m.id === vanished.id).status, 'canceled')
+  for (const row of [future, pending, other]) assert.equal(updated.find(m => m.id === row.id).status, 'upcoming')
+  assert.equal(updated.find(m => m.id === real.id).status, 'finished')
+  assert.equal(event.mergeRows([vanished], updated).find(m => m.id === vanished.id).status, 'canceled', 'new archive suppresses bundled ghosts')
+  assert.equal(bracket.tennisEntries(updated).some(m => m.id === vanished.id), false)
+  assert.equal(event.archiveRows(event.buildArchive([], initial, NOW, true)).find(m => m.id === vanished.id).status, 'upcoming', 'failed/empty fetch is not a cancellation')
+  const restored = event.archiveRows(event.buildArchive([{ ...vanished, home: real.home, away: real.away }], event.buildArchive(incoming, initial, NOW, true), NOW, true))
+  assert.equal(restored.find(m => m.id === vanished.id).status, 'upcoming', 'a subsequently announced real match can reuse the slot')
+})
+
 test('legacy cloud records retain archived event identity, platforms and winners but live records have no final winner', () => {
   const prior = match('1', 'Round 1', '1', '2', '1')
   const legacy = { ...prior, broadcast: [], winnerId: '', eventId: '', eventStart: '', eventEnd: '' }

@@ -2889,8 +2889,9 @@ async function run() {
   const rankEntryPages = ['pages/schedule/schedule.js', 'pages/detail/detail.js', 'pages/index/index.js', 'pages/team/team.js']
   const missingNav = rankEntryPages.filter((f) => fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('nav.toRank(') === -1)
   check('积分榜入口全部改走 nav.toRank（4 处）', missingNav.length === 0, missingNav.join(' ') || '四处齐备')
-  check('积分榜页：赛事胶囊条随选中项自动滚动',
-    rWxml.indexOf('scroll-into-view="chip-{{activeComp}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1)
+  check('积分榜页：赛事胶囊条按前三项窗口滚动，不把选中项顶到最左',
+    rWxml.indexOf('scroll-into-view="chip-{{chipAnchor}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1
+    && rankJs.includes('chipAnchor: rankTabs.anchor(keys, activeComp, this.data.chipAnchor)'))
   check('积分榜页：内容区是可横滑的 swiper 且绑定切换事件',
     rWxml.indexOf('<swiper') > -1
     && rWxml.indexOf('bindchange="onSwiperChange"') > -1

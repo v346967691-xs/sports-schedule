@@ -8,7 +8,7 @@ function saveArchive(rows) {
   let previous = null
   try { delete require.cache[require.resolve(OUT)]; previous = require(OUT) } catch (err) { /* 首次生成 */ }
   const labeled = require('./broadcast-sources').mergeBroadcasts(rows, [], archive.archiveRows(previous))
-  const payload = archive.buildArchive(labeled, previous)
+  const payload = archive.buildArchive(labeled, previous, Date.now(), true)
   fs.writeFileSync(OUT, `/** 网球整站赛程，自动生成；赛后保留 30 天。 */\nmodule.exports = ${JSON.stringify(payload)}\n`)
   return payload
 }

@@ -3,7 +3,8 @@
 // WTA: https://api.wtatennis.com/tennis/tournaments/?from=2026-09-01&to=2026-12-31&pageSize=100
 const levels={atp:{'China Open':500,'Kinoshita Group Japan Open Tennis Championships':500,
   'Rolex Shanghai Masters':1000,'Rolex Paris Masters':1000,'Erste Bank Open':500,'Swiss Indoors Basel':500,
-  'Bybit Stockholm Open':250,'BNP Paribas Fortis European Open':250,'Almaty Open':250},
+  'Bybit Stockholm Open':250,'BNP Paribas Fortis European Open':250,'Almaty Open':250,
+  'Grand Prix Auvergne-Rhône-Alpes':250,'Grand Prix Auvergne-Rhone-Alpes':250},
   wta:{'China Open':1000,'Dongfeng Voyah Wuhan Open':1000,'Ningbo Open':500,'Kinoshita Group Japan Open':250,
     'Guangzhou Open':250,'Toray Pan Pacific Open Tennis':500,'Prudential Hong Kong Tennis Open':250,'Chennai Open':250}}
 function level(tour,name,date){const value=String(date||'').slice(0,4)==='2026'&&levels[tour]&&levels[tour][String(name||'').trim()];return value?`${tour.toUpperCase()} ${value}`:''}

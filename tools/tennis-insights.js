@@ -123,6 +123,17 @@ function signature(payload) {
     entryLists:payload.entryLists&&payload.entryLists.map(row=>({...row,checkedAt:undefined})),
     withdrawals:payload.withdrawals&&payload.withdrawals.map(row=>({...row,checkedAt:undefined})) }))
 }
+function rememberCalendar(tour, calendar, persist) {
+  const rows=(calendar||[]).map(event=>({...event,tour}))
+  require('../utils/tennis-scope').setCalendar(tour,rows)
+  if(!persist)return
+  const fs=require('fs'),file=require.resolve('../data/tennis-rankings')
+  const rankings=require(file)
+  rankings.weekly=rankings.weekly||{}
+  const prior=rankings.weekly[tour]||{}
+  rankings.weekly[tour]={...prior,tournaments:require('../utils/tennis-levels').mergeCalendar(prior.tournaments,rows)}
+  fs.writeFileSync(file,`module.exports = ${JSON.stringify(rankings)}\n`)
+}
 async function main(cloud, options = {}) {
   const now = options.now == null ? Date.now() : options.now
   if (!cloud) {
@@ -135,15 +146,21 @@ async function main(cloud, options = {}) {
     const old = await cloud.database.from('team_roster').select('payload,generated_at').eq('id', IDS[index]).maybeSingle()
     if (old.error) throw new Error(`巡回赛缓存读取失败：${old.error.message}`)
     const previous = decode(old.data && old.data.payload) || {}
+    rememberCalendar(tour,previous.calendar,options.persistCalendar)
     const enrichmentDue=options.enrich!==false&&(!previous.enrichedAt||now-Date.parse(previous.enrichedAt)>=cadence.PROFILES_MS)
     const entryDue=tour==='wta'&&options.enrich!==false&&(options.force||!previous.entryCheckedAt||now-Date.parse(previous.entryCheckedAt)>=cadence.ENTRIES_MS)
     if (!options.force && !enrichmentDue && !entryDue && now - Date.parse(previous.checkedAt || '') < cadence.POINTS_MS) return { tour, skipped: 'fresh' }
     try {
       const payload = normalize(await readUrl(`https://www.rank.tennis/data/${tour}.json`), tour, knownPlayers(tour), now)
+      rememberCalendar(tour,payload.calendar,options.persistCalendar)
+      payload.calendar=payload.calendar.filter(event=>!require('../utils/tennis-scope').excluded(event.level))
       if (previous.asOf && payload.asOf < previous.asOf) throw new Error('拒绝较旧实时积分')
       payload.profiles = previous.profiles || {}; payload.entryLists = previous.entryLists || []; payload.finals = previous.finals || null
       if(previous.enrichedAt)payload.enrichedAt=previous.enrichedAt
       for(const field of ['entryCheckedAt','withdrawals','withdrawalArticles'])if(previous[field])payload[field]=previous[field]
+      const allowedEvent=event=>require('../utils/tennis-scope').allows({comp:tour,stage:event.name,start:event.start,level:event.level})
+      payload.entryLists=payload.entryLists.filter(allowedEvent)
+      if(payload.withdrawals)payload.withdrawals=payload.withdrawals.filter(allowedEvent)
       if (enrichmentDue) { await enrich(payload, previous, now);payload.enrichedAt=new Date(now).toISOString() }
       if (entryDue) await require('./tennis-participation').refresh(payload,previous,now,{readUrl,parseEntries:parseWtaEntries,eventIds:WTA_EVENTS})
       if (signature(previous) === signature(payload) && now - Date.parse(old.data.generated_at) < 60 * 60000) return { tour, skipped: 'unchanged' }
@@ -157,7 +174,7 @@ async function main(cloud, options = {}) {
   }))
   return results
 }
-if (require.main === module) main(null, { force: process.argv.includes('--force') }).then(result => {
+if (require.main === module) main(null, { force: process.argv.includes('--force'), persistCalendar:true }).then(result => {
   console.log(JSON.stringify(result)); if (result.some(row => row.error)) process.exitCode = 2
 }).catch(err => { console.error(err.message); process.exitCode = 1 })
 module.exports = { normalize, parseWtaEntries, parseFinalists, profileOf, signature, main }

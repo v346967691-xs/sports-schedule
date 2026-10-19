@@ -206,7 +206,7 @@ function matches() {
       cache = []
     }
   }
-  return cache
+  return cache.filter(m => require('./tennis-scope').allows(m, tennisRankings.weekly))
 }
 
 function categories() {
@@ -240,7 +240,7 @@ function catOf(compKey) {
 
 function findMatch(id) {
   const current = matches().find((m) => m.id === id)
-  const archived = tennisEventArchive.find(m => m.id === id && Date.parse(m.eventEnd || m.start) + 30 * 86400000 >= Date.now())
+  const archived = tennisEventArchive.find(m => m.id === id && require('./tennis-scope').allows(m, tennisRankings.weekly) && Date.parse(m.eventEnd || m.start) + 30 * 86400000 >= Date.now())
   if (current && archived && tennisEventArchiveAt > Math.max(current._liveAt || 0, Date.parse(meta.generatedAt) || 0)) {
     return tennisEvent.mergeRows([current], [archived])[0]
   }
@@ -255,6 +255,7 @@ function tennisEventRows() {
     ;(observedAt >= tennisEventArchiveAt ? newer : older).push(match)
   })
   return tennisEvent.mergeRows(tennisEvent.mergeRows(older, tennisEventArchive), newer)
+    .filter(m => require('./tennis-scope').allows(m, tennisRankings.weekly))
 }
 
 function tennisEvents() {
@@ -940,6 +941,7 @@ async function matchDetail(match) {
 }
 
 async function tennisMatchStats(match, options) {
+  if (!require('./tennis-scope').allows(match, tennisRankings.weekly)) return null
   if(!match || !['atp','wta'].includes(match.comp) || !match.start)return null
   const teamId='tennis-stats:'+dayStampCN(match.start)
   const hit=rosterCache[`${match.comp}:${teamId}`]

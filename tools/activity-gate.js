@@ -71,6 +71,7 @@ async function discover(){
   return JSON.parse(stdout.trim())
 }
 function makePlan({matches,snapshotAt,sources,details={},stats={},now=Date.now(),sha,expected=[],healthy=true,worldsSig=''}){
+  matches=matches.filter(m=>require('../utils/tennis-scope').allows(m))
   const snapshotTime=Date.parse(snapshotAt)
   const base={version:VERSION,sha,createdAt:new Date(now).toISOString(),ready:false,
     maintenanceAt:new Date(Number.isFinite(snapshotTime)?Math.min(now+HOUR,snapshotTime+90*MIN):now).toISOString(),
@@ -112,6 +113,7 @@ async function record(cloud,{now=Date.now(),sha,healthy=true,worldsSignature:rea
   let matches=require('../utils/snapshot').decodeSnapshot(snapshot.data).map(m=>({...m,home:{...m.home},away:{...m.away}}))
   const archive=require('../utils/tennis-event')
   if(snapshot.meta?.tennisEvents?.version===3)matches=archive.mergeRows(matches,archive.archiveRows(snapshot.meta.tennisEvents))
+  matches=matches.filter(m=>require('../utils/tennis-scope').allows(m,snapshot.meta?.tennisRankings?.weekly))
   const at=Date.parse(live.generated_at)
   if(!Number.isFinite(at)||at>now||now-at>10*MIN)throw Error('Stale live heartbeat')
   const patches=new Map((live.data?.rows||[]).map(r=>[r.id,r]))

@@ -49,7 +49,7 @@ function mergeRows(previous, incoming) {
     if (next.winnerId && ![next.home, next.away].some(side => side && String(side.id) === String(next.winnerId))) delete next.winnerId
     byId.set(match.id, next)
   })
-  return [...byId.values()]
+  return [...byId.values()].filter(match => require('./tennis-scope').allows(match))
 }
 
 function eventsOf(rows) {
@@ -67,7 +67,7 @@ function eventsOf(rows) {
   return [...map.values()].sort((a, b) => String(b.start).localeCompare(String(a.start)))
 }
 
-function archiveRows(payload) {
+function archiveRows(payload, includeExcluded = false) {
   let packed = payload && payload.snapshot
   if (payload && payload.version === 3) {
     const matches = {}
@@ -78,7 +78,7 @@ function archiveRows(payload) {
     packed = { v: 2, teams: payload.teams, matches }
   }
   const rows = snapshot.decodeSnapshot(packed || [])
-  if (!payload || (payload.version !== 2 && payload.version !== 3)) return rows
+  if (!payload || (payload.version !== 2 && payload.version !== 3)) return rows.filter(match => includeExcluded || require('./tennis-scope').allows(match))
   const records = new Map()
   Object.keys(packed.matches || {}).forEach(comp => {
     packed.matches[comp].forEach(record => records.set(record.i || `${comp}-${record.e}`, record))
@@ -91,7 +91,7 @@ function archiveRows(payload) {
       stage: [event.title, match.stage].filter(Boolean).join(' · '), venue: payload.venues[record.cv] || '',
       statusText: match.statusText || (match.status === 'finished' ? '已结束' : ''),
       broadcast: match.broadcast.length ? match.broadcast : event.broadcast || [] })
-  })
+  }).filter(match => includeExcluded || require('./tennis-scope').allows(match))
 }
 
 function buildArchive(incoming, previous, now = Date.now(), authoritative = false) {

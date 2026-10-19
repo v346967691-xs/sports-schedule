@@ -234,6 +234,7 @@ async function main(cloud, options = {}) {
   if(!cloud)cloud=require('@tencent-ai/workbuddy-cloud-sdk').createWorkBuddyCloud(require('../utils/cloud-config'))
   const now=options.now??Date.now()
   const rows=(options.matches||await loadMatches(cloud)).filter(m=>['atp','wta'].includes(m.comp)
+    &&require('../utils/tennis-scope').allows(m)
     &&['live','finished','upcoming'].includes(m.status)&&Date.parse(m.start)<=now+3*3600000&&Date.parse(m.start)>=now-30*DAY)
     .filter(m=>m.home?.name&&m.away?.name&&!/^(?:TBD|待定)$/i.test(m.home.name)&&!/^(?:TBD|待定)$/i.test(m.away.name))
   if(!rows.length)return {matches:0,writes:0}

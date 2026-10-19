@@ -260,6 +260,7 @@ async function scanTennis() {
         const j = await getJSON(`${ESPN}/tennis/${tour}/scoreboard?dates=${date}`)
         if(!Array.isArray(j?.events))throw Error('网球响应缺少赛程')
         for (const ev of (j.events || [])) for (const group of (ev.groupings || [])) {
+          if (!require('../utils/tennis-scope').eventAllowed(ev, tour)) continue
           if (tour === 'wta' && !WTA_TOUR_EVENT_IDS.has(String(ev.id || '').split('-')[0])) continue
           const expected = tour === 'atp' ? 'mens-singles' : 'womens-singles'
           if (!group.grouping || group.grouping.slug !== expected) continue

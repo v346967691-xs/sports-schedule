@@ -62,12 +62,14 @@ function finalsStatus(payload, player, now = Date.now()) {
 function participation(payload, player, matches, now = Date.now()) {
   const today = new Date(now + 8 * 3600000).toISOString().slice(0,10)
   const pool = new Map()
-  ;(payload && payload.calendar || []).filter(event => event.end >= today && Date.parse(event.start) < now + 45 * 86400000)
+  ;(payload && payload.calendar || []).filter(event => !require('./tennis-scope').excluded(event.level)
+    && require('./tennis-scope').allows({comp:payload.tour,stage:event.name,start:event.start,level:event.level})
+    && event.end >= today && Date.parse(event.start) < now + 45 * 86400000)
     .forEach(event => {
       const key=calendarAliases[payload.tour]&&calendarAliases[payload.tour][event.name]||event.name
       pool.set(key, { ...event, station: tennis.tournamentOf({ comp: payload.tour, stage: key }).name })
     })
-  ;(matches || []).forEach(match => {
+  ;(matches || []).filter(match => require('./tennis-scope').allows(match)).forEach(match => {
     const station = tennis.tournamentOf(match)
     const old = pool.get(station.raw)
     if (!old && !['upcoming','live'].includes(match.status)) return

@@ -412,6 +412,7 @@ async function fetchTennis(comp) {
     }
     for (const event of (json && json.events) || []) {
       const eventId = String(event.id || '').split('-')[0]
+      if (!require('../utils/tennis-scope').eventAllowed(event, comp.tour)) continue
       if (comp.tour === 'wta' && !WTA_TOUR_EVENT_IDS.has(eventId)) continue
       for (const grouping of event.groupings || []) {
         const slug = grouping.grouping && grouping.grouping.slug || ''
@@ -1003,6 +1004,13 @@ async function main() {
 
   const existingPath = path.join(OUT_DIR, 'matches.js')
   const existing = loadExisting(existingPath)
+  const rankingPath = path.join(OUT_DIR, 'tennis-rankings.js')
+  let tennisRankings
+  if (targets.some(c => c.source === 'tennis')) {
+    tennisRankings = await fetchTennisRankings()
+    fs.writeFileSync(rankingPath, toModule(tennisRankings))
+    for (const tour of ['atp', 'wta']) require('../utils/tennis-scope').setCalendar(tour, tennisRankings.weekly?.[tour]?.tournaments)
+  }
 
   const metaRange = {
     from: beijingDay(new Date(Date.now() - daysBack * 86400000).toISOString()),
@@ -1050,7 +1058,8 @@ async function main() {
   // 上游覆盖不到的赛事走补录表，详见 tools/manual-matches.js
   const manualRows = mergeManual([...kept, ...fetched], metaRange)
 
-  let all = [...kept, ...fetched, ...manualRows].sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
+  let all = [...kept, ...fetched, ...manualRows].filter(m => require('../utils/tennis-scope').allows(m))
+    .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
 
   // 国内平台逐场节目单用于精确匹配；ATP/WTA 则按官方巡回赛和赛事版权范围匹配。
   // 来源不可用时保留上次确认值，不影响赛程同步。
@@ -1079,12 +1088,6 @@ async function main() {
   }))
 
   fs.writeFileSync(metaPath, toModule(meta))
-  const rankingPath = path.join(OUT_DIR, 'tennis-rankings.js')
-  let tennisRankings
-  if (targets.some(c => c.source === 'tennis')) {
-    tennisRankings = await fetchTennisRankings()
-    fs.writeFileSync(rankingPath, toModule(tennisRankings))
-  }
   // ⚠️ 快照用**紧凑格式**写（utils/snapshot.js 的 encodeSnapshot）：
   //    球队抽成共享字典、date/time 由 start 推、空值不写，实测 790KB → 230KB。
   //    读回来一律走 utils/snapshot.js 的 decodeSnapshot，运行时拿到的还是原来那个扁平数组。

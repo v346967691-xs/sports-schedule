@@ -46,11 +46,11 @@ test('current world rank alone grants neither ordinary tournament entry nor lock
 })
 test('known draws and official entry lists provide distinct participation evidence; a withdrawal overrides a stale draw',()=>{
   const p=source.normalize(feed(),'wta',new Map(),now),player=p.players[0]
-  p.calendar=[{name:'Guangzhou Open',start:'2026-10-19',end:'2026-10-25'}]
-  p.entryLists=[{name:'Guangzhou Open',start:'2026-10-19',checkedAt:new Date(now).toISOString(),entries:[{key:player.key,role:'qualifying',status:'playing'}]}]
+  p.calendar=[{name:'Ningbo Open',start:'2026-10-19',end:'2026-10-25'}]
+  p.entryLists=[{name:'Ningbo Open',start:'2026-10-19',checkedAt:new Date(now).toISOString(),entries:[{key:player.key,role:'qualifying',status:'playing'}]}]
   assert.equal(view.participation(p,player,[],now)[0].title,'官方资格赛名单列名')
   p.entryLists[0].entries[0].status='withdrawn'
-  assert.equal(view.participation(p,player,[{id:'wta-1',comp:'wta',stage:'Guangzhou Open · Round 1',date:'2026-10-19',status:'upcoming'}],now)[0].tone,'withdrawn')
+  assert.equal(view.participation(p,player,[{id:'wta-1',comp:'wta',stage:'Ningbo Open · Round 1',date:'2026-10-19',status:'upcoming'}],now)[0].tone,'withdrawn')
 })
 test('profile matching rejects another athlete and a transient missing profile is not fabricated',()=>{
   assert.equal(source.profileOf({athlete:{displayName:'Another Player'}},'Player One',now),null)

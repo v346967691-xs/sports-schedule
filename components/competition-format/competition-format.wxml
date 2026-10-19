@@ -1,0 +1,37 @@
+<template name="match-card">
+  <view class="format-match" data-id="{{m.id}}" bindtap="goDetail">
+    <view class="format-match-head"><text>{{m.title}} {{m.tag}}</text><text class="state-{{m.status}}">{{m.statusText}}</text></view>
+    <view class="format-teams"><text class="team {{m.homeWin ? 'won' : ''}}">{{m.home}}</text><text class="format-score">{{m.hasScore ? m.homeScore + ' – ' + m.awayScore : 'VS'}}</text><text class="team {{m.awayWin ? 'won' : ''}}">{{m.away}}</text></view>
+    <view class="format-time">{{m.time}}</view><view class="format-route" wx:if="{{m.route}}">{{m.route}}</view>
+  </view>
+</template>
+<view class="format" wx:if="{{tabs.length}}">
+  <view class="format-heading" bindtap="onToggle"><view><text class="format-title">赛制与晋级</text><text class="format-sub">分阶段查看对阵与出线</text></view><text>{{open ? '收起 ∧' : '展开 ›'}}</text></view>
+  <block wx:if="{{open}}">
+    <scroll-view scroll-x enable-flex class="format-scroll"><view class="format-tabs"><view wx:for="{{tabs}}" wx:key="key" class="format-tab {{item.key === activeKey ? 'selected' : ''}}" data-key="{{item.key}}" bindtap="onPhase">{{item.label}}</view></view></scroll-view>
+    <view class="format-note" wx:if="{{active.note}}">{{active.note}}</view>
+    <block wx:if="{{active.kind === 'groups'}}">
+      <scroll-view scroll-x enable-flex class="format-scroll" wx:if="{{active.groups.length > 1}}"><view class="format-tabs"><view class="format-tab {{index === groupIndex ? 'selected' : ''}}" wx:for="{{active.groups}}" wx:key="key" data-index="{{index}}" bindtap="onGroup">{{item.name}}</view></view></scroll-view>
+      <view class="format-table" wx:if="{{group}}">
+        <view class="table-head"><text class="rank">名次</text><text class="table-name">{{group.name}}</text><text>场</text><text>胜</text><text>负</text><text wx:if="{{!group.esports}}">积分</text></view>
+        <view class="table-row {{item.zoneBreak ? 'zone-break' : ''}}" wx:for="{{group.rows}}" wx:key="id" style="border-left-color:{{item.zoneColor || 'transparent'}}"><text class="rank">{{item.pos}}</text><view class="table-name"><text>{{item.name}}</text><text class="table-zone" wx:if="{{item.zone}}" style="color:{{item.zoneColor}}">{{item.zone}}</text></view><text>{{item.played}}</text><text>{{item.wins}}</text><text>{{item.losses}}</text><text wx:if="{{!group.esports}}">{{item.points}}</text></view>
+      </view>
+      <view class="format-caption" wx:if="{{group.games.length}}">组内赛程 · {{group.games.length}}场</view>
+      <template is="match-card" wx:for="{{group.games}}" wx:key="id" data="{{m:item}}"/>
+      <view class="format-note" wx:if="{{model.updatedAt}}">积分榜更新：{{model.updatedAt}}</view>
+    </block>
+    <block wx:if="{{active.kind === 'board'}}">
+      <elimination-board wx:if="{{boardTree.nodes.length}}" tree="{{boardTree}}" panes="{{bracketPages}}" navigation="{{roundNavigation}}" current="{{bracketIndex}}" zoom-label="{{zoomLabel}}" auto-fit="{{autoFit}}" bindzoom="onZoom" bindround="onBracketRound" bindswipe="onBracketSwipe" bindautofit="onAutoFit" bindmatchtap="onBoardMatch"/>
+      <view class="format-note" wx:else>该组对阵尚未公布。</view>
+      <view class="format-route" wx:for="{{active.cards}}" wx:key="id" wx:if="{{item.route}}">{{item.home}} / {{item.away}} · {{item.route}}</view>
+    </block>
+    <block wx:if="{{active.kind === 'cards'}}"><template is="match-card" wx:for="{{active.cards}}" wx:key="id" data="{{m:item}}"/></block>
+    <block wx:if="{{active.kind === 'series'}}">
+      <elimination-board wx:if="{{boardTree.columns.length > 1}}" tree="{{boardTree}}" panes="{{bracketPages}}" navigation="{{roundNavigation}}" current="{{bracketIndex}}" zoom-label="{{zoomLabel}}" auto-fit="{{autoFit}}" bindzoom="onZoom" bindround="onBracketRound" bindswipe="onBracketSwipe" bindautofit="onAutoFit" bindmatchtap="onBoardMatch"/>
+      <view class="format-series" wx:for="{{active.series}}" wx:for-item="tie" wx:key="key">
+        <view data-key="{{tie.key}}" bindtap="onSeries"><view class="format-match-head"><text>{{tie.title}}</text><text>{{selectedSeries === tie.key ? '收起 ∧' : '各场结果 ›'}}</text></view><view class="format-teams"><text class="team">{{tie.home}}</text><text class="format-score">{{tie.headline}}</text><text class="team">{{tie.away}}</text></view><view class="format-caption">{{tie.caption}} <text wx:if="{{tie.penalties}}"> · {{tie.penalties}}</text></view><view class="format-note" wx:if="{{tie.note}}">{{tie.note}}</view></view>
+        <block wx:if="{{selectedSeries === tie.key}}"><template is="match-card" wx:for="{{tie.games}}" wx:key="id" data="{{m:item}}"/></block>
+      </view>
+    </block>
+  </block>
+</view>

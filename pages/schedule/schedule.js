@@ -6,6 +6,7 @@ const nav = require('../../utils/nav')
 const poster = require('../../utils/poster')
 const bracket = require('../../utils/bracket')
 const boardController = require('../../utils/elimination-board').controller
+const competitionFormat = require('../../utils/competition-format')
 const tennis = require('../../utils/tennis')
 const tennisEvent = require('../../utils/tennis-event')
 const competitionOrder = require('../../utils/competition-order')
@@ -391,6 +392,9 @@ Page({
       tournamentLabel: selectedTournament ? selectedTournament.label : '',
       bracket: koTree,
       ...this.bracketState(koTree, activeComp),
+      formatModel: activeCat !== 'tennis' && activeComp ? competitionFormat.build(data.query({ comps: [activeComp] }), {
+        comp: activeComp, cat: activeCat, compName, stage, table: data.standingsOf(activeComp), updatedAt: data.standingsGeneratedAt(),
+      }) : null,
       updatedAt: this.updatedLabel(),
       stale: data.staleInfo().stale,
       staleLabel: this.staleLabel(),
@@ -400,6 +404,8 @@ Page({
       compName,
     }, () => this.buildShareImage())
   },
+
+  goFormatMatch(e) { this.goDetail({ currentTarget: { dataset: { id: e.detail.id } } }) },
 
   /**
    * 转发卡图：画「日期 + 共 N 场 + 前 4 场对阵」。

@@ -520,7 +520,7 @@ test('schedule tabs separate all competitions and keep overnight live games', ()
   const pageRequire = createRequire(path.join(__dirname,'../pages/schedule/schedule.js'))
   let definition
   load('../pages/schedule/schedule.js',{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
-    :n==='../../utils/view'||n==='../../utils/format'||n==='../../utils/tennis'||n==='../../utils/tennis-event'||n==='../../utils/elimination-board'?pageRequire(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}:n==='../../utils/app-instance'?{appInstance:()=>({isFav:()=>false})}: {}})
+    :n==='../../utils/view'||n==='../../utils/format'||n==='../../utils/tennis'||n==='../../utils/tennis-event'||n==='../../utils/elimination-board'||n==='../../utils/competition-format'?pageRequire(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}:n==='../../utils/app-instance'?{appInstance:()=>({isFav:()=>false})}: {}})
   const page={...definition,data:{...definition.data},buildShareImage:()=>{},
     setData(p,cb){Object.assign(this.data,p);if(cb)cb()}}
   for(const c of comps) for(const mode of ['upcoming','live','finished']) {
@@ -537,9 +537,9 @@ test('a competition without upcoming games does not show finished games in the u
   const real=createRequire(filename)
   const game={id:'lpl-done',comp:'lpl',status:'finished',date:'2026-10-11',start:new Date().toISOString(),home:{name:'H'},away:{name:'A'}}
   const data={matches:()=>[game],upcoming:()=>[],finished:()=>[game],query:()=>[],compOf:()=>({name:'LPL'}),
-    staleInfo:()=>({stale:false}),source:()=> 'bundle',generatedAt:()=>'',standingsOf:()=>null}
+    staleInfo:()=>({stale:false}),source:()=> 'bundle',generatedAt:()=>'',standingsOf:()=>null,standingsGeneratedAt:()=>''}
   load('../pages/schedule/schedule.js',{Page:p=>{definition=p},require:n=>n==='../../utils/data'?data
-    :n==='../../utils/view'||n==='../../utils/format'||n==='../../utils/elimination-board'?real(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}:n==='../../utils/app-instance'?{appInstance:()=>({isFav:()=>false})}:{}})
+    :n==='../../utils/view'||n==='../../utils/format'||n==='../../utils/elimination-board'||n==='../../utils/competition-format'?real(n):n==='../../utils/bracket'?{koIndexOf:()=>-1}:n==='../../utils/app-instance'?{appInstance:()=>({isFav:()=>false})}:{}})
   const page={...definition,data:{...definition.data,activeCat:'esports',activeComp:'lpl'},buildShareImage:()=>{},
     setData(p,cb){Object.assign(this.data,p);if(cb)cb()}}
   page.doReload()

@@ -340,6 +340,8 @@ async function fetchEspn(comp) {
             ? `${comp.name} · ${seasonZh}`
             : round || comp.name
 
+        const format = require('./competition-format-source').espn(ev, competition, comp, src.id)
+
         seen.set(`${comp.key}-${ev.id}`, {
           id: `${comp.key}-${ev.id}`,
           comp: comp.key,
@@ -349,6 +351,7 @@ async function fetchEspn(comp) {
           status: matchStatus.fromEspn(ev.status?.type).status,
           statusText: matchStatus.fromEspn(ev.status?.type).statusText || zhStatus(ev.status?.type?.state, ev.status?.type?.shortDetail),
           stage,
+          ...(format ? { format, ...(format.phase ? { stage: `${src.label || comp.name} · ${format.phase}` } : {}) } : {}),
           venue: competition.venue?.fullName || '',
           broadcast: (competition.broadcasts || [])
             .map((b) => b.media?.shortName)
@@ -622,6 +625,7 @@ async function fetchLol(comp) {
       status: st.status,
       statusText: st.statusText,
       stage: `${comp.name} · ${ev.blockName || '常规赛'}`,
+      ...(ev.tournament?.id ? { format: { event: String(ev.tournament.id), phase: ev.blockName || '常规赛' } } : {}),
       venue: '',
       broadcast: [],
       bo: ev.match.strategy?.count || null,

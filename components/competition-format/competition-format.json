@@ -1,0 +1,4 @@
+{
+  "component": true,
+  "usingComponents": {"elimination-board": "/components/elimination-board/elimination-board"}
+}

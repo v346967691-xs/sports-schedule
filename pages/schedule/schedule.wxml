@@ -130,7 +130,8 @@
   </view>
 
   <!-- 有明确轮次的单败签表共用双轮交互，只画确认的晋级线。 -->
-  <view class="ko" wx:if="{{boardTree.nodes.length}}">
+  <competition-format wx:if="{{formatModel.tabs.length}}" model="{{formatModel}}" bindmatchtap="goFormatMatch"/>
+  <view class="ko" wx:if="{{boardTree.nodes.length && !formatModel.handlesBracket}}">
     <view class="ko-title">淘汰赛对阵</view>
     <elimination-board tree="{{boardTree}}" panes="{{bracketPages}}" navigation="{{roundNavigation}}" current="{{bracketIndex}}" zoom-label="{{zoomLabel}}" auto-fit="{{autoFit}}" bindzoom="onZoom" bindround="onBracketRound" bindswipe="onBracketSwipe" bindautofit="onAutoFit" bindmatchtap="onBoardMatch"/>
   </view>

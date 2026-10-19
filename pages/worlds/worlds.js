@@ -3,6 +3,7 @@ const worlds = require('../../utils/worlds')
 const follows = require('../../utils/team-follows')
 const share = require('../../utils/share')
 const boardController = require('../../utils/elimination-board').controller
+const competitionFormat = require('../../utils/competition-format')
 
 Page({
   ...boardController,
@@ -40,6 +41,7 @@ Page({
     })
     this.setData(Object.assign({}, model, {
       ...this.bracketState(model.bracket, 'worlds'),
+      formatModel: competitionFormat.build(worlds.eventMatches(all).filter(m => /入围|play.in/i.test(m.stage || '')), { comp: 'worlds', cat: 'esports', compName: '全球总决赛' }),
       sections: [{ key: 'live', title: '正在进行', items: model.live }, { key: 'upcoming', title: '接下来的比赛', items: model.upcoming }, { key: 'finished', title: '已结束', items: model.finished }],
       source: data.source(), updatedAt: data.generatedAt(), stale: data.staleInfo().stale,
     }))
@@ -48,6 +50,7 @@ Page({
       if (this.visible && !this.timer) this.timer = setInterval(() => data.refreshLive(true).then(() => { if (this.visible) this.build() }), 60000)
     } else this.stopPoll()
   },
+  goFormatMatch(e) { this.goDetail({ currentTarget: { dataset: { id: e.detail.id } } }) },
   onFilterTap(e) { this.setData({ activeFilter: e.currentTarget.dataset.key }, () => this.build()) },
   goDetail(e) { wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(e.currentTarget.dataset.id)}` }) },
   goBrief() { wx.navigateTo({ url: '/pages/worlds-brief/worlds-brief' }) },

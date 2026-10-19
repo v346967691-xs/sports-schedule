@@ -11,7 +11,7 @@ function normalize(source, context) {
     const winnerId = node.finished && won && (!node.bo || won.score >= Math.floor(node.bo / 2) + 1) ? won.key : ''
     const labels=['四分之一决赛','半决赛','决赛','16强赛','32强赛','64强赛','128强赛']
     const label=labels[require('./bracket').koIndexOf(column.label)] || column.label
-    return {id:node.id, matchIds:[node.id], round:{order:index,label}, sides, winnerId,
+    return {id:node.id, matchIds:[node.id], round:{order:index,label}, sides, winnerId, summaryLabel:node.bo ? `BO${node.bo} · 系列赛局分` : '',
       status:node.status || (node.finished ? 'finished' : 'upcoming'), statusText:node.statusText || (node.finished ? '已结束' : ''),
       start:node.start, timeLabel:node.timeLabel || `${String(node.start || '').slice(5,10)} ${node.time || ''}`.trim()}
   }))

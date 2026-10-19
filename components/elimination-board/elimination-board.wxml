@@ -23,7 +23,7 @@
                 <view class="tree-line" wx:for="{{pane.bracket.lines}}" wx:key="id" style="left:{{item.left}}rpx;top:{{item.top}}rpx;width:{{item.width}}rpx;height:{{item.height}}rpx"></view>
                 <view class="tree-node {{item.status === 'live' ? 'live' : ''}}" wx:for="{{pane.bracket.nodes}}" wx:key="id" style="left:{{item.left}}rpx;top:{{item.top}}rpx;width:{{pane.bracket.nodeWidth}}rpx;height:{{pane.bracket.nodeHeight}}rpx" data-id="{{item.id}}" bindtap="onMatch">
                   <view class="tree-player {{side.win ? 'winner' : ''}} {{side.followed ? 'followed' : ''}}" wx:for="{{item.sides}}" wx:for-item="side" wx:key="rowKey"><text class="tree-player-name">{{side.name}}<text class="tennis-seed" wx:if="{{side.seed}}">[{{side.seed}}]</text></text><text class="tennis-retired" wx:if="{{side.retired}}">退赛</text><text>{{side.score === null ? '—' : side.score}}</text></view>
-                  <view class="tree-meta">{{item.status === 'live' ? '进行中' : item.status === 'finished' ? item.statusText : item.timeLabel}}</view>
+                  <view class="tree-meta">{{item.summaryLabel ? item.summaryLabel + ' · ' : ''}}{{item.status === 'live' ? '进行中' : item.status === 'finished' ? item.statusText : item.timeLabel}}</view>
                 </view>
               </view>
             </view>

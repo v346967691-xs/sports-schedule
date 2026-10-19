@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "Worlds 2026 专区",
   "usingComponents": {
-    "elimination-board": "/components/elimination-board/elimination-board"
+    "elimination-board": "/components/elimination-board/elimination-board",
+    "competition-format": "/components/competition-format/competition-format"
   }
 }

@@ -6,6 +6,7 @@
     <view class="worlds-brief" bindtap="goBrief">S赛晨报 · 看昨夜赛果与晋级形势 ›</view>
     <view class="worlds-brief" bindtap="goSwiss">瑞士轮签表 · 五轮对阵与晋级形势 ›</view>
   </view>
+  <competition-format wx:if="{{formatModel.tabs.length}}" model="{{formatModel}}" bindmatchtap="goFormatMatch"/>
   <view class="worlds-filters">
     <view wx:for="{{filters}}" wx:key="key" wx:for-index="fi" class="worlds-filter {{activeFilter === item.key ? 'active' : ''}}" data-key="{{item.key}}" bindtap="onFilterTap">{{item.name}}</view>
   </view>

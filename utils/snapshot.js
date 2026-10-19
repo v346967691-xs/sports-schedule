@@ -146,6 +146,7 @@ function encodeSnapshot(list, extra) {
     if (m.historical) rec.z = 1
     if (m.eventId) rec.te = [m.eventId, m.eventStart || '', m.eventEnd || '']
     if (m.winnerId) rec.wi = m.winnerId
+    if (m.format) rec.fm = m.format
     if ((m.comp === 'atp' || m.comp === 'wta') && (m.home.seed || m.away.seed)) rec.sd = [m.home.seed || null, m.away.seed || null]
     if (!byComp[m.comp]) byComp[m.comp] = []
     byComp[m.comp].push(rec)
@@ -206,6 +207,7 @@ function decodeMatch(rec, comp, teams) {
   if (rec.z) m.historical = true
   if (rec.te) { m.eventId = rec.te[0]; m.eventStart = rec.te[1]; m.eventEnd = rec.te[2] }
   if (rec.wi) m.winnerId = rec.wi
+  if (rec.fm) m.format = rec.fm
   if (rec.sd) { m.home.seed = rec.sd[0]; m.away.seed = rec.sd[1] }
   return m
 }

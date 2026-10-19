@@ -25,39 +25,3 @@
 .event-player-score { font-size: 30rpx; font-weight: 700; color: #14235c; margin-left:16rpx; }
 .event-match-court { margin-top: 16rpx; border-top: 1rpx solid #eef0f5; padding-top: 12rpx; font-size: 22rpx; color: #1c6b45; }
 .event-more { margin: 24rpx; padding: 24rpx; text-align: center; font-size: 26rpx; background: white; border-radius: 16rpx; color: #14235c; }
-.tree-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 24rpx; font-size: 24rpx; }
-.tree-champion { color: #1c6b45; font-weight: 700; }
-.tree-zoom { display: flex; align-items: center; flex: none; margin-left:20rpx; }
-.tree-zoom > view + text, .tree-zoom > text + view { margin-left:12rpx; }
-.tree-zoom view { padding: 10rpx 18rpx; background: white; border-radius: 10rpx; font-size: 28rpx; }
-.tree-note { margin: 0 24rpx 22rpx; font-size: 22rpx; color: #8a93a6; line-height: 1.6; }
-.tree-pages { height: 68vh; width: 100%; background: #edf2ef; }
-.tree-viewport { height: 100%; width: 100%; box-sizing: border-box; }
-.tree-pane { position: relative; margin: 0 auto; }
-.tree-guide { display:flex; justify-content:space-between; align-items:center; margin:0 24rpx 20rpx; font-size:21rpx; color:#8a93a6; }
-.tree-auto { margin-left:12rpx; color:#65718a; flex:none; }
-.tree-auto.selected { color:#1c6b45; font-weight:700; }
-.round-map { display:flex; padding:18rpx 16rpx 20rpx; background:#edf2ef; }
-.round-map-item { flex:1; min-width:0; text-align:center; color:#8a9a90; }
-.round-map-label { height:40rpx; font-size:20rpx; white-space:nowrap; }
-.round-map-item.selected { color:#174c36; font-weight:700; }
-.round-map-icon { position:relative; height:82rpx; display:flex; align-items:center; justify-content:center; }
-.round-map-item.selected .round-map-icon { background:#dbe8dd; }
-.round-map-item.first .round-map-icon { border-radius:22rpx 0 0 22rpx; }
-.round-map-item.last .round-map-icon { border-radius:0 22rpx 22rpx 0; }
-.round-map-bars > view { width:38rpx; height:2rpx; background:currentColor; margin:4rpx 0; }
-.round-map-trophy { font-size:34rpx; }
-.round-map-arrow { position:absolute; top:15rpx; font-size:36rpx; font-weight:400; }
-.round-map-arrow.left { left:5rpx; }.round-map-arrow.right { right:5rpx; }
-.tree-board { position: relative; transform-origin: 0 0; }
-.tree-heading { position:sticky; top:0; height:62rpx; z-index:3; background:#edf2ef; }
-.tree-column { position: absolute; top: 0; text-align: center; font-size: 25rpx; font-weight: 700; color: #164e3b; }
-.tree-line { position: absolute; background: #8db8a1; }
-.tree-node { position: absolute; box-sizing: border-box; padding: 10rpx 14rpx; border: 1rpx solid #dce5df; border-radius: 12rpx; background: white; overflow: hidden; }
-.tree-node.live { border-color: #237451; box-shadow: 0 0 0 2rpx #d0e6d9; }
-.tree-player { display: flex; font-size: 23rpx; line-height: 35rpx; align-items: center; justify-content: space-between; color: #778196; }
-.tree-player > text + text { margin-left:10rpx; }
-.tree-player-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.tree-player.winner { color: #174c36; font-weight: 700; }
-.tree-player.followed .tree-player-name { text-decoration: underline; text-decoration-color: #caac60; }
-.tree-meta { font-size: 18rpx; color: #9aa4b2; margin-top: 4rpx; white-space: nowrap; overflow: hidden; }

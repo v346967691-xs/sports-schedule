@@ -55,39 +55,7 @@
       <view class="event-more" wx:if="{{total > shown}}" bindtap="loadMore">查看更多比赛</view>
     </block>
     <block wx:else>
-      <view class="tree-toolbar">
-        <view><text class="tree-champion" wx:if="{{bracket.champion}}">冠军 · {{bracket.champion}}</text><text wx:else>首轮至决赛 · 点击对阵查看详情</text></view>
-        <view class="tree-zoom"><view data-step="-0.2" bindtap="onZoom">−</view><text>{{zoomLabel}}%</text><view data-step="0.2" bindtap="onZoom">＋</view></view>
-      </view>
-      <view class="tree-guide"><text>左右滑动切换两轮 · 后续轮次自动适配</text><text class="tree-auto {{autoFit ? 'selected' : ''}}" bindtap="onAutoFit">自动适配</text></view>
-      <view class="round-map" wx:if="{{roundNavigation.length}}">
-        <view wx:for="{{roundNavigation}}" wx:key="key" class="round-map-item {{item.selected ? 'selected' : ''}} {{item.first ? 'first' : ''}} {{item.last ? 'last' : ''}}" data-index="{{item.index}}" bindtap="onBracketRound">
-          <view class="round-map-label">{{item.label}}</view>
-          <view class="round-map-icon">
-            <text class="round-map-arrow left" wx:if="{{item.first && roundNavigation.length > 1}}">‹</text>
-            <text class="round-map-trophy" wx:if="{{item.final}}">🏆</text>
-            <view class="round-map-bars" wx:else><view wx:for="{{item.bars}}" wx:key="*this"></view></view>
-            <text class="round-map-arrow right" wx:if="{{item.last}}">›</text>
-          </view>
-        </view>
-      </view>
-      <swiper wx:if="{{bracket.nodes.length}}" class="tree-pages" current="{{bracketIndex}}" bindchange="onBracketSwipe" duration="240">
-        <swiper-item wx:for="{{bracketPages}}" wx:for-item="pane" wx:key="key">
-          <scroll-view scroll-x="{{pane.treeWidth > 750}}" scroll-y class="tree-viewport" scroll-top="{{pane.scrollTop}}" enable-flex>
-            <view class="tree-pane" style="width:{{pane.treeWidth}}rpx;height:{{pane.treeHeight}}rpx;">
-              <view class="tree-board" style="width:{{pane.bracket.width}}rpx;height:{{pane.bracket.height}}rpx;transform:scale({{pane.zoom}})">
-                <view class="tree-line" wx:for="{{pane.bracket.lines}}" wx:key="id" style="left:{{item.left}}rpx;top:{{item.top}}rpx;width:{{item.width}}rpx;height:{{item.height}}rpx"></view>
-                <view class="tree-node {{item.status === 'live' ? 'live' : ''}}" wx:for="{{pane.bracket.nodes}}" wx:key="id" style="left:{{item.left}}rpx;top:{{item.top}}rpx;width:{{pane.bracket.nodeWidth}}rpx;height:{{pane.bracket.nodeHeight}}rpx" data-id="{{item.id}}" bindtap="goDetail">
-                  <view class="tree-player {{side.win ? 'winner' : ''}} {{side.followed ? 'followed' : ''}}" wx:for="{{item.sides}}" wx:for-item="side" wx:key="rowKey"><text class="tree-player-name">{{side.name}}<text class="tennis-seed" wx:if="{{side.seed}}">[{{side.seed}}]</text></text><text class="tennis-retired" wx:if="{{side.retired}}">退赛</text><text>{{side.score === null ? '—' : side.score}}</text></view>
-                  <view class="tree-meta">{{item.status === 'live' ? '进行中' : item.status === 'finished' ? item.statusText : item.timeLabel}}</view>
-                </view>
-              </view>
-            </view>
-          </scroll-view>
-        </swiper-item>
-      </swiper>
-      <view class="empty" wx:else>签表尚未公布</view>
-      <view class="tree-note">早轮可上下滑动。连线仅表示已确认的晋级关系；未公布的对阵显示待定。</view>
+      <elimination-board tree="{{boardTree}}" panes="{{bracketPages}}" navigation="{{roundNavigation}}" current="{{bracketIndex}}" zoom-label="{{zoomLabel}}" auto-fit="{{autoFit}}" bindzoom="onZoom" bindround="onBracketRound" bindswipe="onBracketSwipe" bindautofit="onAutoFit" bindmatchtap="onBoardMatch"/>
     </block>
     <view class="event-footer">比分与赛程随数据刷新更新 · 整站赛程保留至赛后 30 天</view>
   </block>

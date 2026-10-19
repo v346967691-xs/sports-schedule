@@ -5,6 +5,7 @@ const fmt = require('../../utils/format')
 const nav = require('../../utils/nav')
 const poster = require('../../utils/poster')
 const bracket = require('../../utils/bracket')
+const boardController = require('../../utils/elimination-board').controller
 const tennis = require('../../utils/tennis')
 const tennisEvent = require('../../utils/tennis-event')
 const competitionOrder = require('../../utils/competition-order')
@@ -57,6 +58,7 @@ function stageChipsOf(list) {
 }
 
 Page({
+  ...boardController,
   data: {
     cats: CATS,
     activeCat: 'football',
@@ -388,6 +390,7 @@ Page({
       courtFilter,
       tournamentLabel: selectedTournament ? selectedTournament.label : '',
       bracket: koTree,
+      ...this.bracketState(koTree, activeComp),
       updatedAt: this.updatedLabel(),
       stale: data.staleInfo().stale,
       staleLabel: this.staleLabel(),

@@ -829,11 +829,10 @@ async function run() {
     /bracket\.koIndexOf\(stage\) >= 0/.test(schJs))
   check('赛程页：对阵树用**未被轮次筛过**的整份赛事赛程（拿筛过的 list 建树永远只有一列）',
     /bracket\.buildBracket\(data\.query\(\{ comps: \[activeComp\], team: teamFilter \}\)/.test(schJs))
-  check('赛程页：模板只铺开算好的几何（列 / 走廊 / 线段位置全部来自 bracket.js）',
-    /wx:for="\{\{bracket\.items\}\}"/.test(schWxml)
-    && /it\.padTop/.test(schWxml) && /sg\.left/.test(schWxml) && /sg\.top/.test(schWxml))
-  check('赛程页：嵌套 wx:for 显式写 wx:for-index（内层 index 会盖掉外层）',
-    /wx:for-index="ni"/.test(schWxml) && /wx:for-index="ri"/.test(schWxml))
+  check('赛程页：与网球使用相同的双轮滑动组件和布局控制器',
+    schWxml.includes('<elimination-board') && schJs.includes("require('../../utils/elimination-board').controller"))
+  check('共用签表：卡片和选手使用不同循环变量，不覆盖外层对阵',
+    (function(){const board=fsMod.readFileSync(path.join(ROOT,'components/elimination-board/elimination-board.wxml'),'utf8');return board.includes('pane.bracket.nodes')&&board.includes('wx:for-item="side"')})())
   check('赛程页：对阵树不用 flex gap（老 WebView 不支持）',
     /\.ko-tree\s*\{[^}]*display:\s*flex/.test(schWxss) && !/\.ko[a-z-]*\s*\{[^}]*\bgap\s*:/.test(schWxss))
   check('赛程页：卡片高度 / 列内间距 / 走廊宽度与 bracket.js 常量一致（改一处要改两处）',

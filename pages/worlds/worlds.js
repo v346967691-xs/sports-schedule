@@ -2,8 +2,10 @@ const data = require('../../utils/data')
 const worlds = require('../../utils/worlds')
 const follows = require('../../utils/team-follows')
 const share = require('../../utils/share')
+const boardController = require('../../utils/elimination-board').controller
 
 Page({
+  ...boardController,
   data: {
     filters: [{ key: 'all', name: '全部' }, { key: 'lpl', name: 'LPL' }, { key: 'followed', name: '我关注的' }],
     activeFilter: 'all', live: [], upcoming: [], finished: [], sections: [], swiss: [], bracket: null, next: null, total: 0,
@@ -37,6 +39,7 @@ Page({
       filter: this.data.activeFilter, lplIds, teams: follows.asFilter(), matchHasTeam: data.matchHasTeam, compOf: data.compOf,
     })
     this.setData(Object.assign({}, model, {
+      ...this.bracketState(model.bracket, 'worlds'),
       sections: [{ key: 'live', title: '正在进行', items: model.live }, { key: 'upcoming', title: '接下来的比赛', items: model.upcoming }, { key: 'finished', title: '已结束', items: model.finished }],
       source: data.source(), updatedAt: data.generatedAt(), stale: data.staleInfo().stale,
     }))

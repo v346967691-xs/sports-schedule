@@ -1,0 +1,11 @@
+Component({
+  properties:{tree:{type:Object,value:null},panes:{type:Array,value:[]},navigation:{type:Array,value:[]},
+    current:{type:Number,value:0},zoomLabel:{type:Number,value:100},autoFit:{type:Boolean,value:true}},
+  methods:{
+    onZoom(e){this.triggerEvent('zoom',{step:Number(e.currentTarget.dataset.step)})},
+    onRound(e){this.triggerEvent('round',{index:Number(e.currentTarget.dataset.index)})},
+    onSwipe(e){this.triggerEvent('swipe',{current:e.detail.current})},
+    onAuto(){this.triggerEvent('autofit')},
+    onMatch(e){this.triggerEvent('matchtap',{id:e.currentTarget.dataset.id})},
+  },
+})

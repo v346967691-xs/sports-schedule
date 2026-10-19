@@ -1,5 +1,8 @@
 {
   "navigationBarTitleText": "赛程",
   "enablePullDownRefresh": true,
-  "backgroundTextStyle": "light"
+  "backgroundTextStyle": "light",
+  "usingComponents": {
+    "elimination-board": "/components/elimination-board/elimination-board"
+  }
 }

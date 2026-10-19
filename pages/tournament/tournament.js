@@ -2,7 +2,7 @@ const data = require('../../utils/data')
 const view = require('../../utils/view')
 const tennisEvent = require('../../utils/tennis-event')
 const tree = require('../../utils/tournament-bracket')
-const bracketWindow = require('../../utils/bracket-window')
+const boardController = require('../../utils/elimination-board').controller
 const follows = require('../../utils/team-follows')
 const share = require('../../utils/share')
 const fmt = require('../../utils/format')
@@ -20,6 +20,7 @@ function eventLevel(event) {
 }
 
 Page({
+  ...boardController,
   data: {
     event: null, relatedEvents: [], tours: [], activeTour: '', tab: 'schedule',
     courts: [], courtFilter: '', dates: [], dateFilter: '', groups: [], shown: 30, total: 0,
@@ -110,42 +111,6 @@ Page({
   onDate(e) { this.setData({ dateFilter: e.currentTarget.dataset.key || '', shown: 30 }, () => this.build()) },
   onStatus(e) { this.setData({ statusFilter: e.currentTarget.dataset.key || '', shown: 30 }, () => this.build()) },
   loadMore() { this.setData({ shown: this.data.shown + 30 }, () => this.build()) },
-  readWindowSize(size) {
-    if (!size) {
-      try { size = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : typeof wx.getSystemInfoSync === 'function' ? wx.getSystemInfoSync() : {} }
-      catch (err) { size = {} }
-    }
-    this.windowSize = {width: size.windowWidth || 375, height: (size.windowHeight || 667) * 0.68}
-  },
-  onResize(e) { this.readWindowSize(e.size); this.manualZoom = null; if (this.data.bracket) this.setData(this.bracketState(this.data.bracket)) },
-  bracketState(bracket) {
-    if (this.pendingRound !== null && this.pendingRound !== undefined && bracket.columns.length) {
-      const index = bracket.columns.findIndex(column => column.order === this.pendingRound)
-      if (index >= 0) this.pairIndex = index
-      this.pendingRound = null
-    }
-    const state = bracketWindow.layout(bracket, {...this.windowSize, current: this.pairIndex || 0, zoom: this.manualZoom})
-    this.pairIndex = state.current
-    const pane = state.pages[state.current]
-    return {bracketPages: state.pages, roundNavigation: state.navigation, bracketIndex: state.current,
-      zoom: state.zoom, zoomLabel: Math.round(state.zoom * 100), autoFit: !Number.isFinite(this.manualZoom),
-      treeWidth: pane ? pane.treeWidth : 0, treeHeight: pane ? pane.treeHeight : 0}
-  },
-  selectBracketPair(index) {
-    if (!this.data.bracket) return
-    const next = Math.max(0, Math.min(index, Math.max(0, this.data.bracket.columns.length - 2)))
-    if (next === this.pairIndex) return
-    this.pairIndex = next; this.manualZoom = null
-    this.setData(this.bracketState(this.data.bracket))
-  },
-  onBracketSwipe(e) { this.selectBracketPair(Number(e.detail.current)) },
-  onBracketRound(e) { this.selectBracketPair(Number(e.currentTarget.dataset.index)) },
-  onAutoFit() { if (this.data.bracket) { this.manualZoom = null; this.setData(this.bracketState(this.data.bracket)) } },
-  onZoom(e) {
-    if (!this.data.bracket) return
-    this.manualZoom = Math.max(0.4, Math.min(1.6, Math.round((this.data.zoom + Number(e.currentTarget.dataset.step)) * 100) / 100))
-    this.setData(this.bracketState(this.data.bracket))
-  },
   goDetail(e) { wx.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(e.currentTarget.dataset.id)}` }) },
   onPullDownRefresh() {
     data.refresh().then(() => { if (this.visible) this.build() }).finally(() => wx.stopPullDownRefresh())

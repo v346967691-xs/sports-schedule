@@ -447,15 +447,15 @@
       改动任何一处都要同步改另一处，否则连线整体错位（与排行页 COLUMNS ↔ renderRow 同类）。
    ⚠️ 不用 flex `gap`（老 WebView 不支持），列内间距一律用 margin。 */
 .ko {
-  margin: 16rpx 24rpx 0;
-  padding: 20rpx 16rpx 22rpx;
-  border-radius: var(--radius);
+  margin: 16rpx 0 0;
+  padding: 20rpx 0 22rpx;
+  border-radius: 0;
   background: var(--card);
   box-shadow: 0 2rpx 12rpx rgba(16, 24, 40, 0.05);
 }
 
 .ko-title {
-  margin: 0 8rpx 16rpx;
+  margin: 0 24rpx 16rpx;
   font-size: 26rpx;
   font-weight: 700;
 }

@@ -47,6 +47,13 @@ function confirmedLinks(columns) {
   const edges = []
   for (let i = 0; i < columns.length - 1; i++) {
     const current = columns[i].nodes, next = columns[i + 1].nodes
+    const stage = column => {
+      const code = require('./bracket').koIndexOf(column.label)
+      return code < 0 ? null : code < 3 ? code + 4 : 6 - code
+    }
+    const fromStage = stage(columns[i]), toStage = stage(columns[i + 1])
+    // 已知轮次不能跳级；小签表的 Round N 接半决赛/决赛时还需符合 2:1 场数关系。
+    if (toStage !== null && (fromStage !== null ? toStage !== fromStage + 1 : toStage > 4 && current.length !== next.length * 2)) continue
     current.forEach(node => {
       if (!validPlayer(node.winnerId)) return
       const targets = next.filter(target => target.sides.some(side => side.id === node.winnerId))

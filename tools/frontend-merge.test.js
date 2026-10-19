@@ -29,9 +29,19 @@ test('registered tennis subpackages keep existing URLs and resolve every runtime
     }
   }
   visit('app.js')
+  function visitComponents(configFile) {
+    const json=JSON.parse(fs.readFileSync(path.join(root,configFile),'utf8'))
+    for(const ref of Object.values(json.usingComponents||{})) {
+      const base=ref.startsWith('/')?ref.slice(1):path.posix.normalize(path.posix.join(path.posix.dirname(configFile),ref))
+      for(const ext of ['.js','.json','.wxml','.wxss'])assert.ok(fs.existsSync(path.join(root,base+ext)),base+ext)
+      visit(base+'.js')
+      visitComponents(base+'.json')
+    }
+  }
   for (const route of routes) {
     for (const ext of ['.js', '.json', '.wxml', '.wxss']) assert.ok(fs.existsSync(path.join(root, route + ext)), route + ext)
     visit(route + '.js')
+    visitComponents(route+'.json')
   }
   for (const file of ['data/kpl-rank.js', 'utils/match-notification-core.js']) {
     assert.ok(excluded(file))

@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "Worlds 2026 专区"
+  "navigationBarTitleText": "Worlds 2026 专区",
+  "usingComponents": {
+    "elimination-board": "/components/elimination-board/elimination-board"
+  }
 }

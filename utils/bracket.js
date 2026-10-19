@@ -1,5 +1,8 @@
 /**
- * 淘汰赛对阵树 + 瑞士轮战绩分组
+ * 球队淘汰赛兼容数据 + 瑞士轮战绩分组
+ *
+ * 当前展示统一由 elimination-board / tournament-bracket / bracket-window 负责。
+ * 本模块旧几何和时间配对线只保留作兼容，共用组件会重新布局并丢弃推测连线。
  *
  * 纯函数模块：不 require wx，不碰云，不持状态 —— 冒烟测试可以直接 require 它喂样本，
  * 页面只负责把算好的结果铺开（**几何全部在这里算完**，WXML 里不做任何算术）。
@@ -48,7 +51,7 @@ function isSwiss(label) {
 }
 
 /**
- * 淘汰赛轮次 → 列序号（0 八强 / 1 半决赛 / 2 决赛）；不是淘汰赛轮次返回 -1。
+ * 淘汰赛轮次编码（0 八强 / 1 半决赛 / 2 决赛，3–6 为 16–128 强）；非单败轮次返回 -1。
  *
  * ⚠️ 判定顺序**不能调换**：「四分之一决赛」「半决赛」里都含「决赛」二字，
  *    先判「决赛」会把八强和半决赛统统塞进最后一列。
@@ -57,9 +60,14 @@ function isSwiss(label) {
  */
 function koIndexOf(label) {
   const s = String(label || '')
+  if (/瑞士|swiss|小组|循环|round.robin|胜者组|败者组|upper|lower|loser|play.in|入围|季军|三四名|third.place|bronze/i.test(s)) return -1
   if (/四分之一|quarter\s*final|1\s*\/\s*4/i.test(s)) return 0
   if (/半决赛|semi\s*-?\s*final/i.test(s)) return 1
-  if (/决赛|grand\s*final/i.test(s)) return 2
+  if (/八分之一|1\s*\/\s*8|round of\s*16\b|16强|十六强/i.test(s)) return 3
+  if (/十六分之一|1\s*\/\s*16|round of\s*32\b|32强|三十二强/i.test(s)) return 4
+  if (/round of\s*64\b|64强|六十四强/i.test(s)) return 5
+  if (/round of\s*128\b|128强/i.test(s)) return 6
+  if (/决赛|grand\s*final|^final$/i.test(s)) return 2
   return -1
 }
 
@@ -90,6 +98,8 @@ function makeNode(m) {
     time: m.time || '',
     bo: m.bo || null,
     finished,
+    status: m.status,
+    statusText: m.statusText || '',
     rows,
     /** 有没有一方拿得到比分（决定卡片右侧画不画数字） */
     hasScore: rows[0].score !== null || rows[1].score !== null,
@@ -150,8 +160,9 @@ function buildBracket(list, compName) {
   const labels = {}
   ;(list || []).forEach((m) => {
     const lb = view.roundLabel(m.stage, compName)
-    const i = koIndexOf(lb)
-    if (i < 0) return
+    const roundIndex = koIndexOf(lb)
+    if (roundIndex < 0) return
+    const i = roundIndex < 3 ? roundIndex + 4 : 6 - roundIndex
     if (!bucket[i]) {
       bucket[i] = []
       labels[i] = lb

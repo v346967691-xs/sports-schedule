@@ -1,6 +1,6 @@
 /**
  * 从国内平台官方赛程取逐场直播信息。
- * 只把双方队名和开赛时间都能对上的场次标为直播；赛事实例级别的版权声明不作推断。
+ * 对阵节目按双方与时间匹配；网球整日球场直播按分站、日期和球场匹配。
  */
 
 const IQIYI_CHANNELS = 'https://sports.iqiyi.com/resource/json/matchList/pcChannelListNew.json'
@@ -135,10 +135,40 @@ function readTencentMatches(html) {
   const entries = block && Array.isArray(block.list) ? block.list : []
   return entries.map((entry) => {
     const match = entry && entry.matchInfo
-    if (!match || !match.leftName || !match.rightName) return null
+    if (!match || !match.leftName) return null
     const start = dateToIso(match.startTime)
+    if (start && !match.rightName) {
+      const title = [match.matchDesc, match.leftName, match.title].filter(Boolean).join(' ')
+      const comp = /\bwta\s*\d*/i.test(title) ? 'wta' : /\batp\s*\d*/i.test(title) ? 'atp' : ''
+      const event = tennisProgrammeEvent(title)
+      const court = tennisProgrammeCourt(title)
+      return comp && event && court ? { source: TENCENT, start, comp, event, court } : null
+    }
+    if (!match.rightName) return null
     return start ? { source: TENCENT, start, home: match.leftName, away: match.rightName } : null
   }).filter(Boolean)
+}
+
+function tennisProgrammeEvent(title) {
+  if (/ningbo|宁波/i.test(title)) return 'ningbo'
+  if (/wuhan|武汉/i.test(title)) return 'wuhan'
+  if (/china open|中国网球公开赛|中网/i.test(title)) return 'china-open'
+  if (/shanghai masters|上海大师赛|上海劳力士/i.test(title)) return 'shanghai'
+  return ''
+}
+function tennisProgrammeCourt(title) {
+  if (/center court|centre court|stadium court|中心球场|中央球场/i.test(title)) return 'center'
+  if (/grandstand|大看台/i.test(title)) return 'grandstand'
+  // 中文节目中的 WTA500、日期不是球场编号。
+  const explicit = String(title).match(/court\s*(\d+)|第?(\d+)号球场/i)
+  return explicit ? `court-${explicit[1] || explicit[2]}` : ''
+}
+function programmeMatches(row, match) {
+  if (row.comp !== match.comp || row.event !== tennisProgrammeEvent(match.stage || '')) return false
+  const day = value => new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 10)
+  if (!Number.isFinite(Date.parse(match.start)) || day(row.start) !== day(match.start)) return false
+  const court = String(match.venue || '').split(' · ').slice(1).join(' · ')
+  return !!court && row.court === tennisProgrammeCourt(court)
 }
 
 async function fetchTencent() {
@@ -213,10 +243,12 @@ function normalizeProvider(value) {
 function mergeBroadcasts(matches, sourceRows, previous = []) {
   const allowed = new Set(['优酷', '咪咕', IQIYI, TENCENT, '央视5', '央视5+'])
   const feeds = new Map()
+  const programmes = []
   sourceRows.forEach((row) => {
     if (!row || !allowed.has(row.source)) return
     const time = Date.parse(row.start)
     if (!Number.isFinite(time)) return
+    if (row.event && row.comp && row.court) { programmes.push(row); return }
     const key = `${normalizeTeam(row.home)}|${normalizeTeam(row.away)}`
     if (!feeds.has(key)) feeds.set(key, [])
     feeds.get(key).push({ time, source: row.source })
@@ -233,8 +265,9 @@ function mergeBroadcasts(matches, sourceRows, previous = []) {
       .filter((row) => Math.abs(row.time - start) <= 15 * 60 * 1000)
       .map((row) => row.source)
     const eventRights = tennisBroadcast(match)
+    const courtStreams = programmes.filter(row => programmeMatches(row, match)).map(row => row.source)
     const previousLabels = ['atp', 'wta'].includes(match.comp) ? [] : [...retained, ...existing]
-    match.broadcast = [...new Set([...previousLabels, ...found, ...eventRights])]
+    match.broadcast = [...new Set([...previousLabels, ...found, ...courtStreams, ...eventRights])]
     return match
   })
 }

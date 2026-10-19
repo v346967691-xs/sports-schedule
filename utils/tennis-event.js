@@ -73,7 +73,7 @@ function archiveRows(payload, includeExcluded = false) {
     const matches = {}
     Object.keys(payload.matches || {}).forEach(comp => {
       matches[comp] = payload.matches[comp].map(row => ({ e: row[0], s: row[1], t: row[2], h: row[3], a: row[4],
-        g: payload.rounds[row[5]], ev: row[6], cv: row[7], q: row[8], wi: row[9], x: row[10], sd: row[11] }))
+        g: payload.rounds[row[5]], ev: row[6], cv: row[7], q: row[8], wi: row[9], x: row[10], sd: row[11], bb: row[12] }))
     })
     packed = { v: 2, teams: payload.teams, matches }
   }
@@ -90,7 +90,7 @@ function archiveRows(payload, includeExcluded = false) {
     return Object.assign({}, match, { eventId: event.eventId, eventStart: event.start, eventEnd: event.end,
       stage: [event.title, match.stage].filter(Boolean).join(' · '), venue: payload.venues[record.cv] || '',
       statusText: match.statusText || (match.status === 'finished' ? '已结束' : ''),
-      broadcast: match.broadcast.length ? match.broadcast : event.broadcast || [] })
+      broadcast: Array.isArray(record.bb) ? record.bb : match.broadcast.length ? match.broadcast : event.broadcast || [] })
   }).filter(match => includeExcluded || require('./tennis-scope').allows(match))
 }
 
@@ -122,7 +122,11 @@ function buildArchive(incoming, previous, now = Date.now(), authoritative = fals
   // 场地、站名和整站日期只存一次，避免 96 签赛事把这些长字符串重复近百遍。
   const venues = [...new Set(kept.map(match => match.venue || ''))]
   const byId = new Map(kept.map(match => [match.id, match]))
-  events.forEach(event => { event.broadcast = (kept.find(match => identity(match).key === event.key) || {}).broadcast || [] })
+  // 只把整站所有场次共有的平台放在赛事层；分日期/球场的节目单必须逐场存储。
+  events.forEach(event => {
+    const matches = kept.filter(match => identity(match).key === event.key)
+    event.broadcast = ((matches[0] || {}).broadcast || []).filter(source => matches.every(match => (match.broadcast || []).includes(source)))
+  })
   const eventIndex = new Map(events.map((event, index) => [event.key, index]))
   const packed = snapshot.encodeSnapshot(kept.map(match => Object.assign({}, match, {
     stage: String(match.stage || '').split('·').slice(1).map(s => s.trim()).join(' · '),
@@ -138,8 +142,12 @@ function buildArchive(incoming, previous, now = Date.now(), authoritative = fals
   Object.keys(packed.matches).forEach(comp => {
     matches[comp] = packed.matches[comp].map(record => {
       const sets = record.q && ((record.q.h || []).length || (record.q.a || []).length) ? record.q : null
+      const match = byId.get(record.i || `${comp}-${record.e}`)
+      const common = events[record.ev].broadcast
+      const broadcast = match.broadcast || []
+      const override = broadcast.length !== common.length || broadcast.some(source => !common.includes(source)) ? broadcast : null
       const row = [record.e, record.s, record.t, record.h, record.a, rounds.indexOf(record.g || ''), record.ev, record.cv,
-        sets, record.wi || null, record.x && record.x !== '已结束' ? record.x : null, record.sd || null]
+        sets, record.wi || null, record.x && record.x !== '已结束' ? record.x : null, record.sd || null, override]
       while (row.length > 8 && row[row.length - 1] == null) row.pop()
       return row
     })

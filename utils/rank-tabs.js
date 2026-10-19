@@ -1,8 +1,7 @@
-/** 保留前三个标签的位置，超出后逐位推进；向回滑出左边界时再回移。 */
-function anchor(keys, selected, previous) {
+/** 前两项靠左，其余选中项双向切换时都保持在第三个位置。 */
+function anchor(keys, selected) {
   const index = keys.indexOf(selected)
   if (index < 0) return keys[0] || ''
-  const start = Math.max(0, keys.indexOf(previous))
-  return keys[index < start ? index : index >= start + 3 ? index - 2 : start]
+  return keys[Math.max(0, index - 2)]
 }
 module.exports = { anchor }

@@ -3,13 +3,13 @@ const assert = require('node:assert/strict')
 const { anchor } = require('../utils/rank-tabs')
 const keys = ['a', 'b', 'c', 'd', 'e', 'f']
 
-test('ranking tabs stay put for three positions then advance one at a time', () => {
+test('ranking tabs advance and reverse with the selection in third position', () => {
   let current = ''
   const anchors = keys.map(selected => (current = anchor(keys, selected, current)))
   assert.deepEqual(anchors, ['a', 'a', 'a', 'b', 'c', 'd'])
-  assert.equal(anchor(keys, 'e', 'd'), 'd')
-  assert.equal(anchor(keys, 'd', 'd'), 'd')
-  assert.equal(anchor(keys, 'c', 'd'), 'c')
+  assert.equal(anchor(keys, 'e', 'd'), 'c')
+  assert.equal(anchor(keys, 'd', 'd'), 'b')
+  assert.equal(anchor(keys, 'c', 'd'), 'a')
   assert.equal(anchor(keys, 'a', 'c'), 'a')
 })
 
@@ -47,7 +47,14 @@ test('actual ranking page keeps the first three tabs fixed across swiper changes
     assert.equal(page.data.activeComp, keys[current])
   }
   assert.deepEqual(result, ['a', 'a', 'a', 'b', 'c'])
-  page.onSwiperChange({ detail: { current: 3 } })
+  const reversed = []
+  for (const current of [3, 2, 1, 0]) {
+    page.onSwiperChange({ detail: { current } })
+    reversed.push(page.data.chipAnchor)
+    assert.equal(page.data.activeComp, keys[current])
+  }
+  assert.deepEqual(reversed, ['b', 'a', 'a', 'a'])
+  page.onCompTap({ currentTarget: { dataset: { key: 'e' } } })
   assert.equal(page.data.chipAnchor, 'c')
   page.onCompTap({ currentTarget: { dataset: { key: 'a' } } })
   assert.equal(page.data.chipAnchor, 'a')

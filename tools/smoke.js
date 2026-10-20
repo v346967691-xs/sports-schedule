@@ -8,6 +8,7 @@
  */
 
 const path = require('path')
+const pageRoutes = app => (app.pages || []).concat((app.subPackages || []).flatMap(pack => pack.pages.map(page => `${pack.root}/${page}`)))
 
 const collected = {}
 
@@ -2478,8 +2479,8 @@ async function run() {
 
   // app.json 必须登记，否则 navigateTo 会直接报「页面不存在」
   const appJsonNow = JSON.parse(fsMod.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
-  check('球员页：已在 app.json 的 pages 里登记（漏登记会「页面不存在」）',
-    appJsonNow.pages.indexOf('pages/player/player') > -1, appJsonNow.pages.join(','))
+  check('球员页：已在 app.json 的主包或分包登记（漏登记会「页面不存在」）',
+    pageRoutes(appJsonNow).includes('pages/player/player'), pageRoutes(appJsonNow).join(','))
 
   ;['js', 'wxml', 'wxss', 'json'].forEach((ext) => {
     check(`球员页：${ext} 文件存在`, fsMod.existsSync(path.join(ROOT, `pages/player/player.${ext}`)))
@@ -2833,7 +2834,7 @@ async function run() {
     appJson.tabBar.list.length === 4 && appJson.tabBar.list[2].text === '排行',
     appJson.tabBar.list.map((t) => t.text).join('/'))
   check('排行页已注册且指向 pages/rank/rank',
-    appJson.pages.indexOf('pages/rank/rank') > -1 && appJson.pages.indexOf('pages/team/team') > -1)
+    appJson.pages.includes('pages/rank/rank') && pageRoutes(appJson).includes('pages/team/team'))
   const rankJson = JSON.parse(fsMod.readFileSync(path.join(ROOT, 'pages/rank/rank.json'), 'utf8'))
   check('排行页标题跟着改成「排行」（不再写死积分榜）',
     rankJson.navigationBarTitleText === '排行', rankJson.navigationBarTitleText)
@@ -2890,7 +2891,7 @@ async function run() {
   check('积分榜入口全部改走 nav.toRank（4 处）', missingNav.length === 0, missingNav.join(' ') || '四处齐备')
   check('积分榜页：赛事胶囊条按前三项窗口滚动，不把选中项顶到最左',
     rWxml.indexOf('scroll-into-view="chip-{{chipAnchor}}"') > -1 && rWxml.indexOf('id="chip-{{item.key}}"') > -1
-    && rankJs.includes('chipAnchor: rankTabs.anchor(keys, activeComp, this.data.chipAnchor)'))
+    && rankJs.includes('chipAnchor: rankTabs.anchor(keys, activeComp)'))
   check('积分榜页：内容区是可横滑的 swiper 且绑定切换事件',
     rWxml.indexOf('<swiper') > -1
     && rWxml.indexOf('bindchange="onSwiperChange"') > -1
@@ -3524,7 +3525,7 @@ async function run() {
   // ⑦ 页面：注册、四个文件齐、跳转姿势正确
   const appJson2 = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8').replace(/^\s*\/\/.*$/gm, ''))
   check('搜索页已注册且四个文件齐全',
-    appJson2.pages.indexOf('pages/search/search') > -1
+    pageRoutes(appJson2).includes('pages/search/search')
     && ['js', 'wxml', 'wxss', 'json'].every((ext) => fs.existsSync(path.join(ROOT, 'pages/search/search.' + ext))))
   check('搜索页不在 tabBar 里（它不是 tab，是二级页）',
     (appJson2.tabBar.list || []).every((t) => t.pagePath !== 'pages/search/search'))

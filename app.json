@@ -3,15 +3,7 @@
     "pages/index/index",
     "pages/schedule/schedule",
     "pages/rank/rank",
-    "pages/mine/mine",
-    "pages/detail/detail",
-    "pages/team/team",
-    "pages/player/player",
-    "pages/teams/teams",
-    "pages/brief/brief",
-    "pages/search/search",
-    "pages/worlds/worlds",
-    "pages/worlds-brief/worlds-brief"
+    "pages/mine/mine"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -66,6 +58,54 @@
       "root": "pages/worlds-swiss",
       "pages": [
         "worlds-swiss"
+      ]
+    },
+    {
+      "root": "pages/detail",
+      "pages": [
+        "detail"
+      ]
+    },
+    {
+      "root": "pages/team",
+      "pages": [
+        "team"
+      ]
+    },
+    {
+      "root": "pages/player",
+      "pages": [
+        "player"
+      ]
+    },
+    {
+      "root": "pages/teams",
+      "pages": [
+        "teams"
+      ]
+    },
+    {
+      "root": "pages/brief",
+      "pages": [
+        "brief"
+      ]
+    },
+    {
+      "root": "pages/search",
+      "pages": [
+        "search"
+      ]
+    },
+    {
+      "root": "pages/worlds",
+      "pages": [
+        "worlds"
+      ]
+    },
+    {
+      "root": "pages/worlds-brief",
+      "pages": [
+        "worlds-brief"
       ]
     }
   ]

@@ -10,12 +10,18 @@ test('registered tennis subpackages keep existing URLs and resolve every runtime
   const config = require('../project.config.json')
   const routes = app.pages.concat((app.subPackages || []).flatMap(p => p.pages.map(f => `${p.root}/${f}`)))
   assert.equal(new Set(routes).size, routes.length)
+  assert.deepEqual(app.pages, app.tabBar.list.map(tab => tab.pagePath), 'only the four tab pages remain in the main package')
+  for (const name of ['detail', 'team', 'player', 'teams', 'brief', 'search', 'worlds', 'worlds-brief']) {
+    assert.ok(routes.includes(`pages/${name}/${name}`), 'existing navigation and share paths stay valid')
+    assert.ok(app.subPackages.some(p => p.root === `pages/${name}` && !p.independent))
+  }
   for (const name of ['tournament', 'tennis-player']) {
     assert.ok(routes.includes(`pages/${name}/${name}`))
     assert.ok(app.subPackages.some(p => p.root === `pages/${name}` && !p.independent))
   }
   const excluded = f => config.packOptions.ignore.some(i => i.type === 'folder' ? f === i.value || f.startsWith(i.value + '/') : f === i.value)
   const visited = new Set()
+  const packageOf = file => (app.subPackages.find(p => file.startsWith(p.root + '/')) || {}).root || 'main'
   function visit(file) {
     assert.equal(excluded(file), false, `excluded runtime dependency: ${file}`)
     assert.ok(fs.statSync(path.join(root, file)).isFile(), file)
@@ -25,6 +31,7 @@ test('registered tennis subpackages keep existing URLs and resolve every runtime
       const ref = match[1]
       let target = ref.startsWith('.') ? path.posix.normalize(path.posix.join(path.posix.dirname(file), ref)) : `miniprogram_npm/${ref}`
       if (!fs.existsSync(path.join(root, target)) || !fs.statSync(path.join(root, target)).isFile()) target += '.js'
+      assert.ok(packageOf(target) === 'main' || packageOf(target) === packageOf(file), `${file} cannot require another subpackage: ${target}`)
       visit(target)
     }
   }
@@ -33,6 +40,7 @@ test('registered tennis subpackages keep existing URLs and resolve every runtime
     const json=JSON.parse(fs.readFileSync(path.join(root,configFile),'utf8'))
     for(const ref of Object.values(json.usingComponents||{})) {
       const base=ref.startsWith('/')?ref.slice(1):path.posix.normalize(path.posix.join(path.posix.dirname(configFile),ref))
+      assert.ok(packageOf(base+'.json') === 'main' || packageOf(base+'.json') === packageOf(configFile), `${configFile} cannot load another subpackage component: ${base}`)
       for(const ext of ['.js','.json','.wxml','.wxss'])assert.ok(fs.existsSync(path.join(root,base+ext)),base+ext)
       visit(base+'.js')
       visitComponents(base+'.json')

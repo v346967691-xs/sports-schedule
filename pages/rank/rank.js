@@ -626,7 +626,8 @@ Page({
     this.setData({
       comps,
       activeComp,
-      chipAnchor: rankTabs.anchor(keys, activeComp, this.data.chipAnchor),
+      // 仅供 WXML 的 scroll-into-view 定位；双向切换均按选中项重新计算，不依赖旧锚点。
+      chipAnchor: rankTabs.anchor(keys, activeComp),
       slides,
       swiperIndex: idx,
       emptyReason: '',

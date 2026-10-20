@@ -130,7 +130,10 @@ test('pre60 and pre15 share one template, so the 60-minute round needs its own a
   assert.notEqual(config.templateId('pre60'), config.templateId('result'))
   // 关注时只申请 15 分钟 + 赛果；pre60 必须由「加一轮」入口再授权一次，
   // 否则一次 kickoff 授权只够发一条，另一个必然拿不到额度。
-  assert.deepEqual(config.kindsFor(match()), ['pre15', 'result'])
+  // 🔴 必须显式传 now：kindsFor 的默认参数是真实时钟，而 match() 的 start 写死为
+  // 2026-10-20T04:00:00Z。一旦系统时间越过该点，这条会永久变红（实测 10-20 12:00
+  // 北京起 CI 连续全红，step「验证数据链路回归」失败，后续同步步骤全被 skip）。
+  assert.deepEqual(config.kindsFor(match(), now), ['pre15', 'result'])
 })
 
 /* ------------------------------------------------------------------ 真实模板

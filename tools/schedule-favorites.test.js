@@ -9,7 +9,7 @@ function fixture() {
   const app = { ids: [], isFav(id) { return this.ids.includes(id) }, async refreshAuth() {} }
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../pages/schedule/schedule.js'), 'utf8'), {
     Page(spec) { page = spec }, console,
-    require(name) { return name.endsWith('/app-instance') ? { appInstance: () => app } : name.endsWith('/data') ? {teamForm:()=>[]} : {} },
+    require(name) { return name.endsWith('/app-instance') ? { appInstance: () => app } : name.endsWith('/data') ? {teamForm:()=>{throw new Error('schedule cards must not calculate recent-form dots')}} : {} },
   })
   page.setData = function (values) { Object.assign(this.data, values) }
   page.allGroups = [{ date: '2026-10-17', items: ['liga', 'nba', 'lol', 'atp', 'wta'].map(comp => ({ id: comp, comp, home:{id:comp+'-h'},away:{id:comp+'-a'} })) }]

@@ -666,25 +666,14 @@ async function run() {
   })
   check('分享卡：四个页面的转发 / 朋友圈都带 imageUrl', noImg.length === 0, noImg.join(' '))
 
-  /* ── 2026-10-08 赛前前瞻：赛程卡片上直接显示双方近 5 场胜平负 ──
-     🔴 近况必须**从赛程快照算**（data.teamForm，60 场 × 2 队 = 6ms），
-        不能读 match_detail —— 详情里那份 form 覆盖不到 10% 的比赛。 */
+  /* 2026-10-21：用户已取消赛程卡片的近期胜负色块，旧校验不得要求其回归。 */
   const schJs = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.js'), 'utf8')
   const schWxml = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.wxml'), 'utf8')
   const schWxss = fsMod.readFileSync(path.join(ROOT, 'pages/schedule/schedule.wxss'), 'utf8')
-  check('前瞻：近况取自赛程快照（teamForm），不读详情桶',
-    /data\.teamForm\(/.test(schJs) && !/_homeForm\s*=\s*.*matchDetail/.test(schJs))
-  // 只在「看未来赛程」时给，已完赛的比分本身就说明了结果
-  check('前瞻：只在 upcoming 模式挂近况（已完赛不挂，比分已在右边）',
-    /const showForm = this\.data\.mode === 'upcoming'/.test(schJs))
-  check('前瞻：主客两行都渲染了近况色块',
-    (schWxml.match(/class="mc-form"/g) || []).length === 2
-    && schWxml.indexOf('_homeForm') > -1 && schWxml.indexOf('_awayForm') > -1)
-  // 三色 + 不用 flex gap（老 WebView 不支持）
-  check('前瞻：胜/平/负三色齐备且不用 flex gap（用 margin 撑间距）',
-    ['ff-W', 'ff-D', 'ff-L'].every((c) => schWxss.indexOf(c) > -1)
-    && !/\.mc-form\s*\{[^}]*gap\s*:/.test(schWxss)
-    && /\.ff\s*\{[^}]*margin-right/.test(schWxss))
+  check('赛程卡片：不再逐队计算近期胜负', !/data\.teamForm\(/.test(schJs))
+  check('赛程卡片：不再生成双方胜负点字段', !/_homeForm|_awayForm/.test(schJs))
+  check('赛程卡片：主客两行均不渲染胜负色块', !/mc-form|_homeForm|_awayForm/.test(schWxml))
+  check('赛程卡片：清除专用胜负色块样式', !/\.mc-form|\.ff(?:[-\s:{])/.test(schWxss))
 
   /* ── 2026-10-09 阶段（轮次）筛选 + 未定对阵文案 ──
      全球总决赛 46 场平铺在赛程页里没法用（入围赛 6 / 瑞士轮 33 / 淘汰赛 7），

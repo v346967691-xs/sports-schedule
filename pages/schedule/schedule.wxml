@@ -166,13 +166,11 @@
           <view class="mc-row">
             <view class="mc-dot" style="background: {{item.match.home.color}}"></view>
             <view class="mc-name {{item.match._isTennis ? 'tennis-name' : ''}} {{item.match._homeWin ? 'win' : ''}}">{{item.match.home.zhName}}<text class="tennis-seed" wx:if="{{item.match.home.seed}}">[{{item.match.home.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.match.home.retired}}">退赛</text>
-            <view class="mc-form" wx:if="{{item.match._homeForm.length}}"><view class="ff ff-{{f}}" wx:for="{{item.match._homeForm}}" wx:for-item="f" wx:key="index"></view></view>
             <view class="mc-score {{item.match._homeWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.home.score}}</view>
           </view>
           <view class="mc-row">
             <view class="mc-dot" style="background: {{item.match.away.color}}"></view>
             <view class="mc-name {{item.match._isTennis ? 'tennis-name' : ''}} {{item.match._awayWin ? 'win' : ''}}">{{item.match.away.zhName}}<text class="tennis-seed" wx:if="{{item.match.away.seed}}">[{{item.match.away.seed}}]</text></view><text class="tennis-retired" wx:if="{{item.match.away.retired}}">退赛</text>
-            <view class="mc-form" wx:if="{{item.match._awayForm.length}}"><view class="ff ff-{{f}}" wx:for="{{item.match._awayForm}}" wx:for-item="f" wx:key="index"></view></view>
             <view class="mc-score {{item.match._awayWin ? 'win' : ''}}" wx:if="{{item.match._hasScore}}">{{item.match.away.score}}</view>
           </view>
         </view>

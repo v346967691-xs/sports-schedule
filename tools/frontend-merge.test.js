@@ -65,7 +65,7 @@ test('registered tennis subpackages keep existing URLs and resolve every runtime
   }
 })
 
-test('schedule favorites and five-result form coexist, clear on other tabs and leave the shared snapshot unchanged', () => {
+test('schedule favorites survive removal of form dots in every mode and leave the shared snapshot unchanged', () => {
   let page
   const reads = []
   const match = { id: 'fixture', comp: 'epl', home: { id: 'h' }, away: { id: 'a' } }
@@ -79,17 +79,17 @@ test('schedule favorites and five-result form coexist, clear on other tabs and l
   page.data.mode = 'upcoming'
   let card = page.buildRows(1).find(r => r.type === 'match').match
   assert.equal(card._isFav, true)
-  assert.deepEqual(Array.from(card._homeForm), ['W', 'D', 'L'])
-  assert.deepEqual(Array.from(card._awayForm), ['W', 'D', 'L'])
-  assert.deepEqual(reads, [['epl', 'h', 5], ['epl', 'a', 5]])
+  assert.equal(card._homeForm, undefined)
+  assert.equal(card._awayForm, undefined)
+  assert.equal(reads.length, 0)
   for (const mode of ['live', 'finished']) {
     page.data.mode = mode
     card = page.buildRows(1).find(r => r.type === 'match').match
     assert.equal(card._isFav, true)
-    assert.equal(card._homeForm.length, 0)
-    assert.equal(card._awayForm.length, 0)
+    assert.equal(card._homeForm, undefined)
+    assert.equal(card._awayForm, undefined)
   }
-  assert.equal(reads.length, 2)
+  assert.equal(reads.length, 0)
   assert.equal(JSON.stringify(match), before)
 })
 

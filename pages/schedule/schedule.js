@@ -20,7 +20,6 @@ const CATS = [
 ]
 
 const PAGE_SIZE = 3
-const FORM_N = 5
 /** 实时比分轮询间隔。服务端 live_scores 60 秒刷一次，客户端也按 60 秒拉，不多打接口 */
 const LIVE_POLL_MS = 60 * 1000
 
@@ -467,15 +466,12 @@ Page({
    */
   buildRows(n) {
     const groups = this.allGroups || []
-    const showForm = this.data.mode === 'upcoming'
     const app = appInstance()
     const rows = []
     groups.slice(0, Math.min(n, groups.length)).forEach((g) => {
       rows.push({ type: 'head', key: `h-${g.date}`, date: g.date, dayLabel: g.dayLabel, count: g.items.length })
       g.items.forEach((m) => {
-        rows.push({ type: 'match', key: `m-${m.id}`, match: { ...m, _isFav: app.isFav(m.id),
-          _homeForm: showForm ? data.teamForm(m.comp, m.home.id, FORM_N).map(f => f.result) : [],
-          _awayForm: showForm ? data.teamForm(m.comp, m.away.id, FORM_N).map(f => f.result) : [] } })
+        rows.push({ type: 'match', key: `m-${m.id}`, match: { ...m, _isFav: app.isFav(m.id) } })
       })
     })
     return rows

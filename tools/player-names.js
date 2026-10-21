@@ -1153,9 +1153,10 @@ async function main() {
     ids.slice(0, 80).forEach((id) => console.log(`  '${id}': '${result[id]}',`))
   } else {
     fs.writeFileSync(OUT_FILE, body.join('\n'))
+    require('./build-football-player-names').write()
     log(`写入 tools/player-zh.js：${ids.length} 名球员 / ${Math.round(fs.statSync(OUT_FILE).size / 1024)} KB`)
     log('⚠️ 记得把中文名烘焙进数据文件：node tools/scorers.js 与 node tools/match-detail.js')
-    log('   （前者管射手榜，后者管首发阵容；不改页面逻辑，推 GitHub 即可生效，不用发版）')
+    log('   已生成客户端足球译名表；云端按原同步落地，旧缓存即时汉化需发布新客户端。')
   }
 
   // 把没命中的列出来，方便人工判断「值得补」的那几个

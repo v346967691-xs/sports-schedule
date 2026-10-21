@@ -470,7 +470,7 @@ const PLAYER_ZH = {
   '242710': '福伊特', // Juan Foyth
   '271129': '科斯塔', // Logan Costa
   '222661': '马费奥', // Pablo Maffeo
-  '356000': '海森', // Dean Huijsen
+  '356000': '赫伊森', // Dean Huijsen
   '363039': '福特', // Héctor Fort
   '300912': '埃扎尔祖利', // Abde Ezzalzouli
   '283891': '穆尼奥斯', // Aihen Muñoz
@@ -639,6 +639,88 @@ const PLAYER_ZH = {
   '280764': '阿劳霍', // Julián Araujo —— 自动给的「朱利安·阿勞霍」残留繁体「勞」
   '256909': '佩佩', // Pepê —— 自动给了全名「克普勒·拉韦兰·利马·费雷拉」，太长
   '359796': '迪乌夫', // El Hadji Malick Diouf —— 自动给的「艾尔-哈吉·马历·迪奥夫」中间名是港译
+  /* ---------- 欧冠/英超/西甲：2026-10-21 译名补齐与纠偏 ---------- */
+  '240055': '迪格雷戈里奥', // Michele Di Gregorio
+  '282675': '迪亚基特', // Bafodé Diakité
+  '72487': '戴维·布鲁克斯', // David Brooks
+  '353151': '阿尔瓦罗·罗德里格斯', // Álvaro Rodríguez
+  '361809': '克鲁皮', // Junior Kroupi
+  '311527': '哈康·瓦尔迪马松', // Hákon Valdimarsson
+  '362203': '金志树', // Kim Ji-Soo
+  '342029': '亚尔莫柳克', // Yehor Yarmoliuk
+  '310607': '拉马雷·博加德', // Lamare Bogarde
+  '376274': '昆达', // Geovany Quenda
+  '376481': '埃斯特旺', // Estêvão
+  '231859': '孔萨', // Ezri Konsa
+  '238318': '卡迪奥卢', // Ferdi Kadioglu
+  '192278': '迭戈·戈麦斯', // Diego Gómez
+  '387489': '切马·安德烈斯', // Chema Andrés
+  '286965': '布兰斯韦特', // Jarrad Branthwaite
+  '282978': '哈克尼', // Hayden Hackney
+  '274649': '比约尔', // Jaka Bijol
+  '253173': '田中碧', // Ao Tanaka
+  '230963': '伊萨·迪奥普', // Issa Diop
+  '243440': '达拉·奥谢', // Dara O'Shea
+  '291174': '格里夫斯', // Jacob Greaves
+  '256607': '弗洛伦蒂诺·路易斯', // Florentino
+  '286347': '前田大然', // Daizen Maeda
+  '102053': '乔·戈麦斯', // Joe Gomez
+  '226177': '齐米卡斯', // Kostas Tsimikas
+  '326230': '麦康奈尔', // James McConnell
+  '356075': '尼奥尼', // Trey Nyoni
+  '157073': '马奎尔', // Harry Maguire
+  '289155': '塞斯科', // Benjamin Sesko
+  '338894': '穆里略', // Murillo
+  '254118': '尼古拉斯·多明格斯', // Nicolás Domínguez
+  '296321': '卡利穆恩多', // Arnaud Kalimuendo
+  '131634': '什琴斯尼', // Wojciech Szczesny
+  '312015': '赫拉德·马丁', // Gerard Martín
+  '291616': '桑切特', // Oihan Sancet
+  '209579': '贝伦格尔', // Álex Berenguer
+  '231905': '古鲁泽塔', // Gorka Guruzeta
+  '217225': '耶赖·阿尔瓦雷斯', // Yeray
+  '262491': '泰纳利亚', // Nahuel Tenaglia
+  '260256': '格瓦拉', // Ander Guevara
+  '181355': '杰内·达科纳姆', // Djené
+  '196339': '戴维·索里亚', // David Soria
+  '125749': '费梅尼亚', // Kiko Femenía
+  '168531': '卡瓦哈尔', // Dani Carvajal
+  '135422': '基克·加西亚', // Enrique García
+  '279660': '迭戈·孔德', // Diego Conde
+  '283892': '巴列斯', // Álvaro Valles
+  '283827': '菲达尔戈', // Álvaro Fidalgo
+  '308728': '阿尔瑙·马丁内斯', // Arnau Martínez
+  '231603': '佩佩卢', // Pepelu
+  '222037': '苏亚索', // Gabriel Suazo
+  '250508': '卡尔莫纳', // José Ángel Carmona
+  '279738': '胡安·伊格莱西亚斯', // Juan Iglesias
+  '256587': '久保建英', // Takefusa Kubo
+  '318063': '阿兰布鲁', // Jon Aramburu
+  '326900': '巴勃罗·马林', // Pablo Marín
+  '240623': '科梅萨尼亚', // Santi Comesaña
+  '289072': '塞尔希·卡多纳', // Sergi Cardona
+  '271904': '卡洛斯·罗梅罗', // Carlos Romero
+  '240233': '阿什拉夫·哈基米', // Achraf Hakimi
+  '403578': '德罗·费尔南德斯', // Dro Fernández
+  '266660': '比塞克', // Yann Bisseck
+  '271769': '卡洛斯·奥古斯托', // Carlos Augusto
+  '240109': '亚历山大·斯坦科维奇', // Aleksandar Stankovic
+  '297360': '拉法·马林', // Rafa Marín
+  '282564': '卢卡', // Lorenzo Lucca
+  '123683': '本杰明·安德烈', // Benjamin André
+  '257267': '厄泽尔', // Berke Özer
+  '250853': '佩罗', // Romain Perraud
+  '184118': '塞科·福法纳', // Seko Fofana
+  '78836': '福布斯', // Carlos Forbs
+  '250284': '圣地亚哥·卡斯特罗', // Santiago Castro
+  '287025': '马克西·阿劳霍', // Maxi Araújo
+  '192146': '阿莱士·巴列', // Álex Valle
+  '239349': '德利赫特', // Matthijs de Ligt
+  '328238': '巴尔科拉', // Bradley Barcola
+  '251400': '埃泽', // Eberechi Eze
+  '403582': '哈维·埃斯帕特', // Xavi Espart
+  '409318': '塞尔希奥·马丁内斯', // Sergio Martínez
+
 }
 
 /**

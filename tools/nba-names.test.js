@@ -92,7 +92,8 @@ test('云端旧详情的近况对手与历史交锋统一短名，比分和非NB
   const {createRequire} = require('node:module')
   const filename = path.resolve(__dirname, '../utils/data.js'), native = createRequire(filename)
   const raw = {form:{home:nba.ROWS.map(r=>({opp:r[2],sc:'123-116',r:'L',at:'主'})),away:[]},
-    h2h:{list:[{ho:'圣安东尼奥马刺',ao:'俄克拉荷马城雷霆',hs:'114',as:'112'}]}}
+    h2h:{list:[{ho:'圣安东尼奥马刺',ao:'俄克拉荷马城雷霆',hs:'114',as:'112'}]},
+    box:{home:[{i:'4432823',n:'Jay. Williams',s:'5|4|1'}],away:[{i:'4900671',n:'A. Mitchell',s:'4|5|6'}]}}
   const cloud = {isReady:()=>true,cloud:{database:{from:()=>({select(){return this},eq(){return this},maybeSingle:async()=>({data:{payload:{fixture:raw}}})})}}}
   const box = {module:{exports:{}},console,Date,require:id=>id==='./cloud'?cloud:native(id)}
   vm.runInNewContext(fs.readFileSync(filename,'utf8'),box,{filename})
@@ -103,6 +104,33 @@ test('云端旧详情的近况对手与历史交锋统一短名，比分和非NB
   assert.equal(out.h2h.list[0].ho,'马刺')
   assert.equal(out.h2h.list[0].ao,'雷霆')
   assert.equal(out.h2h.list[0].hs,'114')
+  assert.equal(out.box.home[0].n,'杰林·威廉姆斯')
+  assert.equal(out.box.away[0].n,'阿杰伊·米切尔')
   assert.equal(raw.form.home[0].opp,'亚特兰大老鹰')
   assert.equal(await box.module.exports.matchDetail({...match,comp:'cba'}),raw)
+})
+
+test('NBA球员ID译名区分杰林/杰伦/肯里奇及不同米切尔，不使用号码或短名猜人', () => {
+  const players = require('../utils/nba-players')
+  assert.equal(players.name('4432823'), '杰林·威廉姆斯')
+  assert.equal(players.name('4900671'), '阿杰伊·米切尔')
+  assert.equal(players.name('4593803'), '杰伦·威廉姆斯')
+  assert.equal(players.name('3133626'), '肯里奇·威廉姆斯')
+  assert.equal(players.name('3908809'), '多诺万·米切尔')
+  assert.equal(players.name('4278053'), '戴维恩·米切尔')
+  assert.equal(players.name('A. Mitchell'), '')
+  assert.equal(players.name('25'), '')
+  const old = {box:{l:['PTS'],home:[{i:'4432823',n:'Jay. Williams',j:'6',s:'5|4|1'}],away:[{i:'4900671',n:'A. Mitchell',j:'25',s:'4|5|6'}]},
+    players:[{i:'4900671',n:'Ajay Mitchell',s:'A. Mitchell',z:''}],
+    boards:[{rows:[{i:'4900671',z:'',s:'A. Mitchell',v:12.5}]}]}
+  const out = players.payload(old)
+  assert.equal(out.box.home[0].n, '杰林·威廉姆斯')
+  assert.equal(out.box.away[0].n, '阿杰伊·米切尔')
+  assert.equal(out.box.home[0].s, old.box.home[0].s)
+  assert.equal(out.players[0].n, 'Ajay Mitchell')
+  assert.equal(out.players[0].z, '阿杰伊·米切尔')
+  assert.equal(out.boards[0].rows[0].z, '阿杰伊·米切尔')
+  assert.equal(old.box.home[0].n, 'Jay. Williams')
+  assert.equal(players.payload({box:{home:[{i:'unknown',j:'6',n:'Jay. Williams'}]}}).box.home[0].n,'Jay. Williams')
+  assert.equal(require('./zh-names').playerZh('4432823'), out.box.home[0].n)
 })

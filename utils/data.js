@@ -12,6 +12,7 @@
 
 const snapshot = require('./snapshot')
 const nbaNames = require('./nba-names')
+const nbaPlayers = require('./nba-players')
 const tennisNames = require('./tennis-names')
 const tennisInsightsView = require('./tennis-insights')
 const tennisCadence = require('./tennis-refresh')
@@ -591,7 +592,7 @@ function teamStanding(compKey, teamId) {
 /** 全部射手榜：{ [compKey]: { season, players[] } } */
 function scorersTables() {
   const tables = (scorersData && scorersData.tables) || {}
-  return tables.nba ? { ...tables, nba: nbaNames.payload(tables.nba) } : tables
+  return tables.nba ? { ...tables, nba: nbaPlayers.payload(nbaNames.payload(tables.nba)) } : tables
 }
 
 /** 某个赛事的射手榜/助攻榜数据；没有则返回 null（上游不提供这两个榜） */
@@ -948,7 +949,7 @@ async function matchDetail(match) {
       .maybeSingle()
     if (error || !data || !data.payload) return null
     const result = data.payload[match.id] || null
-    return match.comp === 'nba' ? nbaNames.payload(result) : result
+    return match.comp === 'nba' ? nbaPlayers.payload(nbaNames.payload(result)) : result
   } catch (err) {
     console.warn('[赛程助手] 云端比赛详情读取失败', err)
     return null
@@ -1000,7 +1001,7 @@ async function teamRoster(comp, teamId, force) {
         .eq('id', key)
         .maybeSingle()
       if (error || !data || !data.payload) return statsCache && hit ? hit.v : null
-      const payload = comp === 'nba' ? nbaNames.payload(data.payload) : data.payload
+      const payload = comp === 'nba' ? nbaPlayers.payload(nbaNames.payload(data.payload)) : data.payload
       rosterCache[key] = { t: Date.now(), v: payload }
       return payload
     } catch (err) {

@@ -33,7 +33,7 @@ async function list() {
   if (error) return { data: null, error: normalizeDbError(error, '读取关注列表失败') }
 
   // RLS 只返回自己的行，这里拿到的就是当前用户的关注
-  return { data: data || [], error: null }
+  return { data: (data || []).map(row => row.comp === 'nba' ? require('./nba-names').payload(row) : row), error: null }
 }
 
 async function favoritesByMatch() {

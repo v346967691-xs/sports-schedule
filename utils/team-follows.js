@@ -55,6 +55,7 @@ function teamKey(t) {
 }
 
 function normalize(team) {
+  if (team.comp === 'nba') team = require('./nba-names').team(team, team.comp)
   const zh = (team.comp === 'atp' || team.comp === 'wta')
     ? tennisNames.nameZh(team.name) || tennisNames.nameZh(team.abbr) || team.zh || ''
     : team.zh || ''

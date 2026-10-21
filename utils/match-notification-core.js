@@ -43,7 +43,7 @@ function beijingDateTime(value) {
  * ------------------------------------------------------------------------ */
 function sideName(side) {
   const team = side || {}
-  return String(team.zh || team.zhName || team.name || team.abbr || '').trim()
+  return require('./nba-names').text(String(team.zh || team.zhName || team.name || team.abbr || '').trim())
 }
 
 function sideAbbr(side) {

@@ -169,7 +169,7 @@ test('生产模板「完赛通知」(72357)：五个字段各就各位', () => {
   assert.deepEqual(Object.keys(data).sort(), ['character_string6', 'thing1', 'thing11', 'thing9', 'time10'])
   assert.equal(data.thing1.value, 'NBA')                      // 赛事名称
   assert.equal(data.time10.value, '2026年10月20日 10:00')      // 比赛日期（time 类型）
-  assert.equal(data.thing9.value, '洛杉矶湖人 vs 金州勇士')     // 参赛人员
+  assert.equal(data.thing9.value, '湖人 vs 勇士')     // 参赛人员
   assert.equal(data.character_string6.value, '112:108')
   assert.equal(data.thing11.value, 'NBA · 季前赛')             // 备注 ← 赛段
 })
@@ -196,8 +196,8 @@ test('长英文队名触及 thing(20) / character_string(32) 上限时退成官�
   const m = {
     comp: 'nba', compName: 'NBA', compCat: 'basketball', status: 'finished',
     start: '2026-10-20T02:00:00Z', stage: 'NBA · 常规赛', statusText: '已结束',
-    home: { abbr: 'POR', name: 'Portland Trail Blazers', score: 110 },
-    away: { abbr: 'SAC', name: 'Sacramento Kings', score: 99 },
+    home: { abbr: 'POR', name: 'Example Very Long Home Club Name', score: 110 },
+    away: { abbr: 'SAC', name: 'Example Very Long Away Club Name', score: 99 },
   }
   const values = core.matchValues(m)
   assert.equal(values.teams, 'POR vs SAC')

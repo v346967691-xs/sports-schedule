@@ -619,6 +619,7 @@ function build(page, id, kind, opt) {
 }
 
 function buildCanvas(page, id, kind, opt) {
+  opt = require('./nba-names').payload(opt)
   return new Promise((resolve) => {
     if (!wx.createSelectorQuery) return resolve('')
     const q = wx.createSelectorQuery().in(page)

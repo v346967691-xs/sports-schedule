@@ -126,7 +126,7 @@ function isBasketball(comp) { return BASKETBALL_COMPS.has(comp); }
  */
 function disp(t) {
   if (!t) return '';
-  return t.zh || t.name || t.abbr || '';
+  return require('../utils/nba-names').text(t.zh || t.name || t.abbr || '');
 }
 
 module.exports = {

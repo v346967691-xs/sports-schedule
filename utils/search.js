@@ -163,7 +163,7 @@ function buildIndex() {
         comps: [c.key],
         comp: c.key, // 先占位，下面统一挑「主场赛事」
         compName: c.name,
-        _f: { d: fold(display), n: fold(t.name || ''), a: fold(t.abbr || ''), al: ALIAS_KEYS[fold(display)] || [] },
+        _f: { d: fold(display), n: fold(t.name || ''), a: fold(t.abbr || ''), al: (ALIAS_KEYS[fold(display)] || []).concat(c.key === 'nba' ? require('./nba-names').aliases(id).map(fold) : []) },
       }
       byId[key] = item
       teams.push(item)

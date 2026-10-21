@@ -112,7 +112,7 @@ async function doFetch(n) {
 
 // 云表行 → 页面可直接绑定的结构
 function normalize(row) {
-  const p = row.payload
+  const p = require('./nba-names').payload(row.payload)
   if (!p || typeof p !== 'object') return null
   const o = {
     id: row.id,

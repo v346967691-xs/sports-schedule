@@ -107,7 +107,8 @@ Page({
       .filter((t) => !kw
         || t.display.toLowerCase().indexOf(kw) > -1
         || t.name.toLowerCase().indexOf(kw) > -1
-        || t.abbr.toLowerCase().indexOf(kw) > -1)
+        || t.abbr.toLowerCase().indexOf(kw) > -1
+        || t.comp === 'nba' && require('../../utils/nba-names').aliases(t.id).some(alias => alias.toLowerCase().includes(kw)))
       .map((t) => Object.assign({}, t, {
         isTennis: t.comp === 'atp' || t.comp === 'wta',
         k: follows.key(t.comp, t.id),

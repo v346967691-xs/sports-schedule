@@ -67,7 +67,7 @@ function roundLabel(stage, compName) {
 function nameOf(t) {
   const raw = String((t && (t.zh || t.name)) || '').trim()
   if (!raw || /^TBD([\s_-]*(home|away))?$/i.test(raw)) return '待定'
-  return raw
+  return require('./nba-names').text(raw)
 }
 
 function decorate(m) {

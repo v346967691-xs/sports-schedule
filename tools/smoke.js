@@ -3909,7 +3909,7 @@ async function run() {
 
   // ① 中文名分表（ESPN_ZH 足球 / NBA_ZH 篮球）—— 这是「错的中文」的直接来源
   check('队名中文：足球与篮球分表，id=8 在足球侧不再解析成 NBA 队名',
-    zhMod.espnZh('8', 'football') === '' && zhMod.espnZh('8', 'basketball') === '底特律活塞',
+    zhMod.espnZh('8', 'football') === '' && zhMod.espnZh('8', 'basketball') === '活塞',
     `football=${JSON.stringify(zhMod.espnZh('8', 'football'))} basketball=${JSON.stringify(zhMod.espnZh('8', 'basketball'))}`)
   check('队名中文：同一 id 在两张表里的含义必须不同（否则分表没意义）',
     zhMod.espnZh('83', 'football') === '巴塞罗那' && zhMod.espnZh('83', 'basketball') === '')
@@ -3951,14 +3951,14 @@ async function run() {
     legacyDec[0].home.id === '359' && legacyDec[0].home.zh === '阿森纳'
     && legacyDec[0].away.id === 'T1' && legacyDec[0].away.abbr === 'T1')
 
-  // ③ 真实快照里不能出现「足球赛事挂着 NBA 中文名」
+  // ③ 防止跨项目串名；凯尔特人等短名允许与足球官方映射重名。
   const nbaZhSet = {}
   Object.keys(zhMod.NBA_ZH).forEach((k) => { nbaZhSet[zhMod.NBA_ZH[k]] = true })
   const wrongZhInFootball = []
   dataMod.matches().forEach((m) => {
     if (dataMod.catOf(m.comp) !== 'football') return
     ;[m.home, m.away].forEach((t) => {
-      if (t && t.zh && nbaZhSet[t.zh]) wrongZhInFootball.push(`${m.comp}:${t.id}=${t.zh}`)
+      if (t && t.zh && nbaZhSet[t.zh] && zhMod.espnZh(t.id, 'football') !== t.zh) wrongZhInFootball.push(`${m.comp}:${t.id}=${t.zh}`)
     })
   })
   check('快照：足球赛事里没有一支球队挂着 NBA 的中文名（用户的「错的中文」红线）',

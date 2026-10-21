@@ -11,6 +11,7 @@
  */
 
 const snapshot = require('./snapshot')
+const nbaNames = require('./nba-names')
 const tennisNames = require('./tennis-names')
 const tennisInsightsView = require('./tennis-insights')
 const tennisCadence = require('./tennis-refresh')
@@ -200,7 +201,7 @@ function matches() {
   if (!cache) {
     try {
       // eslint-disable-next-line
-      cache = snapshot.decodeSnapshot(require('../data/matches.js')).map(tennisNames.localizeMatch)
+      cache = snapshot.decodeSnapshot(require('../data/matches.js')).map(tennisNames.localizeMatch).map(nbaNames.match)
     } catch (err) {
       console.error('[赛程助手] 赛程数据加载失败', err)
       cache = []
@@ -535,7 +536,8 @@ function lastMatchByComp() {
 
 /** 全部积分榜：{ [compKey]: table } */
 function standingsTables() {
-  return (standingsData && standingsData.tables) || {}
+  const tables = (standingsData && standingsData.tables) || {}
+  return tables.nba ? { ...tables, nba: nbaNames.payload(tables.nba) } : tables
 }
 
 /** 某个赛事的积分榜；没有则返回 null（杯赛、国字号本来就没有排名） */
@@ -577,7 +579,8 @@ function teamStanding(compKey, teamId) {
 
 /** 全部射手榜：{ [compKey]: { season, players[] } } */
 function scorersTables() {
-  return (scorersData && scorersData.tables) || {}
+  const tables = (scorersData && scorersData.tables) || {}
+  return tables.nba ? { ...tables, nba: nbaNames.payload(tables.nba) } : tables
 }
 
 /** 某个赛事的射手榜/助攻榜数据；没有则返回 null（上游不提供这两个榜） */
@@ -768,7 +771,7 @@ function applyCloudSnapshot(snapList, snapMeta) {
     .filter((match) => match && ['atp', 'wta'].includes(match.comp) && Array.isArray(match.broadcast) && match.broadcast.length)
     .map((match) => [match.id, match.broadcast]))
   cache = snapList.map((match) => {
-    const localized = tennisNames.localizeMatch(match)
+    const localized = nbaNames.match(tennisNames.localizeMatch(match))
     if (localized && ['atp', 'wta'].includes(localized.comp)
       && (!Array.isArray(localized.broadcast) || !localized.broadcast.length)) {
       const bundled = bundledBroadcasts.get(localized.id)
@@ -933,7 +936,8 @@ async function matchDetail(match) {
       .eq('id', `d-${dayStampCN(match.start)}`)
       .maybeSingle()
     if (error || !data || !data.payload) return null
-    return data.payload[match.id] || null
+    const result = data.payload[match.id] || null
+    return match.comp === 'nba' ? nbaNames.payload(result) : result
   } catch (err) {
     console.warn('[赛程助手] 云端比赛详情读取失败', err)
     return null
@@ -985,8 +989,9 @@ async function teamRoster(comp, teamId, force) {
         .eq('id', key)
         .maybeSingle()
       if (error || !data || !data.payload) return statsCache && hit ? hit.v : null
-      rosterCache[key] = { t: Date.now(), v: data.payload }
-      return data.payload
+      const payload = comp === 'nba' ? nbaNames.payload(data.payload) : data.payload
+      rosterCache[key] = { t: Date.now(), v: payload }
+      return payload
     } catch (err) {
       console.warn('[赛程助手] 云端球队名单读取失败', err)
       return statsCache && hit ? hit.v : null

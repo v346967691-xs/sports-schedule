@@ -220,9 +220,9 @@ test('claim → send → mark：result 模板五个字段全部填对', async ()
   assert.deepEqual(body.data, {
     thing1: { value: 'NBA' },
     time10: { value: '2026年10月20日 10:00' },
-    thing9: { value: '洛杉矶湖人 vs 金州勇士' },
+    thing9: { value: '湖人 vs 勇士' },
     character_string6: { value: '112:108' },
-    thing11: { value: '洛杉矶湖人112-108击败金州勇士' },
+    thing11: { value: '湖人112-108击败勇士' },
   })
   assert.equal(writes.find((w) => w.type === 'update').filter.values.status, 'sent')
 })

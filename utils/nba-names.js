@@ -35,7 +35,7 @@ function team(t,comp) {
 }
 function match(m){return m&&m.comp==='nba'?{...m,home:team(m.home,'nba'),away:team(m.away,'nba')}:m}
 // 只替换展示文本字段，不改id、链接、赛事键、缩写或球员身份。缓存旧数据亦可立即适配。
-const DISPLAY=/^(name|zh|zhName|display|displayName|team|teamName|teamZh|tz|homeName|awayName|title|headline|text|body|summary|note|caption|intro|reason|home|away)$/
+const DISPLAY=/^(name|zh|zhName|display|displayName|team|teamName|teamZh|tz|homeName|awayName|title|headline|text|body|summary|note|caption|intro|reason|home|away|opp|ho|ao)$/
 const localized=new WeakMap()
 function payload(value) {
   if(!value||typeof value!=='object')return value

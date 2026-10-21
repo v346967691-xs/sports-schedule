@@ -86,3 +86,23 @@ test('旧关注比赛与已关注球队显示短名，关注身份保持不变',
   assert.equal(saved.id, '13')
   assert.equal(follows.has('nba', '13'), true)
 })
+
+test('云端旧详情的近况对手与历史交锋统一短名，比分和非NBA内容不变', async () => {
+  const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path')
+  const {createRequire} = require('node:module')
+  const filename = path.resolve(__dirname, '../utils/data.js'), native = createRequire(filename)
+  const raw = {form:{home:nba.ROWS.map(r=>({opp:r[2],sc:'123-116',r:'L',at:'主'})),away:[]},
+    h2h:{list:[{ho:'圣安东尼奥马刺',ao:'俄克拉荷马城雷霆',hs:'114',as:'112'}]}}
+  const cloud = {isReady:()=>true,cloud:{database:{from:()=>({select(){return this},eq(){return this},maybeSingle:async()=>({data:{payload:{fixture:raw}}})})}}}
+  const box = {module:{exports:{}},console,Date,require:id=>id==='./cloud'?cloud:native(id)}
+  vm.runInNewContext(fs.readFileSync(filename,'utf8'),box,{filename})
+  const match = {id:'fixture',comp:'nba',start:'2026-10-21T02:00:00Z'}
+  const out = await box.module.exports.matchDetail(match)
+  assert.deepEqual(out.form.home.map(g=>g.opp),nba.ROWS.map(r=>r[1]))
+  assert.equal(out.form.home[0].sc,'123-116')
+  assert.equal(out.h2h.list[0].ho,'马刺')
+  assert.equal(out.h2h.list[0].ao,'雷霆')
+  assert.equal(out.h2h.list[0].hs,'114')
+  assert.equal(raw.form.home[0].opp,'亚特兰大老鹰')
+  assert.equal(await box.module.exports.matchDetail({...match,comp:'cba'}),raw)
+})

@@ -623,7 +623,7 @@
 .bx-side {
   margin-bottom: 8rpx;
   font-size: 26rpx;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .bx-row {
@@ -631,13 +631,15 @@
   align-items: center;
   padding: 7rpx 0;
   font-size: 22rpx;
+  font-weight: 600;
   color: var(--text);
 }
 
 .bx-head {
   padding-bottom: 4rpx;
   color: var(--muted);
-  font-size: 20rpx;
+  font-size: 23rpx;
+  font-weight: 700;
 }
 
 .bx-nm {
@@ -655,6 +657,7 @@
   margin-right: 8rpx;
   color: var(--brand);
   font-size: 20rpx;
+  font-weight: 600;
 }
 
 .bx-name {
@@ -666,7 +669,8 @@
 }
 
 .bx-name.st {
-  font-weight: 500;
+  color: #c74343;
+  font-weight: 700;
 }
 
 .bx-c {

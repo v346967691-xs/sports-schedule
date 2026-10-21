@@ -80,6 +80,9 @@ let tennisRankings = (() => {
 })()
 
 let cache = null
+let scopedMatches = null
+let scopedSource = null
+let scopedWeekly = null
 
 /* 云端赛程缓存：打开即读，无需重新发布即可看到最新比分（每小时由定时任务刷新云端） */
 const cloudClient = require('./cloud')
@@ -207,7 +210,15 @@ function matches() {
       cache = []
     }
   }
-  return cache.filter(m => require('./tennis-scope').allows(m, tennisRankings.weekly))
+  // 范围只随赛程/赛事日历变化；teamForm 等高频查询不能反复扫描完整网球日历。
+  // 保留比赛对象引用，实时比分原地更新后仍立即可见。
+  if (scopedSource !== cache || scopedWeekly !== tennisRankings.weekly) {
+    const scope = require('./tennis-scope')
+    scopedMatches = cache.filter(m => scope.allows(m, tennisRankings.weekly))
+    scopedSource = cache
+    scopedWeekly = tennisRankings.weekly
+  }
+  return scopedMatches.slice()
 }
 
 function categories() {

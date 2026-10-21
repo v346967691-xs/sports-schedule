@@ -226,8 +226,7 @@ Page({
   },
 
   onLoad(query) {
-    // 只渲染当前 ±1 屏，滑过的留着，避免 10 张榜全量铺开拖慢首屏
-    this._rendered = {}
+    // 只保留当前 ±1 屏的内容，其他屏仅传导航占位，避免切遍后累积全部榜单。
     // ⚠️ query.comp 只在「分享卡片冷启动」这条路上有值。
     //    站内跳转**走不到这里** —— 积分榜是 tabBar 页面，只能 wx.switchTab，
     //    而 switchTab 不支持带 query，参数靠 globalData.pendingComp 交接（见 onShow）。
@@ -516,8 +515,11 @@ Page({
   buildSlide(key, index, curIdx, tier) {
     const name = data.compOf(key).name
     const near = Math.abs(index - curIdx) <= 1
-    const visible = near || !!this._rendered[key]
-    if (visible) this._rendered[key] = true
+    const visible = near
+    if (!visible) return {key, name, index, visible:false, empty:true,
+      columns:[], groups:[], legend:[], totalTeams:0, season:'',
+      goals:[], assists:[], rankRows:[], boards:[], swiss:[], swissTeams:0,
+      scrollTop:this.data.slideTop[key] || 0}
 
     if (data.catOf(key) === 'tennis') {
       const live = this.data.tennisMode === 'live' && typeof data.tennisLiveBoard === 'function'

@@ -304,7 +304,9 @@ async function fetchEspn(comp) {
     for (const month of months()) {
       let json
       try {
-        json = await getJSON(`${base}?dates=${month}`)
+        // 月度赛程默认只返回前 100 场；NBA 密集赛程会丢掉月底的赛果与未来场次。
+        // 显式提高单次上限，保持原有按月请求次数和刷新频率。
+        json = await getJSON(`${base}?dates=${month}&limit=1000`)
       } catch (err) {
         console.warn(`\n  ! ${comp.key} ${src.id} ${month} 抓取失败: ${err.message}`)
         continue

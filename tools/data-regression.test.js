@@ -285,6 +285,37 @@ test('following a match never reports notification success when saving consent f
   assert.equal(toasts[0].icon, 'none')
 })
 
+test('monthly ESPN schedules include games after the default 100-event cutoff', async () => {
+  const fixedNow = Date.parse('2026-10-25T10:00:00Z')
+  class Clock extends Date {
+    constructor(...args) { super(...(args.length ? args : [fixedNow])) }
+    static now() { return fixedNow }
+  }
+  const events = Array.from({ length: 155 }, (_, i) => ({
+    id: String(1000 + i), date: i < 100 ? '2026-10-20T00:00Z' : '2026-10-26T00:00Z',
+    status: { type: { state: 'pre' } },
+    competitions: [{ competitors: [
+      { homeAway: 'home', team: { id: '7', displayName: 'Denver Nuggets' } },
+      { homeAway: 'away', team: { id: '16', displayName: 'Minnesota Timberwolves' } },
+    ] }],
+  }))
+  const requests = []
+  const box = load('sync.js', {
+    Date: Clock, process: { argv: ['node', 'sync.js', '1', '1'], env: {} },
+    fetch: async url => {
+      const parsed = new URL(url)
+      requests.push(parsed)
+      return { ok: true, json: async () => ({ events: events.slice(0, Number(parsed.searchParams.get('limit')) || 100) }) }
+    },
+  })
+  const nba = box.module.exports.COMPETITIONS.find(c => c.key === 'nba')
+  const rows = await box.fetchEspn(nba)
+  assert.equal(requests.length, 1, 'completeness must not add a second recurring request')
+  assert.equal(rows.length, 155, 'the last 55 matches must not disappear from the shared schedule')
+  assert.equal(rows.filter(m => Date.parse(m.start) > fixedNow).length, 55)
+  assert.ok(rows.some(m => m.id === 'nba-1154' && m.home.id === '7' && m.away.id === '16'))
+})
+
 test('LOL fast lane sends its authentication header for all leagues', async () => {
   const requests = []
   const box = load('live-watch.js', {

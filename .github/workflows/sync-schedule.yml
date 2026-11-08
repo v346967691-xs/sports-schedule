@@ -1,36 +1,18 @@
-name: 赛程刷新与实时比分（每 15 分钟触发，内部节流）
+name: 赛程刷新与比分更新（每30分钟触发，内部节流）
 
-# 触发方式：GitHub 定时 cron + 外部 cron-job.org 每 15 分钟 POST workflow_dispatch（带 PAT）。
-# 这条工作流是「关电脑也能刷新比分」的关键：
-# 它跑在 GitHub 的服务器上，不依赖本机开机，也不依赖 WorkBuddy 是否运行。
-# 云 SDK 用的是公开 publishableKey（anon 身份），schedule_cache 的写入又被 RLS 锁死在
-# id='latest' 这一行，所以这里不需要配置任何 Secret。
-#
-# 🔴🔴 2026-10-05 事故后的架构调整 —— **触发频率 ≠ 写入频率**
-#   事故：每 15 分钟被触发 = 96 次/天，而每班都无条件全量 upsert ≈1.3MB
-#         → 3.7GB/月落库，免费版 5000 资源点 5 天烧穿，数据库随即被隔离。
-#   修法：**保持高频触发（实时比分需要），但把「大快照」和「实时比分」两条路径解耦**
-#      · 大快照 schedule/standings/scorers/detail ≈0.8MB → 由 cloud-sync.js 内部的
-#        **节流闸**控制，默认 90 分钟才真正写一次（96 次/天 → 16 次/天）
-#      · 实时比分 live_scores ≈2KB → 完全不过闸，始终是 60 秒粒度
-#   ✅ 这样做的好处：**cron-job.org 那边一个字都不用改**，照旧每 15 分钟打一次即可。
-#   ⚠️ 想把全量刷新调得更频繁/更懒，改 SYNC_MIN_INTERVAL_MIN（单位分钟，0 = 关闸）。
+# 50,000 点方案：仓库与 cron-job.org 都采用 :00/:30，每班采集8分钟。
+# 外部触发必须同步修改；concurrency 不会把错开的两条触发自动去重。
+# 采集期间每60秒检查一次；批次之间展示最新已知比分，不承诺持续实时。
+# 大快照仍90分钟节流，详情仍180分钟；不要用增加全量同步频率补偿采集空档。
+# 数据库不可用时仍按健康检查如实跳过；不代替用户续费，也不保证余额自动清零。
+# 用户要求11月18日前完成部署，恢复服务后直接采用该配置。
+# 15分钟提醒已停用；独立1小时提醒与赛果授权、通知仍保留。
+# GitHub 定时历史上会延迟，实际生效与费用需以外部任务记录及账单验收。
 
 on:
   schedule:
-    # 每 15 分钟一次（UTC）。GitHub Actions 的 cron 最短支持 5 分钟。
-    #
-    # 这里试过降频，实测无效，故改回 */15，过程记录如下（别再重复试）：
-    #   2026-09-28 15:31 曾按「高频任务更容易被共享队列丢弃」的官方/社区建议，
-    #   把频率降到每小时第 23 分（避开整点）。结果：改完之后 16:23 / 17:23 / 18:23 / 19:23
-    #   **连续四班一次都没投递**，4.4 小时内 0 次运行，云端数据一度陈旧 262 分钟。
-    #   而降频前的 */15 在 11 小时内至少投递了 4 次（间隔 3h / 2h27m / 5h16m）。
-    #   → 结论：这个仓库上改频率改变不了什么，*/15 是唯一观测到有投递的配置，先保持。
-    #
-    # 但 */15 的真实粒度也只有约 2.5~5 小时，远达不到 15 分钟。
-    # 想要真正可靠的刷新，只能靠外部定时打 workflow_dispatch（见项目 MEMORY），
-    # GitHub 自己的 cron 给不了这个精度。
-    - cron: '*/15 * * * *'
+    # UTC :00/:30；cron-job.org 也应对齐同样落点，避免实际班次翻倍。
+    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       force_refresh:
@@ -46,7 +28,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # ⚠️ 留出实时比分盯场（最长 14 分钟）、前序同步和最终云端新鲜度校验的余量。
+    # ⚠️ 留出比分采集（计划8分钟）、前序同步和最终云端新鲜度校验的余量。
     timeout-minutes: 20
     env:
       CLOUD_USAGE_DIR: '${{ github.workspace }}/.cloud-diagnostics/usage'
@@ -201,21 +183,10 @@ jobs:
           if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
           NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/match-notification-push.js
 
-      # 实时比分盯场：**挂在这一次的运行里循环**，每 60 秒刷一次 live_scores（约 2KB）。
-      #
-      # 🔴 为什么这样做，而不是「再建一个每 2 分钟的高频定时任务」：
-      #    ① 本仓库的 GitHub 原生 cron 实测 2.5~5 小时才投递一次（改频率无效），
-      #       可靠触发只能靠外部 cron-job.org POST —— 每多加一条就要多配一次外部服务；
-      #    ② 挂在这里则**零外部配置**：一次运行约 2 分钟（主同步）+ 14 分钟（盯场），
-      #       几乎连续覆盖，等效粒度就是 60 秒；
-      #    ③ `schedule_cache` 一行原本 891KB，2 分钟刷一次 = 790MB/天 —— 只有把它拆成
-      #       只含进行中比赛的小表（~2KB）才刷得起。
-      #
-      # ✅ 2026-10-05：**这一步就是「高频路径」的全部**，它不受上面节流闸影响。
-      #    90 分钟才写一次的是那份大快照，2KB 的实时比分仍然 60 秒一次 —— 用户感知到的
-      #    实时性没有任何退化，省下的却是落库量的大头。
-      # ⚠️ 没有进行中的比赛时脚本会自己提前退出（连续 3 轮为空），凌晨不白占 Actions。
-      # 来源失败或云端写入失败必须让本班失败，不能把失效的实时比分报成成功。
+      # 每半小时运行一批，计划采集8分钟；每轮完成后的等待仍为60秒。
+      # 网络与单轮扫描会占用时间，因此8分钟不是精确轮数或实时性保证。
+      # 没有活跃或临近开赛比赛时允许提前退出；来源/写入失败仍如实报错。
+      # 复用这一循环发送保留的通知，不另开高频通知任务。
       - name: 盯进行中的比赛（实时比分）
         id: livewatch
         if: steps.cloudhealth.outputs.available == 'true'
@@ -227,7 +198,7 @@ jobs:
           WECHAT_MINIPROGRAM_STATE: ${{ vars.WECHAT_MINIPROGRAM_STATE || 'formal' }}
         run: |
           if [ -n "$NOTIFY_TOKEN" ]; then echo "::add-mask::$NOTIFY_TOKEN"; fi
-          NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/live-watch.js --minutes=14 --every=60 --notify
+          NODE_OPTIONS="--require=$GITHUB_WORKSPACE/tools/cloud-usage.js" node tools/live-watch.js --minutes=8 --every=60 --notify
 
       # 即使盯场因某个联赛源失败而报红，也检查云端是否已有新鲜且完整的实时心跳。
       - name: 校验实时比分新鲜度

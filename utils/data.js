@@ -123,7 +123,8 @@ function applyLive() {
     if (!p) return
     const at = Date.parse(p.at || liveGeneratedAt)
     const base = Date.parse(meta.generatedAt || '')
-    if (!Number.isFinite(at) || at < base || Date.now() - at > 15 * 60000 || at > Date.now() + 60000) return
+    // 半小时批次之间保留最新已知比分，视图另标“待更新”；仍拒绝倒退和未来时间。
+    if (!Number.isFinite(at) || at < base || at < (m._liveAt || 0) || Date.now() - at > 45 * 60000 || at > Date.now() + 60000) return
     if (p.st) m.status = p.st
     if (p.stt != null && !(catOf(m.comp)==='tennis'&&p.stt==='已结束'&&/退赛|不战|retir|walk.?over/.test(m.statusText||''))) m.statusText = p.stt
     if(catOf(m.comp)==='tennis'){
@@ -207,6 +208,7 @@ function matches() {
     try {
       // eslint-disable-next-line
       cache = snapshot.decodeSnapshot(require('../data/matches.js')).map(tennisNames.localizeMatch).map(nbaNames.match)
+        .map(match => Object.assign({}, match, { _snapshotAt: Date.parse(meta.generatedAt || '') }))
     } catch (err) {
       console.error('[赛程助手] 赛程数据加载失败', err)
       cache = []
@@ -787,7 +789,7 @@ function applyCloudSnapshot(snapList, snapMeta) {
     .filter((match) => match && ['atp', 'wta'].includes(match.comp) && Array.isArray(match.broadcast) && match.broadcast.length)
     .map((match) => [match.id, match.broadcast]))
   cache = snapList.map((match) => {
-    const localized = nbaNames.match(tennisNames.localizeMatch(match))
+    const localized = Object.assign({}, nbaNames.match(tennisNames.localizeMatch(match)), { _snapshotAt: Date.parse(snapMeta.generatedAt || '') })
     if (localized && ['atp', 'wta'].includes(localized.comp)
       && (!Array.isArray(localized.broadcast) || !localized.broadcast.length)) {
       const bundled = bundledBroadcasts.get(localized.id)

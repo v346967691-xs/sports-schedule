@@ -84,6 +84,7 @@ function createMessage(row, match, template, state) {
 }
 
 function expired(match, kind, now = Date.now()) {
+  if (kind === 'pre15') return true // 停用旧队列；不能把旧授权转成其他种类。
   if (!match || !match.comp) return true
   const start = Date.parse(match.start || '')
   if (!Number.isFinite(start)) return kind !== 'result'

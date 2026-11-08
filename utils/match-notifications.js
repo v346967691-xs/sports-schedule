@@ -24,9 +24,11 @@ function states(matchId) {
 }
 
 function subscribe(matchId, kinds) {
+  const active = (Array.isArray(kinds) ? kinds : []).filter(kind => ['pre60', 'result'].includes(kind))
+  if (!active.length) return Promise.resolve(fail('15分钟提醒已停用，请选择有效通知', 'retired'))
   return rpc('subscribe_match_notifications', {
     p_match_id: String(matchId || ''),
-    p_kinds: Array.isArray(kinds) ? kinds : [],
+    p_kinds: active,
   }, '保存比赛通知授权失败')
 }
 

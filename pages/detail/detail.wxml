@@ -441,11 +441,7 @@
     </view>
     <view class="match-notifications" wx:if="{{isFav && (match.status === 'upcoming' || match.status === 'live')}}">
       <view class="match-notifications-title">比赛通知</view>
-      <view class="match-notifications-note">赛前1小时、15分钟提醒，每次授权发一条</view>
-      <view class="notification-state-row" wx:if="{{canRequestPre15}}">
-        <text>开赛前 15 分钟</text>
-        <text class="notification-state {{notificationStates.pre15 ? 'ready' : ''}}">{{notificationStates.pre15 === 'sent' ? '已发送' : notificationStates.pre15 === 'sending' ? '发送中' : notificationStates.pre15 ? '已订阅' : '未设置'}}</text>
-      </view>
+      <view class="match-notifications-note">赛果确认后发送；1小时提醒可能延迟</view>
       <view class="notification-state-row" wx:if="{{canRequestPre60}}">
         <text>开赛前 1 小时</text>
         <text class="notification-state {{notificationStates.pre60 ? 'ready' : ''}}">{{notificationStates.pre60 === 'sent' ? '已发送' : notificationStates.pre60 === 'sending' ? '发送中' : notificationStates.pre60 ? '已订阅' : '未设置'}}</text>
@@ -454,11 +450,11 @@
         <text>比赛结束赛果</text>
         <text class="notification-state {{notificationStates.result ? 'ready' : ''}}">{{notificationStates.result === 'sent' ? '已发送' : notificationStates.result === 'sending' ? '发送中' : notificationStates.result ? '已订阅' : '未设置'}}</text>
       </view>
-      <view class="notification-action" wx:if="{{(match.status === 'upcoming' && ((canRequestPre15 && !notificationStates.pre15) || !notificationStates.result)) || (match.status === 'live' && !notificationStates.result)}}" bindtap="onNotificationTap">
-        {{notificationBusy ? '处理中…' : match.status === 'live' ? '订阅比赛结束赛果通知' : '设置赛前15分钟 / 赛果通知'}}
+      <view class="notification-action" wx:if="{{(match.status === 'upcoming' || match.status === 'live') && !notificationStates.result}}" bindtap="onNotificationTap">
+        {{notificationBusy ? '处理中…' : '订阅比赛结束赛果通知'}}
       </view>
       <view class="notification-action secondary" wx:if="{{canRequestPre60 && !notificationStates.pre60}}" bindtap="onExtraPreReminderTap">
-        {{notificationBusy ? '处理中…' : '加一轮：开赛前1小时提醒'}}
+        {{notificationBusy ? '处理中…' : '另设开赛前1小时提醒'}}
       </view>
     </view>
     <view class="btn ghost" bindtap="onCompTap">查看{{comp.name}}全部赛程</view>

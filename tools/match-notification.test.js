@@ -23,12 +23,12 @@ function match(overrides = {}) {
   }, overrides)
 }
 
-test('all-match pre-kickoff reminders support 60-minute and 15-minute rounds', () => {
-  assert.equal(core.isDue(match(), now, 'pre15'), true)
-  assert.equal(core.isDue(match({ comp: 'epl' }), now, 'pre15'), true)
+test('all-match pre-kickoff reminders support the retained 60-minute round and reject pre15', () => {
+  assert.equal(core.isDue(match(), now, 'pre15'), false)
+  assert.equal(core.isDue(match({ comp: 'epl' }), now, 'pre15'), false)
   assert.equal(core.isDue(match({ start: '2026-10-20T04:00:01Z' }), now, 'pre15'), false)
   assert.equal(core.isDue(match({ start: '2026-10-20T03:34:59Z', status: 'live' }), now, 'pre15'), false)
-  assert.equal(core.isDue(match({ start: '2026-10-20T03:35:00Z', status: 'live' }), now, 'pre15'), true)
+  assert.equal(core.isDue(match({ start: '2026-10-20T03:35:00Z', status: 'live' }), now, 'pre15'), false)
   assert.equal(core.isDue(match({ start: '2026-10-20T04:35:00Z' }), now, 'pre60'), true)
   assert.equal(core.isDue(match({ start: '2026-10-20T04:35:01Z' }), now, 'pre60'), true)
   assert.equal(core.isDue(match({ start: '2026-10-20T04:46:00Z' }), now, 'pre60'), false)
@@ -42,7 +42,7 @@ test('pre-match reminders ignore live 60-minute rounds, final matches and invali
 })
 
 test('favorite consent requests only notifications that can still be sent', () => {
-  assert.deepEqual(config.kindsFor(match(), now), ['pre15', 'result'])
+  assert.deepEqual(config.kindsFor(match(), now), ['result'])
   assert.deepEqual(config.kindsFor(match({ status: 'live' }), now), ['result'])
   assert.deepEqual(config.kindsFor(match({ start: '2026-10-20T03:40:00Z' }), now), ['result'])
   assert.deepEqual(config.kindsFor(match({ status: 'finished' }), now), [])
@@ -124,16 +124,11 @@ test('a field whose type cannot be satisfied raises instead of sending an invali
   assert.throws(() => core.templateData(match(), '胜方：{{number1.DATA}}', 'result'), /number1/)
 })
 
-test('pre60 and pre15 share one template, so the 60-minute round needs its own authorization', () => {
-  assert.equal(config.templateId('pre60'), config.templateId('pre15'))
+test('the retained 60-minute reminder uses separate consent and retired pre15 has no template', () => {
+  assert.equal(config.templateId('pre15'), '')
   assert.equal(config.templateId('pre60'), config.templateId('kickoff'))
   assert.notEqual(config.templateId('pre60'), config.templateId('result'))
-  // 关注时只申请 15 分钟 + 赛果；pre60 必须由「加一轮」入口再授权一次，
-  // 否则一次 kickoff 授权只够发一条，另一个必然拿不到额度。
-  // 🔴 必须显式传 now：kindsFor 的默认参数是真实时钟，而 match() 的 start 写死为
-  // 2026-10-20T04:00:00Z。一旦系统时间越过该点，这条会永久变红（实测 10-20 12:00
-  // 北京起 CI 连续全红，step「验证数据链路回归」失败，后续同步步骤全被 skip）。
-  assert.deepEqual(config.kindsFor(match(), now), ['pre15', 'result'])
+  assert.deepEqual(config.kindsFor(match(), now), ['result'])
 })
 
 /* ------------------------------------------------------------------ 真实模板

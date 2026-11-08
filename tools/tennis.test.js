@@ -125,7 +125,7 @@ test('tennis single matches use existing subscription rounds and sport-correct r
   const { summary, compZh } = require('./brief-write')
   const match = { comp: 'wta', start: new Date(Date.now() + 7200000).toISOString(), status: 'upcoming',
     home: { name: '郑钦文', score: 2 }, away: { name: '王欣瑜', score: 0 } }
-  assert.deepEqual(config.kindsFor(match), ['pre15', 'result'])
+  assert.deepEqual(config.kindsFor(match), ['result'])
   assert.deepEqual(config.kindsFor({ ...match, status: 'live' }), ['result'])
   assert.equal(summary({ ...match, status: 'finished' }), '郑钦文以2-0战胜王欣瑜')
   assert.equal(summary({ ...match, status: 'finished', home: { name: '郑钦文', score: 0 } }), '比赛已结束，赛果待确认')

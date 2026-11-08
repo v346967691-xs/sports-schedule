@@ -3,19 +3,19 @@ const BEIJING_OFFSET = 8 * 60 * 60 * 1000
 /** 平台大类 → 中文。键与 utils/data.js 的 `catOf()` 三个取值一一对应 */
 const CATEGORY_ZH = { football: '足球', basketball: '篮球', esports: '电竞' }
 
-function isDue(match, now = Date.now(), kind = 'pre15', options = {}) {
+function isDue(match, now = Date.now(), kind = '') {
   if (!match || !match.comp) return false
   if (kind === 'result') {
     const hasScore = (side) => side && side.score !== null && side.score !== undefined
       && String(side.score).trim() !== '' && Number.isFinite(Number(side.score))
     return match.status === 'finished' && hasScore(match.home) && hasScore(match.away)
   }
-  if (!['pre60', 'pre15'].includes(kind) || !['upcoming', 'live'].includes(match.status)) return false
-  if (match.status === 'live' && kind !== 'pre15') return false
+  if (kind !== 'pre60' || !['upcoming', 'live'].includes(match.status)) return false
+  if (match.status === 'live') return false
   const start = Date.parse(match.start)
   if (!Number.isFinite(start)) return false
-  const lead = kind === 'pre60' ? 60 * 60 * 1000 : 15 * 60 * 1000
-  const latest = kind === 'pre60' ? start - 15 * 60 * 1000 : start + (options.afterMs || 10 * 60 * 1000)
+  const lead = 60 * 60 * 1000
+  const latest = start - 15 * 60 * 1000
   return now >= start - lead && now <= latest
 }
 

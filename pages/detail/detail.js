@@ -44,7 +44,6 @@ function notificationAvailability(match) {
   const start = Date.parse(match && match.start || '')
   const upcoming = !!match && match.status === 'upcoming' && Number.isFinite(start)
   return {
-    canRequestPre15: upcoming && start > Date.now(),
     canRequestPre60: upcoming && start > Date.now() + 15 * 60 * 1000,
   }
 }
@@ -456,7 +455,6 @@ Page({
       isFav: app.isFav(match.id),
       authState: app.globalData.authState,
       hasStandings: !!data.standingsOf(match.comp),
-      canRequestPre15: notificationAvailability(match).canRequestPre15,
       canRequestPre60: notificationAvailability(match).canRequestPre60,
     }, () => {
       this.buildShareImage()
@@ -524,7 +522,6 @@ Page({
     this.setData({
       isFav: app.isFav(this.data.match.id),
       authState: app.globalData.authState,
-      canRequestPre15: notificationAvailability(this.data.match).canRequestPre15,
       canRequestPre60: notificationAvailability(this.data.match).canRequestPre60,
     })
     this.loadNotificationStates(this.data.match)
@@ -930,8 +927,7 @@ Page({
       }).catch(() => this.setData({ favBusy: false }))
     } else {
       const requestedKinds = notificationConfig.kindsFor(match)
-      // 🔴 按模板 ID 去重：一次 requestSubscribeMessage 里同一个模板只算**一次**授权，
-      //    而一次 kickoff 授权只够发一条消息（pre60 与 pre15 共用该模板）。
+      // 关注时只申请赛果通知；1小时提醒仍使用独立入口授权。
       const templateIds = Array.from(new Set(requestedKinds.map((kind) => notificationConfig.templateId(kind))))
       const finishAdd = async (acceptedKinds) => {
         try {
@@ -966,7 +962,6 @@ Page({
         tmplIds: templateIds,
         success: (result) => {
           const accepted = []
-          if (requestedKinds.includes('pre15') && result[notificationConfig.templateId('pre15')] === 'accept') accepted.push('pre15')
           if (requestedKinds.includes('result') && result[notificationConfig.templateId('result')] === 'accept') accepted.push('result')
           finishAdd(accepted)
         },
@@ -979,10 +974,7 @@ Page({
     const match = this.data.match
     if (!match || !this.data.isFav || this.data.notificationBusy) return
     const states = this.data.notificationStates || {}
-    // 🔴 同一次授权里**一个模板只能换一条下发额度**。pre60 与 pre15 共用 kickoff 模板，
-    //    两者若在同一次申请里一起提交，必然有一个拿不到额度 —— 那就会变成
-    //    「显示已订阅、实际发不出去」。这里按模板收敛，pre15 优先；pre60 走
-    //    单独的「加一轮」入口再授权一次。
+    // 仅申请尚未设置的赛果通知，不能复用已停用的15分钟授权。
     const seenTemplates = new Set()
     const kinds = []
     notificationConfig.kindsFor(match).forEach((kind) => {

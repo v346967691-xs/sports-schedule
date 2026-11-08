@@ -88,6 +88,12 @@ function decorate(m) {
   } else if (m.status === 'live') {
     statusLabel = m.statusText || '进行中'
     statusHint = ''
+    const updatedAt = Number(m._liveAt || m._snapshotAt)
+    if (Number.isFinite(updatedAt) && updatedAt > 0 && Date.now() - updatedAt > 5 * 60000) {
+      const at = new Date(updatedAt)
+      statusLabel = '比分待更新'
+      statusHint = `比分更新于 ${fmt.pad(at.getHours())}:${fmt.pad(at.getMinutes())}`
+    }
   } else {
     // 🔴 这里曾经写的是 `hasScore ? fmt.sinceText(m.start) : ...`，把「距开赛多久」
     //    显示成了「X 小时前结束」—— 00:00 开球的比赛，02:00 打完就写成「2 小时前结束」，
